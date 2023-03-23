@@ -1,0 +1,24 @@
+{
+  "db": "PostgreSQL",
+  "dec994fa13b34ad5f3ad0e26effb7ba7f3819de32447339117a588fea5b5394c": {
+    "describe": {
+      "columns": [
+        {
+          "name": "name",
+          "ordinal": 0,
+          "type_info": "Varchar"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT name FROM sources WHERE id = $1 AND secret = $2"
+  }
+}
