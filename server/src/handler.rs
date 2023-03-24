@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use rammingen_protocol::{GetVersions, Login, Request, RequestVariant, SourceId};
+use rammingen_protocol::{GetVersions, Login, Request, RequestVariant, SourceId, VersionId};
 use serde::Serialize;
 use sqlx::{query, PgPool};
 use tracing::{info, warn};
@@ -77,7 +77,30 @@ impl Handler {
         Ok(())
     }
 
-    async fn get_versions(&mut self, _request: GetVersions) -> Response<GetVersions> {
-        Ok(Vec::new())
+    async fn get_versions(&mut self, request: GetVersions) -> Response<GetVersions> {
+        let last_version_id = request.last_version_id.unwrap_or(VersionId(0));
+
+        if let Some(_recorded_at) = request.recorded_at {
+            // TODO: request from entry_versions
+        } else {
+            if let Some(path) = request.path {
+                query!(
+                    "SELECT * FROM entries WHERE path = $1 AND version_id > $2",
+                    path,
+                    last_version_id.0
+                )
+                .fetch_all(&self.pool)
+                .await?;
+                // TODO: filter out dirs and select nested paths for each dir
+            } else {
+                query!(
+                    "SELECT * FROM entries WHERE version_id > $1",
+                    last_version_id.0
+                )
+                .fetch_all(&self.pool)
+                .await?;
+            }
+        }
+        Ok(None)
     }
 }

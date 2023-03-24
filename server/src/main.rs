@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_else_if)]
+
 use anyhow::{bail, Result};
 use futures_util::{SinkExt, TryStreamExt};
 use sqlx::PgPool;

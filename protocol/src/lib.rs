@@ -27,7 +27,6 @@ pub enum Request {
     GetContent(GetContent),
     StartContentUpload(StartContentUpload),
     UploadContentChunk(UploadContentChunk),
-    CommitContent(CommitContent),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -95,7 +94,7 @@ pub struct GetVersions {
     // if supplied, only get this path and nested paths
     pub path: Option<String>,
 }
-response_type!(GetVersions, Vec<FileVersion>);
+response_type!(GetVersions, Option<Vec<FileVersion>>); // TODO: streaming
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersion {
@@ -155,27 +154,16 @@ pub struct ContentHead {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetContent {
     pub content_hash: ContentHash,
-    pub offset: u64,
-    pub max_size: u64,
 }
-response_type!(GetContent, Vec<u8>);
+response_type!(GetContent, Option<Vec<u8>>); // TODO: streaming
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StartContentUpload {
     pub content_hash: ContentHash,
     pub size: u64,
 }
-response_type!(StartContentUpload, ContentUploadId);
+response_type!(StartContentUpload, ());
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UploadContentChunk {
-    pub id: ContentUploadId,
-    pub data: Vec<u8>,
-}
+pub struct UploadContentChunk(Option<Vec<u8>>);
 response_type!(UploadContentChunk, ());
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CommitContent {
-    pub id: ContentUploadId,
-}
-response_type!(CommitContent, ());

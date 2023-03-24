@@ -1,5 +1,190 @@
 {
   "db": "PostgreSQL",
+  "85566d76874f77a7edae853e3db0502dc2e08e1c9da9201d36b072a96f7f0248": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "version_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "parent_dir",
+          "ordinal": 2,
+          "type_info": "Int4"
+        },
+        {
+          "name": "path",
+          "ordinal": 3,
+          "type_info": "Varchar"
+        },
+        {
+          "name": "recorded_at",
+          "ordinal": 4,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "source_id",
+          "ordinal": 5,
+          "type_info": "Int4"
+        },
+        {
+          "name": "record_trigger",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "kind",
+          "ordinal": 7,
+          "type_info": "Int4"
+        },
+        {
+          "name": "exists",
+          "ordinal": 8,
+          "type_info": "Bool"
+        },
+        {
+          "name": "size",
+          "ordinal": 9,
+          "type_info": "Int8"
+        },
+        {
+          "name": "modified_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 11,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "unix_mode",
+          "ordinal": 12,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT * FROM entries WHERE path = $1 AND version_id > $2"
+  },
+  "89ebf6bd15fb5119e89614580e8376ddee0ca620dcb6b500e61ff0c8a542ee22": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "version_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "parent_dir",
+          "ordinal": 2,
+          "type_info": "Int4"
+        },
+        {
+          "name": "path",
+          "ordinal": 3,
+          "type_info": "Varchar"
+        },
+        {
+          "name": "recorded_at",
+          "ordinal": 4,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "source_id",
+          "ordinal": 5,
+          "type_info": "Int4"
+        },
+        {
+          "name": "record_trigger",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "kind",
+          "ordinal": 7,
+          "type_info": "Int4"
+        },
+        {
+          "name": "exists",
+          "ordinal": 8,
+          "type_info": "Bool"
+        },
+        {
+          "name": "size",
+          "ordinal": 9,
+          "type_info": "Int8"
+        },
+        {
+          "name": "modified_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 11,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "unix_mode",
+          "ordinal": 12,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT * FROM entries WHERE version_id > $1"
+  },
   "dec994fa13b34ad5f3ad0e26effb7ba7f3819de32447339117a588fea5b5394c": {
     "describe": {
       "columns": [
