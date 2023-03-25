@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 pub type DateTime = chrono::DateTime<Utc>;
 
+pub const VERSION: u32 = 1;
+
 pub trait RequestVariant {
     type Response;
 }
@@ -33,35 +35,33 @@ pub enum Request {
     UploadContentChunk(UploadContentChunk),
 }
 
-#[derive(Debug, Serialize, Deserialize, From, Into)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct SourceId(pub i32);
 
-#[derive(Debug, Serialize, Deserialize, From, Into)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct EntryUpdateNumber(pub i64);
 
-#[derive(Debug, Serialize, Deserialize, From, Into)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct SnapshotId(pub i32);
 
-#[derive(Debug, Serialize, Deserialize, From, Into)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct EntryId(pub i64);
 
-#[derive(Debug, Serialize, Deserialize, From, Into)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct VersionId(pub i64);
 
-#[derive(Debug, Serialize, Deserialize, From, Into)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, From, Into)]
 pub struct ContentHash(pub Vec<u8>);
-
-#[derive(Debug, Serialize, Deserialize, From, Into)]
-pub struct ContentUploadId(pub i32);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Login {
+    pub version: u32,
     pub source_id: SourceId,
     pub secret: String,
 }
 response_type!(Login, ());
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RecordTrigger {
     Sync,
     Upload,
@@ -81,7 +81,7 @@ impl TryFrom<i32> for RecordTrigger {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EntryKind {
     File,
     Directory,
@@ -108,6 +108,27 @@ pub struct EntryVersionData {
     pub kind: EntryKind,
     pub exists: bool,
     pub content: Option<FileContent>,
+}
+
+impl EntryVersionData {
+    pub fn is_same(&self, update: &AddVersion) -> bool {
+        self.path == update.path && self.kind == update.kind && self.exists == update.exists && {
+            match (&self.content, &update.content) {
+                (Some(content), Some(update)) => {
+                    content.size == update.size
+                        && content.content_hash == update.content_hash
+                        && match (content.unix_mode, update.unix_mode) {
+                            (None, None) => true,
+                            (None, Some(_)) => false,
+                            (Some(_), None) => true,
+                            (Some(mode1), Some(mode2)) => mode1 == mode2,
+                        }
+                }
+                (None, None) => true,
+                _ => false,
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -163,6 +184,7 @@ pub struct AddVersion {
     pub path: String,
     pub record_trigger: RecordTrigger,
     pub kind: EntryKind,
+    pub exists: bool,
     pub content: Option<FileContent>,
 }
 response_type!(AddVersion, Option<VersionId>);

@@ -1,10 +1,14 @@
 #![allow(clippy::collapsible_else_if)]
 
+use std::marker::PhantomData;
+
 use anyhow::{bail, Result};
 use futures_util::{SinkExt, TryStreamExt};
+use rammingen_protocol::RequestVariant;
+use serde::Serialize;
 use sqlx::PgPool;
 use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 use tracing::{info, warn};
 
 use crate::handler::Handler;
@@ -46,14 +50,14 @@ async fn handle_connection(stream: TcpStream) -> Result<()> {
 
     let mut handler = Handler::new(PgPool::connect("todo").await?);
 
+    let mut closed = false;
     while let Some(message) = ws_stream.try_next().await? {
         match message {
             Message::Binary(data) => {
                 let request = bincode::deserialize(&data)?;
-                let (response, is_ok) = handler.handle(request).await;
-                ws_stream.send(Message::Binary(response)).await?;
-                if !is_ok {
-                    ws_stream.close(None).await?;
+                let mut ws_handle = WsHandle::new(&mut ws_stream, &mut closed);
+                handler.handle(request, &mut ws_handle).await?;
+                if closed {
                     break;
                 }
             }
@@ -67,4 +71,44 @@ async fn handle_connection(stream: TcpStream) -> Result<()> {
 
     info!("websocket connection terminated: {}", addr);
     Ok(())
+}
+
+pub struct WsHandle<'a, T> {
+    stream: &'a mut WebSocketStream<TcpStream>,
+    closed: &'a mut bool,
+    phantom: PhantomData<T>,
+}
+
+impl<'a> WsHandle<'a, ()> {
+    fn new(stream: &'a mut WebSocketStream<TcpStream>, closed: &'a mut bool) -> Self {
+        Self {
+            stream,
+            closed,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'a, T: Serialize> WsHandle<'a, T> {
+    fn for_request<Req: RequestVariant>(
+        &mut self,
+    ) -> WsHandle<'_, <Req as RequestVariant>::Response> {
+        WsHandle {
+            stream: self.stream,
+            closed: self.closed,
+            phantom: PhantomData,
+        }
+    }
+
+    async fn send(&mut self, message: &Result<T>) -> Result<()> {
+        let data = bincode::serialize(&message.as_ref().map_err(|e| e.to_string()))
+            .expect("bincode serialization failed");
+        self.stream.send(Message::Binary(data)).await?;
+        Ok(())
+    }
+    async fn close(&mut self) -> Result<()> {
+        *self.closed = true;
+        self.stream.close(None).await?;
+        Ok(())
+    }
 }

@@ -9,6 +9,8 @@ CREATE TABLE snapshots (
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
+CREATE SEQUENCE entry_update_numbers;
+
 CREATE TABLE entries (
     id BIGSERIAL PRIMARY KEY,
     update_number BIGINT NOT NULL,

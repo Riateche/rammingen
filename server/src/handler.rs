@@ -2,24 +2,20 @@ use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
 use futures_util::TryStreamExt;
 use rammingen_protocol::{
-    Entry, EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions, Login, Request,
-    RequestVariant, SourceId,
+    AddVersion, DateTime, Entry, EntryVersion, EntryVersionData, FileContent, GetEntries,
+    GetVersions, Login, Request, RequestVariant, SourceId,
 };
-use serde::Serialize;
-use sqlx::{query, types::time::OffsetDateTime, PgPool};
+use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool};
 use tracing::{info, warn};
+
+use crate::WsHandle;
 
 pub struct Handler {
     pool: PgPool,
     source_id: Option<SourceId>,
 }
 
-pub type Response<Request> = Result<<Request as RequestVariant>::Response>;
-
-fn serialize_response<T: Serialize>(value: &Result<T>) -> Vec<u8> {
-    bincode::serialize(&value.as_ref().map_err(|e| e.to_string()))
-        .expect("bincode serialization failed")
-}
+pub type Response<Request> = <Request as RequestVariant>::Response;
 
 macro_rules! convert_entry {
     ($row:expr) => {{
@@ -50,7 +46,7 @@ macro_rules! convert_version_data {
         let row = $row;
         EntryVersionData {
             path: row.path,
-            recorded_at: Utc.timestamp_nanos(row.recorded_at.unix_timestamp_nanos() as i64),
+            recorded_at: row.recorded_at.from_db(),
             source_id: row.source_id.into(),
             record_trigger: row.record_trigger.try_into()?,
             kind: row.kind.try_into()?,
@@ -59,7 +55,7 @@ macro_rules! convert_version_data {
                 (row.modified_at, row.size, row.content_hash)
             {
                 Some(FileContent {
-                    modified_at: Utc.timestamp_nanos(modified_at.unix_timestamp_nanos() as i64),
+                    modified_at: modified_at.from_db(),
                     size: size.try_into()?,
                     content_hash: content_hash.into(),
                     unix_mode: row.unix_mode.map(TryInto::try_into).transpose()?,
@@ -79,43 +75,78 @@ impl Handler {
         }
     }
 
-    pub async fn handle(&mut self, request: Request) -> (Vec<u8>, bool) {
+    fn check_path(&self, path: &str) -> Result<()> {
+        if path.contains("//") {
+            bail!("path cannot contain '//'");
+        }
+        if !path.starts_with('/') {
+            bail!("path must start with '/'");
+        }
+        if path.ends_with('/') {
+            bail!("path must not end with '/'");
+        }
+        Ok(())
+    }
+
+    pub async fn handle(&mut self, request: Request, ws: &mut WsHandle<'_, ()>) -> Result<()> {
         match request {
             Request::Login(request) => {
                 let result = self.login(request).await;
-                (serialize_response(&result), result.is_ok())
+                ws.for_request::<Login>().send(&result).await?;
+                if result.is_err() {
+                    ws.close().await?;
+                }
             }
             request => {
                 if self.source_id.is_none() {
                     warn!("received another message before login");
-                    (Vec::new(), false)
+                    ws.close().await?;
                 } else {
                     macro_rules! handle {
-                        ($($variant:ident => $handler:ident,)*) => {
+                        (
+                            $($variant:ident => $handler:ident,)*
+                            @streams:
+                            $($stream_variant:ident => $stream_handler:ident,)*
+                        ) => {
                             match request {
                                 $(
                                     Request::$variant(request) => {
-                                        serialize_response(&self.$handler(request).await)
+                                        let mut ws = ws.for_request::<$variant>();
+                                        ws.send(&self.$handler(request).await).await?;
                                     }
                                 )*
+                                $(
+                                    Request::$stream_variant(request) => {
+                                        let mut ws = ws.for_request::<$stream_variant>();
+                                        match self.$stream_handler(request, &mut ws).await {
+                                            Ok(()) => ws.send(&Ok(None)).await?,
+                                            Err(err) => ws.send(&Err(err)).await?,
+                                        }
+                                    }
+                                )*
+                                Request::Login(_) => unreachable!(),
                                 _ => todo!(),
                             }
 
                         }
                     }
 
-                    let response = handle! {
-                        Login => login,
+                    handle! {
+                        AddVersion => add_version,
+                        @streams:
                         GetEntries => get_entries,
                         GetVersions => get_versions,
-                    };
-                    (response, true)
+                    }
                 }
             }
         }
+        Ok(())
     }
 
-    async fn login(&mut self, request: Login) -> Response<Login> {
+    async fn login(&mut self, request: Login) -> Result<Response<Login>> {
+        if request.version != rammingen_protocol::VERSION {
+            bail!("version mismatch");
+        }
         let row = query!(
             "SELECT name FROM sources WHERE id = $1 AND secret = $2",
             request.source_id.0,
@@ -133,13 +164,148 @@ impl Handler {
         Ok(())
     }
 
-    async fn get_versions(&mut self, request: GetVersions) -> Response<GetVersions> {
+    async fn add_version(&mut self, request: AddVersion) -> Result<Response<AddVersion>> {
+        self.check_path(&request.path)?;
+        let mut tx = self.pool.begin().await?;
+        let entry = query!("SELECT * FROM entries WHERE path = $1", request.path)
+            .fetch_optional(&mut tx)
+            .await?;
+        let size_db = request
+            .content
+            .as_ref()
+            .map(|c| i64::try_from(c.size))
+            .transpose()?;
+        let modified_at_db = request
+            .content
+            .as_ref()
+            .map(|c| c.modified_at.to_db())
+            .transpose()?;
+        let content_hash_db = request.content.as_ref().map(|c| &c.content_hash.0);
+        let (unix_mode_db, entry_id) = if let Some(entry) = entry {
+            let entry = convert_entry!(entry);
+            if entry.data.is_same(&request) {
+                return Ok(None);
+            }
+            let unix_mode_db = request
+                .content
+                .as_ref()
+                .and_then(|c| c.unix_mode)
+                .or_else(|| entry.data.content.as_ref().and_then(|ec| ec.unix_mode))
+                .map(i64::from);
+            query!(
+                "UPDATE entries
+                SET update_number = nextval('entry_update_numbers'),
+                    recorded_at = now(),
+                    source_id = $1,
+                    record_trigger = $2,
+                    kind = $3,
+                    exists = $4,
+                    size = $5,
+                    modified_at = $6,
+                    content_hash = $7,
+                    unix_mode = $8
+                WHERE id = $9",
+                self.source_id.unwrap().0,
+                request.record_trigger as i32,
+                request.kind as i32,
+                request.exists,
+                size_db,
+                modified_at_db,
+                content_hash_db,
+                unix_mode_db,
+                entry.id.0,
+            )
+            .execute(&mut tx)
+            .await?;
+            (unix_mode_db, entry.id)
+        } else {
+            let unix_mode_db = request
+                .content
+                .as_ref()
+                .and_then(|c| c.unix_mode)
+                .map(i64::from);
+            let entry_id = query_scalar!(
+                "INSERT INTO entries (
+                    update_number,
+                    recorded_at,
+                    parent_dir,
+                    path,
+                    source_id,
+                    record_trigger,
+                    kind,
+                    exists,
+                    size,
+                    modified_at,
+                    content_hash,
+                    unix_mode
+                ) VALUES (
+                    nextval('entry_update_numbers'), now(),
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+                ) RETURNING id",
+                None::<i64>, // TODO: parent dir
+                request.path,
+                self.source_id.unwrap().0,
+                request.record_trigger as i32,
+                request.kind as i32,
+                request.exists,
+                size_db,
+                modified_at_db,
+                content_hash_db,
+                unix_mode_db,
+            )
+            .fetch_one(&mut tx)
+            .await?;
+            (unix_mode_db, entry_id.into())
+        };
+
+        let version_id = query_scalar!(
+            "INSERT INTO entry_versions (
+                recorded_at,
+                snapshot_id,
+                entry_id,
+                path,
+                source_id,
+                record_trigger,
+                kind,
+                exists,
+                size,
+                modified_at,
+                content_hash,
+                unix_mode
+            ) VALUES (
+                now(), NULL,
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+            ) RETURNING id",
+            entry_id.0,
+            request.path,
+            self.source_id.unwrap().0,
+            request.record_trigger as i32,
+            request.kind as i32,
+            request.exists,
+            size_db,
+            modified_at_db,
+            content_hash_db,
+            unix_mode_db,
+        )
+        .fetch_one(&mut tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(Some(version_id.into()))
+    }
+
+    async fn get_versions(
+        &mut self,
+        request: GetVersions,
+        ws: &mut WsHandle<'_, Response<GetVersions>>,
+    ) -> Result<()> {
+        self.check_path(&request.path)?;
         let mut output = Vec::new();
         let mut rows =
             query!(
                 "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1",
                 request.path,
-                OffsetDateTime::from_unix_timestamp_nanos(request.recorded_at.timestamp_nanos().into())?,
+                request.recorded_at.to_db()?,
             ).fetch(&self.pool);
 
         while let Some(row) = rows.try_next().await? {
@@ -154,19 +320,23 @@ impl Handler {
                 WHERE path LIKE $1 AND recorded_at <= $2
             ) t WHERE row_number = 1",
             format!("{}/", request.path),
-            OffsetDateTime::from_unix_timestamp_nanos(
-                request.recorded_at.timestamp_nanos().into()
-            )?,
+            request.recorded_at.to_db()?,
         )
         .fetch(&self.pool);
 
         while let Some(row) = rows2.try_next().await? {
             output.push(convert_entry_version!(row));
         }
-        Ok(Some(output))
+
+        ws.send(&Ok(Some(output))).await?;
+        Ok(())
     }
 
-    async fn get_entries(&mut self, request: GetEntries) -> Response<GetEntries> {
+    async fn get_entries(
+        &mut self,
+        request: GetEntries,
+        ws: &mut WsHandle<'_, Response<GetEntries>>,
+    ) -> Result<()> {
         let mut output = Vec::new();
         let mut rows = query!(
             "SELECT * FROM entries WHERE update_number > $1",
@@ -177,6 +347,36 @@ impl Handler {
             output.push(convert_entry!(row));
         }
 
-        Ok(Some(output))
+        ws.send(&Ok(Some(output))).await?;
+        Ok(())
+    }
+}
+
+trait ToDb {
+    type Output;
+    fn to_db(&self) -> Self::Output;
+}
+
+impl ToDb for DateTime {
+    type Output = Result<OffsetDateTime>;
+
+    fn to_db(&self) -> Self::Output {
+        Ok(OffsetDateTime::from_unix_timestamp_nanos(
+            self.timestamp_nanos().into(),
+        )?)
+    }
+}
+
+trait FromDb {
+    type Output;
+    #[allow(clippy::wrong_self_convention)]
+    fn from_db(&self) -> Self::Output;
+}
+
+impl FromDb for OffsetDateTime {
+    type Output = DateTime;
+
+    fn from_db(&self) -> Self::Output {
+        Utc.timestamp_nanos(self.unix_timestamp_nanos() as i64)
     }
 }
