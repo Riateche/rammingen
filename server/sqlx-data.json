@@ -1,6 +1,6 @@
 {
   "db": "PostgreSQL",
-  "85566d76874f77a7edae853e3db0502dc2e08e1c9da9201d36b072a96f7f0248": {
+  "428354025985a36da5f4f7d8d41ba0f2ec3d37f76eff081a2be7fab0a49a4ef7": {
     "describe": {
       "columns": [
         {
@@ -9,12 +9,111 @@
           "type_info": "Int8"
         },
         {
-          "name": "version_id",
+          "name": "entry_id",
           "ordinal": 1,
           "type_info": "Int8"
         },
         {
-          "name": "parent_dir",
+          "name": "snapshot_id",
+          "ordinal": 2,
+          "type_info": "Int4"
+        },
+        {
+          "name": "path",
+          "ordinal": 3,
+          "type_info": "Varchar"
+        },
+        {
+          "name": "recorded_at",
+          "ordinal": 4,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "source_id",
+          "ordinal": 5,
+          "type_info": "Int4"
+        },
+        {
+          "name": "record_trigger",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "kind",
+          "ordinal": 7,
+          "type_info": "Int4"
+        },
+        {
+          "name": "exists",
+          "ordinal": 8,
+          "type_info": "Bool"
+        },
+        {
+          "name": "size",
+          "ordinal": 9,
+          "type_info": "Int8"
+        },
+        {
+          "name": "modified_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 11,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "unix_mode",
+          "ordinal": 12,
+          "type_info": "Int8"
+        },
+        {
+          "name": "row_number",
+          "ordinal": 13,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "SELECT * FROM (\n                SELECT *,\n                row_number() OVER(PARTITION BY entry_id ORDER BY recorded_at DESC) AS row_number\n                FROM entry_versions\n                WHERE path LIKE $1 AND recorded_at <= $2\n            ) t WHERE row_number = 1"
+  },
+  "6323a5459e04d4b858eedc033932c75f84f47a28eeaa078316094e10943b5aa3": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "entry_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "snapshot_id",
           "ordinal": 2,
           "type_info": "Int4"
         },
@@ -87,13 +186,34 @@
       "parameters": {
         "Left": [
           "Text",
-          "Int8"
+          "Timestamptz"
         ]
       }
     },
-    "query": "SELECT * FROM entries WHERE path = $1 AND version_id > $2"
+    "query": "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1"
   },
-  "89ebf6bd15fb5119e89614580e8376ddee0ca620dcb6b500e61ff0c8a542ee22": {
+  "dec994fa13b34ad5f3ad0e26effb7ba7f3819de32447339117a588fea5b5394c": {
+    "describe": {
+      "columns": [
+        {
+          "name": "name",
+          "ordinal": 0,
+          "type_info": "Varchar"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT name FROM sources WHERE id = $1 AND secret = $2"
+  },
+  "ff53321c520fe0e9ad62b4803179769db1833d3498e0ed789e7c50c599f7d575": {
     "describe": {
       "columns": [
         {
@@ -102,14 +222,14 @@
           "type_info": "Int8"
         },
         {
-          "name": "version_id",
+          "name": "update_number",
           "ordinal": 1,
           "type_info": "Int8"
         },
         {
           "name": "parent_dir",
           "ordinal": 2,
-          "type_info": "Int4"
+          "type_info": "Int8"
         },
         {
           "name": "path",
@@ -183,27 +303,6 @@
         ]
       }
     },
-    "query": "SELECT * FROM entries WHERE version_id > $1"
-  },
-  "dec994fa13b34ad5f3ad0e26effb7ba7f3819de32447339117a588fea5b5394c": {
-    "describe": {
-      "columns": [
-        {
-          "name": "name",
-          "ordinal": 0,
-          "type_info": "Varchar"
-        }
-      ],
-      "nullable": [
-        true
-      ],
-      "parameters": {
-        "Left": [
-          "Int4",
-          "Text"
-        ]
-      }
-    },
-    "query": "SELECT name FROM sources WHERE id = $1 AND secret = $2"
+    "query": "SELECT * FROM entries WHERE update_number > $1"
   }
 }

@@ -1,4 +1,6 @@
+use anyhow::bail;
 use chrono::Utc;
+use derive_more::{From, Into};
 use serde::{Deserialize, Serialize};
 
 pub type DateTime = chrono::DateTime<Utc>;
@@ -17,7 +19,9 @@ macro_rules! response_type {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
     Login(Login),
+    GetEntries(GetEntries),
     GetVersions(GetVersions),
+    GetAllVersions(GetAllVersions),
     AddVersion(AddVersion),
     ResetVersion(ResetVersion),
     MovePath(MovePath),
@@ -29,19 +33,25 @@ pub enum Request {
     UploadContentChunk(UploadContentChunk),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, From, Into)]
 pub struct SourceId(pub i32);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, From, Into)]
+pub struct EntryUpdateNumber(pub i64);
+
+#[derive(Debug, Serialize, Deserialize, From, Into)]
 pub struct SnapshotId(pub i32);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, From, Into)]
+pub struct EntryId(pub i64);
+
+#[derive(Debug, Serialize, Deserialize, From, Into)]
 pub struct VersionId(pub i64);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, From, Into)]
 pub struct ContentHash(pub Vec<u8>);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, From, Into)]
 pub struct ContentUploadId(pub i32);
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -52,55 +62,107 @@ pub struct Login {
 response_type!(Login, ());
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum FileRecordTrigger {
+pub enum RecordTrigger {
     Sync,
     Upload,
     Reset,
 }
 
+impl TryFrom<i32> for RecordTrigger {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Sync),
+            1 => Ok(Self::Upload),
+            2 => Ok(Self::Reset),
+            _ => bail!("invalid value for RecordTrigger: {}", value),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
-pub enum FileKind {
+pub enum EntryKind {
     File,
     Directory,
 }
 
+impl TryFrom<i32> for EntryKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::File),
+            1 => Ok(Self::Directory),
+            _ => bail!("invalid value for EntryKind: {}", value),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FileVersion {
-    pub version_id: VersionId,
+pub struct EntryVersionData {
     pub path: String,
     pub recorded_at: DateTime,
     pub source_id: SourceId,
-    pub record_trigger: FileRecordTrigger,
-    pub parent_dir: Option<VersionId>,
-    pub snapshot_id: SnapshotId,
-    pub kind: FileKind,
+    pub record_trigger: RecordTrigger,
+    pub kind: EntryKind,
+    pub exists: bool,
     pub content: Option<FileContent>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct Entry {
+    pub id: EntryId,
+    pub update_number: EntryUpdateNumber,
+    pub parent_dir: Option<EntryId>,
+    pub data: EntryVersionData,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EntryVersion {
+    pub id: VersionId,
+    pub entry_id: EntryId,
+    pub snapshot_id: Option<SnapshotId>,
+    pub data: EntryVersionData,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileContent {
-    pub modified_time: DateTime,
+    pub modified_at: DateTime,
     pub size: u64,
     pub content_hash: ContentHash,
     pub unix_mode: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct GetVersions {
+pub struct GetEntries {
     // for incremental updates
-    pub last_version_id: Option<VersionId>,
-    // send None to get latest versions
-    pub recorded_at: Option<DateTime>,
-    // if supplied, only get this path and nested paths
-    pub path: Option<String>,
+    pub last_update_number: Option<EntryUpdateNumber>,
 }
-response_type!(GetVersions, Option<Vec<FileVersion>>); // TODO: streaming
+response_type!(GetEntries, Option<Vec<Entry>>); // TODO: streaming
+
+// Returns the closest version to the specified date
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetVersions {
+    pub recorded_at: DateTime,
+    // if it's a dir, return a version for each nested path
+    pub path: String,
+}
+response_type!(GetVersions, Option<Vec<EntryVersion>>); // TODO: streaming
+
+// Returns all versions
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetAllVersions {
+    // if it's a dir, return all versions for each nested path
+    pub path: String,
+}
+response_type!(GetAllVersions, Option<Vec<EntryVersion>>); // TODO: streaming
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersion {
     pub path: String,
-    pub record_trigger: FileRecordTrigger,
-    pub kind: FileKind,
+    pub record_trigger: RecordTrigger,
+    pub kind: EntryKind,
     pub content: Option<FileContent>,
 }
 response_type!(AddVersion, Option<VersionId>);
