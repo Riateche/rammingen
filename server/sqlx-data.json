@@ -221,6 +221,30 @@
     },
     "query": "INSERT INTO entry_versions (\n                recorded_at,\n                snapshot_id,\n                entry_id,\n                path,\n                source_id,\n                record_trigger,\n                kind,\n                exists,\n                size,\n                modified_at,\n                content_hash,\n                unix_mode\n            ) VALUES (\n                now(), NULL,\n                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10\n            ) RETURNING id"
   },
+  "96f4791e4c98af9f2f4b833adc02acdac0ebf6a1a6790dff65a30f6255c4bafa": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "secret",
+          "ordinal": 1,
+          "type_info": "Varchar"
+        }
+      ],
+      "nullable": [
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT id, secret FROM sources"
+  },
   "9b235d4f3a6d5352d92090df8d57c8f43fc2feb36a427349806f61be6a2d4465": {
     "describe": {
       "columns": [],
@@ -343,7 +367,7 @@
         }
       ],
       "nullable": [
-        true
+        false
       ],
       "parameters": {
         "Left": [

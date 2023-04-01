@@ -1,12 +1,24 @@
 #![allow(clippy::collapsible_else_if)]
 
-use std::{env, marker::PhantomData, path::PathBuf};
+use std::{
+    collections::HashMap, convert::Infallible, env, marker::PhantomData, net::SocketAddr,
+    path::PathBuf, sync::Arc,
+};
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use futures_util::{SinkExt, TryStreamExt};
-use rammingen_protocol::RequestVariant;
+use http_body_util::Full;
+use hyper::{
+    body::{self, Bytes},
+    header::AUTHORIZATION,
+    server::conn::http1,
+    service::service_fn,
+    Request, Response, StatusCode,
+};
+use rammingen_protocol::{RequestVariant, SourceId};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{query, PgPool};
+use storage::Storage;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 use tracing::{info, warn};
@@ -20,11 +32,14 @@ pub mod storage;
 struct Config {
     database_url: String,
     storage_path: PathBuf,
+    bind_addr: SocketAddr,
 }
 
+#[derive(Debug, Clone)]
 struct Context {
     db_pool: PgPool,
-    storage_path: PathBuf,
+    storage: Arc<Storage>,
+    sources: Arc<HashMap<String, SourceId>>,
 }
 
 #[tokio::main]
@@ -32,26 +47,78 @@ async fn main() -> Result<()> {
     let config_path = env::args().nth(1).expect("missing config arg");
     let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
     let db_pool = PgPool::connect(&config.database_url).await?;
+    let sources = query!("SELECT id, secret FROM sources")
+        .fetch_all(&db_pool)
+        .await?;
+
+    let ctx = Context {
+        db_pool: PgPool::connect(&config.database_url).await?,
+        storage: Arc::new(Storage::new(config.storage_path)?),
+        sources: Arc::new(
+            sources
+                .into_iter()
+                .map(|row| (row.secret, SourceId(row.id)))
+                .collect(),
+        ),
+    };
 
     tracing_subscriber::fmt::init();
-    let addr = "127.0.0.1:8080".to_string();
 
     // Create the event loop and TCP listener we'll accept connections on.
-    let listener = TcpListener::bind(&addr).await?;
-    info!("Listening on: {}", addr);
+    let listener = TcpListener::bind(&config.bind_addr).await?;
+    info!("Listening on: {}", config.bind_addr);
 
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
+                let ctx = ctx.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = handle_connection(stream).await {
-                        warn!(%err, "handle_connection failed")
+                    if let Err(err) = http1::Builder::new()
+                        .keep_alive(true)
+                        .serve_connection(
+                            stream,
+                            service_fn(move |req| handle_request(ctx.clone(), req)),
+                        )
+                        .await
+                    {
+                        warn!(%err, "error while serving HTTP connection");
                     }
                 });
             }
             Err(err) => warn!(%err, "failed to accept"),
         }
     }
+}
+
+async fn handle_request(
+    ctx: Context,
+    request: Request<body::Incoming>,
+) -> Result<Response<Full<Bytes>>, Infallible> {
+    match auth(&ctx, &request) {
+        Ok(source_id) => Ok(Response::new(Full::new(Bytes::from("Hello World!\n")))),
+        Err(err) => {
+            warn!(%err, "auth error");
+            Ok(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Full::new(Bytes::from("UNAUTHORIZED\n")))
+                .unwrap())
+        }
+    }
+}
+
+fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<SourceId> {
+    let auth = request
+        .headers()
+        .get(AUTHORIZATION)
+        .ok_or_else(|| anyhow!("missing authorization header"))?
+        .to_str()?;
+    let secret = auth
+        .strip_prefix("Bearer ")
+        .ok_or_else(|| anyhow!("authorization header is not Bearer"))?;
+    ctx.sources
+        .get(secret)
+        .copied()
+        .ok_or_else(|| anyhow!("invalid bearer token"))
 }
 
 async fn handle_connection(stream: TcpStream) -> Result<()> {

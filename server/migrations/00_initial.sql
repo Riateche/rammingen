@@ -1,7 +1,7 @@
 CREATE TABLE sources (
     id SERIAL PRIMARY KEY,
-    name VARCHAR,
-    secret VARCHAR
+    name VARCHAR NOT NULL,
+    secret VARCHAR NOT NULL
 );
 
 CREATE TABLE snapshots (

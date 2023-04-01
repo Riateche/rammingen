@@ -3,11 +3,12 @@ use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use fs_err::{create_dir_all, remove_file, rename, File};
 use rammingen_protocol::ContentHash;
 use std::{
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
 };
-use tempfile::{NamedTempFile, TempDir};
+use tempfile::NamedTempFile;
 
+#[derive(Debug)]
 pub struct Storage {
     root: PathBuf,
     tmp: PathBuf,
@@ -64,6 +65,9 @@ impl Storage {
 
 #[test]
 fn basic() {
+    use std::io::Read;
+    use tempfile::TempDir;
+
     let dir = TempDir::new().unwrap();
     let storage = Storage::new(dir.path().into()).unwrap();
     let hash = ContentHash((0..64).collect());
