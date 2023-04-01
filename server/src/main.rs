@@ -1,7 +1,8 @@
 #![allow(clippy::collapsible_else_if)]
 
 use std::{
-    collections::HashMap, convert::Infallible, env, net::SocketAddr, path::PathBuf, sync::Arc,
+    collections::HashMap, convert::Infallible, env, net::SocketAddr, path::PathBuf, str::FromStr,
+    sync::Arc,
 };
 
 use anyhow::{anyhow, Result};
@@ -15,7 +16,7 @@ use hyper::{
     Method, Request, Response, StatusCode,
 };
 use rammingen_protocol::{
-    RequestToResponse, RequestToStreamingResponse, SourceId, StreamingResponseItem,
+    ContentHash, RequestToResponse, RequestToStreamingResponse, SourceId, StreamingResponseItem,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sqlx::{query, PgPool};
@@ -27,6 +28,7 @@ use tokio::{
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{info, warn};
 
+mod content_streaming;
 pub mod handler;
 pub mod storage;
 
@@ -100,7 +102,7 @@ async fn handle_request(
         Ok(Response::builder()
             .status(code)
             .body(Full::new(Bytes::from(code.as_str().to_string())).boxed())
-            .unwrap())
+            .expect("response builder failed"))
     })
 }
 
@@ -126,6 +128,18 @@ async fn try_handle_request(
         wrap_stream(ctx, request, handler::get_versions).await
     } else if path == "/versions" && request.method() == Method::POST {
         wrap_request(ctx, request, handler::add_version).await
+    } else if let Some(hash) = path.strip_prefix("/content/") {
+        let hash = ContentHash::from_str(hash).map_err(|err| {
+            warn!(%err, "invalid hash");
+            StatusCode::BAD_REQUEST
+        })?;
+        if request.method() == Method::PUT {
+            content_streaming::upload(ctx, request, &hash).await
+        } else if request.method() == Method::GET {
+            content_streaming::download(ctx, &hash).await
+        } else {
+            Err(StatusCode::NOT_FOUND)
+        }
     } else {
         Err(StatusCode::NOT_FOUND)
     }

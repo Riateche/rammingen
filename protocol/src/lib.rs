@@ -1,4 +1,7 @@
+use std::{fmt, str::FromStr};
+
 use anyhow::bail;
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use derive_more::{From, Into};
 use serde::{Deserialize, Serialize};
@@ -65,6 +68,24 @@ pub struct VersionId(pub i64);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, From, Into)]
 pub struct ContentHash(pub Vec<u8>);
+
+impl fmt::Display for ContentHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", BASE64_URL_SAFE_NO_PAD.encode(&self.0))
+    }
+}
+
+impl FromStr for ContentHash {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = BASE64_URL_SAFE_NO_PAD.decode(s)?;
+        if bytes.len() != 64 {
+            bail!("invalid hash length");
+        }
+        Ok(Self(bytes))
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Login {
