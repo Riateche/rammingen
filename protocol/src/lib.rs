@@ -7,20 +7,33 @@ pub type DateTime = chrono::DateTime<Utc>;
 
 pub const VERSION: u32 = 1;
 
-pub trait RequestVariant {
+pub trait RequestToResponse {
     type Response;
 }
 macro_rules! response_type {
     ($request:ty, $response:ty) => {
-        impl RequestVariant for $request {
+        impl RequestToResponse for $request {
             type Response = $response;
         }
     };
 }
 
+pub trait RequestToStreamingResponse {
+    type ResponseItem;
+}
+macro_rules! streaming_response_type {
+    ($request:ty, $response:ty) => {
+        impl RequestToStreamingResponse for $request {
+            type ResponseItem = $response;
+        }
+    };
+}
+
+pub type Response<Request> = <Request as RequestToResponse>::Response;
+pub type StreamingResponseItem<Request> = <Request as RequestToStreamingResponse>::ResponseItem;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
-    Login(Login),
     GetEntries(GetEntries),
     GetVersions(GetVersions),
     GetAllVersions(GetAllVersions),
@@ -160,7 +173,7 @@ pub struct GetEntries {
     // for incremental updates
     pub last_update_number: Option<EntryUpdateNumber>,
 }
-response_type!(GetEntries, Option<Vec<Entry>>); // TODO: streaming
+streaming_response_type!(GetEntries, Vec<Entry>);
 
 // Returns the closest version to the specified date
 #[derive(Debug, Serialize, Deserialize)]
@@ -169,7 +182,7 @@ pub struct GetVersions {
     // if it's a dir, return a version for each nested path
     pub path: String,
 }
-response_type!(GetVersions, Option<Vec<EntryVersion>>); // TODO: streaming
+streaming_response_type!(GetVersions, Vec<EntryVersion>);
 
 // Returns all versions
 #[derive(Debug, Serialize, Deserialize)]
@@ -177,7 +190,7 @@ pub struct GetAllVersions {
     // if it's a dir, return all versions for each nested path
     pub path: String,
 }
-response_type!(GetAllVersions, Option<Vec<EntryVersion>>); // TODO: streaming
+streaming_response_type!(GetAllVersions, Vec<EntryVersion>);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersion {

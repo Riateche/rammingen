@@ -1,12 +1,11 @@
 #![allow(clippy::collapsible_else_if)]
 
 use std::{
-    collections::HashMap, convert::Infallible, env, marker::PhantomData, net::SocketAddr,
-    path::PathBuf, sync::Arc,
+    collections::HashMap, convert::Infallible, env, net::SocketAddr, path::PathBuf, sync::Arc,
 };
 
-use anyhow::{anyhow, bail, Result};
-use futures_util::{FutureExt, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
+use anyhow::{anyhow, Result};
+use futures_util::{Future, StreamExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
     body::{self, Bytes, Frame},
@@ -15,20 +14,18 @@ use hyper::{
     service::service_fn,
     Method, Request, Response, StatusCode,
 };
-use rammingen_protocol::{RequestVariant, SourceId};
+use rammingen_protocol::{
+    RequestToResponse, RequestToStreamingResponse, SourceId, StreamingResponseItem,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sqlx::{query, PgPool};
 use storage::Storage;
-use stream_generator::generate_try_stream;
 use tokio::{
-    net::{TcpListener, TcpStream},
-    sync::mpsc,
+    net::TcpListener,
+    sync::mpsc::{self, Sender},
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 use tracing::{info, warn};
-
-use crate::handler::Handler;
 
 pub mod handler;
 pub mod storage;
@@ -124,21 +121,65 @@ async fn try_handle_request(
 
     let path = request.uri().path();
     if path == "/entries" && request.method() == Method::GET {
-        //let request = match bincode::deserialize(bytes)
-        let (tx, rx) = mpsc::channel(5);
-        let request = parse_request(request).await?;
-        tokio::spawn(async move {
-            if let Err(err) = handler::get_entries(ctx, request, tx.clone()).await {
-                let _ = tx.send(Err(err)).await;
-            }
-        });
-
-        Ok(Response::new(BodyExt::boxed(StreamBody::new(
-            ReceiverStream::new(rx).map(serialize_response),
-        ))))
+        wrap_stream(ctx, request, handler::get_entries).await
+    } else if path == "/versions" && request.method() == Method::GET {
+        wrap_stream(ctx, request, handler::get_versions).await
+    } else if path == "/versions" && request.method() == Method::POST {
+        wrap_request(ctx, request, handler::add_version).await
     } else {
         Err(StatusCode::NOT_FOUND)
     }
+}
+
+async fn wrap_request<T, F, Fut>(
+    ctx: handler::Context,
+    request: Request<body::Incoming>,
+    f: F,
+) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode>
+where
+    T: RequestToResponse + DeserializeOwned,
+    <T as RequestToResponse>::Response: Serialize,
+    F: FnOnce(handler::Context, T) -> Fut,
+    Fut: Future<Output = anyhow::Result<<T as RequestToResponse>::Response>>,
+{
+    let request = parse_request(request).await?;
+    let response = f(ctx, request).await;
+    Ok(Response::new(BodyExt::boxed(Full::new(
+        serialize_response(response),
+    ))))
+}
+
+async fn wrap_stream<F, Fut, T>(
+    ctx: handler::Context,
+    request: Request<body::Incoming>,
+    f: F,
+) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode>
+where
+    T: RequestToStreamingResponse + DeserializeOwned + Send + 'static,
+    StreamingResponseItem<T>: Serialize + Send,
+    F: FnOnce(handler::Context, T, Sender<anyhow::Result<Option<StreamingResponseItem<T>>>>) -> Fut
+        + Send
+        + 'static,
+    Fut: Future<Output = anyhow::Result<()>> + Send,
+{
+    let (tx, rx) = mpsc::channel(5);
+    let request = parse_request::<T>(request).await?;
+    tokio::spawn(async move {
+        match f(ctx, request, tx.clone()).await {
+            Ok(()) => {
+                let _ = tx.send(Ok(None)).await;
+            }
+            Err(err) => {
+                let _ = tx.send(Err(err)).await;
+            }
+        }
+    });
+
+    Ok(Response::new(BodyExt::boxed(StreamBody::new(
+        ReceiverStream::new(rx)
+            .map(serialize_response)
+            .map(|bytes| Ok(Frame::data(bytes))),
+    ))))
 }
 
 async fn parse_request<T: DeserializeOwned>(
@@ -159,13 +200,13 @@ async fn parse_request<T: DeserializeOwned>(
     })
 }
 
-fn serialize_response<T: Serialize>(data: anyhow::Result<T>) -> Result<Frame<Bytes>, Infallible> {
-    let data = bincode::serialize(&data.map_err(|err| {
+fn serialize_response<T: Serialize>(data: anyhow::Result<T>) -> Bytes {
+    bincode::serialize(&data.map_err(|err| {
         warn!(%err, "handler error");
         err.to_string()
     }))
-    .expect("bincode serialization failed");
-    Ok(Frame::data(data.into()))
+    .expect("bincode serialization failed")
+    .into()
 }
 
 fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<SourceId> {
@@ -181,79 +222,4 @@ fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<Sour
         .get(secret)
         .copied()
         .ok_or_else(|| anyhow!("invalid bearer token"))
-}
-
-async fn handle_connection(stream: TcpStream) -> Result<()> {
-    let addr = stream.peer_addr()?;
-    info!("new connection: {}", addr);
-
-    let mut ws_stream = tokio_tungstenite::accept_async(stream)
-        .await
-        .expect("Error during the websocket handshake occurred");
-
-    info!("websocket connection established: {}", addr);
-
-    let mut handler = Handler::new(PgPool::connect("todo").await?);
-
-    let mut closed = false;
-    while let Some(message) = ws_stream.try_next().await? {
-        match message {
-            Message::Binary(data) => {
-                let request = bincode::deserialize(&data)?;
-                let mut ws_handle = WsHandle::new(&mut ws_stream, &mut closed);
-                handler.handle(request, &mut ws_handle).await?;
-                if closed {
-                    break;
-                }
-            }
-            Message::Ping(ping) => {
-                ws_stream.send(Message::Pong(ping)).await?;
-            }
-            Message::Text(_) => bail!("unexpected text message"),
-            Message::Pong(_) | Message::Close(_) | Message::Frame(_) => {}
-        }
-    }
-
-    info!("websocket connection terminated: {}", addr);
-    Ok(())
-}
-
-pub struct WsHandle<'a, T> {
-    stream: &'a mut WebSocketStream<TcpStream>,
-    closed: &'a mut bool,
-    phantom: PhantomData<T>,
-}
-
-impl<'a> WsHandle<'a, ()> {
-    fn new(stream: &'a mut WebSocketStream<TcpStream>, closed: &'a mut bool) -> Self {
-        Self {
-            stream,
-            closed,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<'a, T: Serialize> WsHandle<'a, T> {
-    fn for_request<Req: RequestVariant>(
-        &mut self,
-    ) -> WsHandle<'_, <Req as RequestVariant>::Response> {
-        WsHandle {
-            stream: self.stream,
-            closed: self.closed,
-            phantom: PhantomData,
-        }
-    }
-
-    async fn send(&mut self, message: &Result<T>) -> Result<()> {
-        let data = bincode::serialize(&message.as_ref().map_err(|e| e.to_string()))
-            .expect("bincode serialization failed");
-        self.stream.send(Message::Binary(data)).await?;
-        Ok(())
-    }
-    async fn close(&mut self) -> Result<()> {
-        *self.closed = true;
-        self.stream.close(None).await?;
-        Ok(())
-    }
 }

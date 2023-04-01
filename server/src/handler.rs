@@ -2,24 +2,15 @@ use std::{mem, sync::Arc};
 
 use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
-use futures_util::{Stream, TryStreamExt};
+use futures_util::TryStreamExt;
 use rammingen_protocol::{
     AddVersion, DateTime, Entry, EntryVersion, EntryVersionData, FileContent, GetEntries,
-    GetVersions, Login, Request, RequestVariant, SourceId,
+    GetVersions, Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool};
-use stream_generator::generate_try_stream;
 use tokio::sync::mpsc::Sender;
-use tracing::{info, warn};
 
-use crate::{storage::Storage, WsHandle};
-
-pub struct Handler {
-    pool: PgPool,
-    source_id: Option<SourceId>,
-}
-
-pub type Response<Request> = <Request as RequestVariant>::Response;
+use crate::storage::Storage;
 
 const ITEMS_PER_CHUNK: usize = 1024;
 
@@ -80,202 +71,84 @@ macro_rules! convert_version_data {
     }};
 }
 
-impl Handler {
-    pub fn new(pool: PgPool) -> Self {
-        Self {
-            pool,
-            source_id: None,
-        }
+fn check_path(path: &str) -> Result<()> {
+    if path.contains("//") {
+        bail!("path cannot contain '//'");
     }
-
-    fn check_path(&self, path: &str) -> Result<()> {
-        if path.contains("//") {
-            bail!("path cannot contain '//'");
-        }
-        if !path.starts_with('/') {
-            bail!("path must start with '/'");
-        }
-        if path.ends_with('/') {
-            bail!("path must not end with '/'");
-        }
-        Ok(())
+    if !path.starts_with('/') {
+        bail!("path must start with '/'");
     }
-
-    pub async fn handle(&mut self, request: Request, ws: &mut WsHandle<'_, ()>) -> Result<()> {
-        match request {
-            Request::Login(request) => {
-                let result = self.login(request).await;
-                ws.for_request::<Login>().send(&result).await?;
-                if result.is_err() {
-                    ws.close().await?;
-                }
-            }
-            request => {
-                if self.source_id.is_none() {
-                    warn!("received another message before login");
-                    ws.close().await?;
-                } else {
-                    macro_rules! handle {
-                        (
-                            $($variant:ident => $handler:ident,)*
-                            @streams:
-                            $($stream_variant:ident => $stream_handler:ident,)*
-                        ) => {
-                            match request {
-                                $(
-                                    Request::$variant(request) => {
-                                        let mut ws = ws.for_request::<$variant>();
-                                        ws.send(&self.$handler(request).await).await?;
-                                    }
-                                )*
-                                $(
-                                    Request::$stream_variant(request) => {
-                                        let mut ws = ws.for_request::<$stream_variant>();
-                                        match self.$stream_handler(request, &mut ws).await {
-                                            Ok(()) => ws.send(&Ok(None)).await?,
-                                            Err(err) => ws.send(&Err(err)).await?,
-                                        }
-                                    }
-                                )*
-                                Request::Login(_) => unreachable!(),
-                                _ => todo!(),
-                            }
-
-                        }
-                    }
-
-                    handle! {
-                        AddVersion => add_version,
-                        @streams:
-                        GetEntries => get_entries,
-                        GetVersions => get_versions,
-                    }
-                }
-            }
-        }
-        Ok(())
+    if path.ends_with('/') {
+        bail!("path must not end with '/'");
     }
+    Ok(())
+}
 
-    async fn login(&mut self, request: Login) -> Result<Response<Login>> {
-        if request.version != rammingen_protocol::VERSION {
-            bail!("version mismatch");
-        }
-        let row = query!(
-            "SELECT name FROM sources WHERE id = $1 AND secret = $2",
-            request.source_id.0,
-            request.secret
-        )
-        .fetch_optional(&self.pool)
+pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<AddVersion>> {
+    check_path(&request.path)?;
+    let mut tx = ctx.db_pool.begin().await?;
+    let entry = query!("SELECT * FROM entries WHERE path = $1", request.path)
+        .fetch_optional(&mut tx)
         .await?;
-        if let Some(row) = row {
-            info!("new login: {:?}", row.name);
-            self.source_id = Some(request.source_id);
-        } else {
-            warn!("invalid login");
-            bail!("invalid login");
+    let size_db = request
+        .content
+        .as_ref()
+        .map(|c| i64::try_from(c.size))
+        .transpose()?;
+    let modified_at_db = request
+        .content
+        .as_ref()
+        .map(|c| c.modified_at.to_db())
+        .transpose()?;
+    let content_hash_db = request.content.as_ref().map(|c| &c.content_hash.0);
+    let (unix_mode_db, entry_id) = if let Some(entry) = entry {
+        let entry = convert_entry!(entry);
+        if entry.data.is_same(&request) {
+            return Ok(None);
         }
-        Ok(())
-    }
-
-    async fn add_version(&mut self, request: AddVersion) -> Result<Response<AddVersion>> {
-        self.check_path(&request.path)?;
-        let mut tx = self.pool.begin().await?;
-        let entry = query!("SELECT * FROM entries WHERE path = $1", request.path)
-            .fetch_optional(&mut tx)
-            .await?;
-        let size_db = request
+        let unix_mode_db = request
             .content
             .as_ref()
-            .map(|c| i64::try_from(c.size))
-            .transpose()?;
-        let modified_at_db = request
+            .and_then(|c| c.unix_mode)
+            .or_else(|| entry.data.content.as_ref().and_then(|ec| ec.unix_mode))
+            .map(i64::from);
+        query!(
+            "UPDATE entries
+            SET update_number = nextval('entry_update_numbers'),
+                recorded_at = now(),
+                source_id = $1,
+                record_trigger = $2,
+                kind = $3,
+                exists = $4,
+                size = $5,
+                modified_at = $6,
+                content_hash = $7,
+                unix_mode = $8
+            WHERE id = $9",
+            ctx.source_id.0,
+            request.record_trigger as i32,
+            request.kind as i32,
+            request.exists,
+            size_db,
+            modified_at_db,
+            content_hash_db,
+            unix_mode_db,
+            entry.id.0,
+        )
+        .execute(&mut tx)
+        .await?;
+        (unix_mode_db, entry.id)
+    } else {
+        let unix_mode_db = request
             .content
             .as_ref()
-            .map(|c| c.modified_at.to_db())
-            .transpose()?;
-        let content_hash_db = request.content.as_ref().map(|c| &c.content_hash.0);
-        let (unix_mode_db, entry_id) = if let Some(entry) = entry {
-            let entry = convert_entry!(entry);
-            if entry.data.is_same(&request) {
-                return Ok(None);
-            }
-            let unix_mode_db = request
-                .content
-                .as_ref()
-                .and_then(|c| c.unix_mode)
-                .or_else(|| entry.data.content.as_ref().and_then(|ec| ec.unix_mode))
-                .map(i64::from);
-            query!(
-                "UPDATE entries
-                SET update_number = nextval('entry_update_numbers'),
-                    recorded_at = now(),
-                    source_id = $1,
-                    record_trigger = $2,
-                    kind = $3,
-                    exists = $4,
-                    size = $5,
-                    modified_at = $6,
-                    content_hash = $7,
-                    unix_mode = $8
-                WHERE id = $9",
-                self.source_id.unwrap().0,
-                request.record_trigger as i32,
-                request.kind as i32,
-                request.exists,
-                size_db,
-                modified_at_db,
-                content_hash_db,
-                unix_mode_db,
-                entry.id.0,
-            )
-            .execute(&mut tx)
-            .await?;
-            (unix_mode_db, entry.id)
-        } else {
-            let unix_mode_db = request
-                .content
-                .as_ref()
-                .and_then(|c| c.unix_mode)
-                .map(i64::from);
-            let entry_id = query_scalar!(
-                "INSERT INTO entries (
-                    update_number,
-                    recorded_at,
-                    parent_dir,
-                    path,
-                    source_id,
-                    record_trigger,
-                    kind,
-                    exists,
-                    size,
-                    modified_at,
-                    content_hash,
-                    unix_mode
-                ) VALUES (
-                    nextval('entry_update_numbers'), now(),
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-                ) RETURNING id",
-                None::<i64>, // TODO: parent dir
-                request.path,
-                self.source_id.unwrap().0,
-                request.record_trigger as i32,
-                request.kind as i32,
-                request.exists,
-                size_db,
-                modified_at_db,
-                content_hash_db,
-                unix_mode_db,
-            )
-            .fetch_one(&mut tx)
-            .await?;
-            (unix_mode_db, entry_id.into())
-        };
-
-        let version_id = query_scalar!(
-            "INSERT INTO entry_versions (
+            .and_then(|c| c.unix_mode)
+            .map(i64::from);
+        let entry_id = query_scalar!(
+            "INSERT INTO entries (
+                update_number,
                 recorded_at,
-                snapshot_id,
-                entry_id,
+                parent_dir,
                 path,
                 source_id,
                 record_trigger,
@@ -286,12 +159,12 @@ impl Handler {
                 content_hash,
                 unix_mode
             ) VALUES (
-                now(), NULL,
+                nextval('entry_update_numbers'), now(),
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
             ) RETURNING id",
-            entry_id.0,
+            None::<i64>, // TODO: parent dir
             request.path,
-            self.source_id.unwrap().0,
+            ctx.source_id.0,
             request.record_trigger as i32,
             request.kind as i32,
             request.exists,
@@ -302,73 +175,49 @@ impl Handler {
         )
         .fetch_one(&mut tx)
         .await?;
+        (unix_mode_db, entry_id.into())
+    };
 
-        tx.commit().await?;
-        Ok(Some(version_id.into()))
-    }
+    let version_id = query_scalar!(
+        "INSERT INTO entry_versions (
+            recorded_at,
+            snapshot_id,
+            entry_id,
+            path,
+            source_id,
+            record_trigger,
+            kind,
+            exists,
+            size,
+            modified_at,
+            content_hash,
+            unix_mode
+        ) VALUES (
+            now(), NULL,
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+        ) RETURNING id",
+        entry_id.0,
+        request.path,
+        ctx.source_id.0,
+        request.record_trigger as i32,
+        request.kind as i32,
+        request.exists,
+        size_db,
+        modified_at_db,
+        content_hash_db,
+        unix_mode_db,
+    )
+    .fetch_one(&mut tx)
+    .await?;
 
-    async fn get_versions(
-        &mut self,
-        request: GetVersions,
-        ws: &mut WsHandle<'_, Response<GetVersions>>,
-    ) -> Result<()> {
-        self.check_path(&request.path)?;
-        let mut output = Vec::new();
-        let mut rows =
-            query!(
-                "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1",
-                request.path,
-                request.recorded_at.to_db()?,
-            ).fetch(&self.pool);
-
-        while let Some(row) = rows.try_next().await? {
-            output.push(convert_entry_version!(row));
-        }
-
-        let mut rows2 = query!(
-            "SELECT * FROM (
-                SELECT *,
-                row_number() OVER(PARTITION BY entry_id ORDER BY recorded_at DESC) AS row_number
-                FROM entry_versions
-                WHERE path LIKE $1 AND recorded_at <= $2
-            ) t WHERE row_number = 1",
-            format!("{}/", request.path),
-            request.recorded_at.to_db()?,
-        )
-        .fetch(&self.pool);
-
-        while let Some(row) = rows2.try_next().await? {
-            output.push(convert_entry_version!(row));
-        }
-
-        ws.send(&Ok(Some(output))).await?;
-        Ok(())
-    }
-
-    async fn get_entries(
-        &mut self,
-        request: GetEntries,
-        ws: &mut WsHandle<'_, Response<GetEntries>>,
-    ) -> Result<()> {
-        let mut output = Vec::new();
-        let mut rows = query!(
-            "SELECT * FROM entries WHERE update_number > $1",
-            request.last_update_number.map(|x| x.0).unwrap_or(0)
-        )
-        .fetch(&self.pool);
-        while let Some(row) = rows.try_next().await? {
-            output.push(convert_entry!(row));
-        }
-
-        ws.send(&Ok(Some(output))).await?;
-        Ok(())
-    }
+    tx.commit().await?;
+    Ok(Some(version_id.into()))
 }
 
 pub async fn get_entries(
     ctx: Context,
     request: GetEntries,
-    tx: Sender<Result<Vec<Entry>>>,
+    tx: Sender<Result<Option<StreamingResponseItem<GetEntries>>>>,
 ) -> Result<()> {
     let mut output = Vec::new();
     let mut rows = query!(
@@ -379,10 +228,54 @@ pub async fn get_entries(
     while let Some(row) = rows.try_next().await? {
         output.push(convert_entry!(row));
         if output.len() >= ITEMS_PER_CHUNK {
-            tx.send(Ok(mem::take(&mut output))).await?;
+            tx.send(Ok(Some(mem::take(&mut output)))).await?;
         }
     }
-    tx.send(Ok(output)).await?;
+    tx.send(Ok(Some(output))).await?;
+    Ok(())
+}
+
+pub async fn get_versions(
+    ctx: Context,
+    request: GetVersions,
+    tx: Sender<Result<Option<StreamingResponseItem<GetVersions>>>>,
+) -> Result<()> {
+    check_path(&request.path)?;
+    let mut output = Vec::new();
+    let mut rows =
+        query!(
+            "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1",
+            request.path,
+            request.recorded_at.to_db()?,
+        ).fetch(&ctx.db_pool);
+
+    while let Some(row) = rows.try_next().await? {
+        output.push(convert_entry_version!(row));
+        if output.len() >= ITEMS_PER_CHUNK {
+            tx.send(Ok(Some(mem::take(&mut output)))).await?;
+        }
+    }
+
+    let mut rows2 = query!(
+        "SELECT * FROM (
+            SELECT *,
+            row_number() OVER(PARTITION BY entry_id ORDER BY recorded_at DESC) AS row_number
+            FROM entry_versions
+            WHERE path LIKE $1 AND recorded_at <= $2
+        ) t WHERE row_number = 1",
+        format!("{}/", request.path),
+        request.recorded_at.to_db()?,
+    )
+    .fetch(&ctx.db_pool);
+
+    while let Some(row) = rows2.try_next().await? {
+        output.push(convert_entry_version!(row));
+        if output.len() >= ITEMS_PER_CHUNK {
+            tx.send(Ok(Some(mem::take(&mut output)))).await?;
+        }
+    }
+
+    tx.send(Ok(Some(output))).await?;
     Ok(())
 }
 
