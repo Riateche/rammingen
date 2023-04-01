@@ -1,11 +1,11 @@
 #![allow(clippy::collapsible_else_if)]
 
-use std::marker::PhantomData;
+use std::{env, marker::PhantomData, path::PathBuf};
 
 use anyhow::{bail, Result};
 use futures_util::{SinkExt, TryStreamExt};
 use rammingen_protocol::RequestVariant;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
@@ -14,9 +14,25 @@ use tracing::{info, warn};
 use crate::handler::Handler;
 
 pub mod handler;
+pub mod storage;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    database_url: String,
+    storage_path: PathBuf,
+}
+
+struct Context {
+    db_pool: PgPool,
+    storage_path: PathBuf,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let config_path = env::args().nth(1).expect("missing config arg");
+    let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
+    let db_pool = PgPool::connect(&config.database_url).await?;
+
     tracing_subscriber::fmt::init();
     let addr = "127.0.0.1:8080".to_string();
 
