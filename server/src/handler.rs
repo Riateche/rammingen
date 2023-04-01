@@ -1,14 +1,18 @@
+use std::{mem, sync::Arc};
+
 use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
-use futures_util::TryStreamExt;
+use futures_util::{Stream, TryStreamExt};
 use rammingen_protocol::{
     AddVersion, DateTime, Entry, EntryVersion, EntryVersionData, FileContent, GetEntries,
     GetVersions, Login, Request, RequestVariant, SourceId,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool};
+use stream_generator::generate_try_stream;
+use tokio::sync::mpsc::Sender;
 use tracing::{info, warn};
 
-use crate::WsHandle;
+use crate::{storage::Storage, WsHandle};
 
 pub struct Handler {
     pool: PgPool,
@@ -16,6 +20,15 @@ pub struct Handler {
 }
 
 pub type Response<Request> = <Request as RequestVariant>::Response;
+
+const ITEMS_PER_CHUNK: usize = 1024;
+
+#[derive(Debug, Clone)]
+pub struct Context {
+    pub db_pool: PgPool,
+    pub storage: Arc<Storage>,
+    pub source_id: SourceId,
+}
 
 macro_rules! convert_entry {
     ($row:expr) => {{
@@ -350,6 +363,27 @@ impl Handler {
         ws.send(&Ok(Some(output))).await?;
         Ok(())
     }
+}
+
+pub async fn get_entries(
+    ctx: Context,
+    request: GetEntries,
+    tx: Sender<Result<Vec<Entry>>>,
+) -> Result<()> {
+    let mut output = Vec::new();
+    let mut rows = query!(
+        "SELECT * FROM entries WHERE update_number > $1",
+        request.last_update_number.map(|x| x.0).unwrap_or(0)
+    )
+    .fetch(&ctx.db_pool);
+    while let Some(row) = rows.try_next().await? {
+        output.push(convert_entry!(row));
+        if output.len() >= ITEMS_PER_CHUNK {
+            tx.send(Ok(mem::take(&mut output))).await?;
+        }
+    }
+    tx.send(Ok(output)).await?;
+    Ok(())
 }
 
 trait ToDb {

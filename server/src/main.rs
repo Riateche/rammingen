@@ -6,20 +6,25 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use futures_util::{SinkExt, TryStreamExt};
-use http_body_util::Full;
+use futures_util::{FutureExt, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
+use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
-    body::{self, Bytes},
+    body::{self, Bytes, Frame},
     header::AUTHORIZATION,
     server::conn::http1,
     service::service_fn,
-    Request, Response, StatusCode,
+    Method, Request, Response, StatusCode,
 };
 use rammingen_protocol::{RequestVariant, SourceId};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sqlx::{query, PgPool};
 use storage::Storage;
-use tokio::net::{TcpListener, TcpStream};
+use stream_generator::generate_try_stream;
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::mpsc,
+};
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 use tracing::{info, warn};
 
@@ -93,17 +98,74 @@ async fn main() -> Result<()> {
 async fn handle_request(
     ctx: Context,
     request: Request<body::Incoming>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
-    match auth(&ctx, &request) {
-        Ok(source_id) => Ok(Response::new(Full::new(Bytes::from("Hello World!\n")))),
-        Err(err) => {
-            warn!(%err, "auth error");
-            Ok(Response::builder()
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Full::new(Bytes::from("UNAUTHORIZED\n")))
-                .unwrap())
-        }
+) -> Result<Response<BoxBody<Bytes, Infallible>>, Infallible> {
+    try_handle_request(ctx, request).await.or_else(|code| {
+        Ok(Response::builder()
+            .status(code)
+            .body(Full::new(Bytes::from(code.as_str().to_string())).boxed())
+            .unwrap())
+    })
+}
+
+async fn try_handle_request(
+    ctx: Context,
+    request: Request<body::Incoming>,
+) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode> {
+    let source_id = auth(&ctx, &request).map_err(|err| {
+        warn!(%err, "auth error");
+        StatusCode::UNAUTHORIZED
+    })?;
+
+    let ctx = handler::Context {
+        db_pool: ctx.db_pool,
+        storage: ctx.storage,
+        source_id,
+    };
+
+    let path = request.uri().path();
+    if path == "/entries" && request.method() == Method::GET {
+        //let request = match bincode::deserialize(bytes)
+        let (tx, rx) = mpsc::channel(5);
+        let request = parse_request(request).await?;
+        tokio::spawn(async move {
+            if let Err(err) = handler::get_entries(ctx, request, tx.clone()).await {
+                let _ = tx.send(Err(err)).await;
+            }
+        });
+
+        Ok(Response::new(BodyExt::boxed(StreamBody::new(
+            ReceiverStream::new(rx).map(serialize_response),
+        ))))
+    } else {
+        Err(StatusCode::NOT_FOUND)
     }
+}
+
+async fn parse_request<T: DeserializeOwned>(
+    request: Request<body::Incoming>,
+) -> Result<T, StatusCode> {
+    let bytes = request
+        .into_body()
+        .collect()
+        .await
+        .map_err(|err| {
+            warn!(%err, "failed to read request body");
+            StatusCode::BAD_REQUEST
+        })?
+        .to_bytes();
+    bincode::deserialize(&bytes).map_err(|err| {
+        warn!(%err, "failed to deserialize request body");
+        StatusCode::BAD_REQUEST
+    })
+}
+
+fn serialize_response<T: Serialize>(data: anyhow::Result<T>) -> Result<Frame<Bytes>, Infallible> {
+    let data = bincode::serialize(&data.map_err(|err| {
+        warn!(%err, "handler error");
+        err.to_string()
+    }))
+    .expect("bincode serialization failed");
+    Ok(Frame::data(data.into()))
 }
 
 fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<SourceId> {
