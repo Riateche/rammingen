@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_else_if)]
+
 use std::{fmt, str::FromStr};
 
 use anyhow::bail;
@@ -6,28 +8,34 @@ use chrono::Utc;
 use derive_more::{From, Into};
 use serde::{Deserialize, Serialize};
 
+pub mod util;
+
 pub type DateTime = chrono::DateTime<Utc>;
 
 pub const VERSION: u32 = 1;
 
 pub trait RequestToResponse {
     type Response;
+    const NAME: &'static str;
 }
 macro_rules! response_type {
     ($request:ty, $response:ty) => {
         impl RequestToResponse for $request {
             type Response = $response;
+            const NAME: &'static str = stringify!($request);
         }
     };
 }
 
 pub trait RequestToStreamingResponse {
     type ResponseItem;
+    const NAME: &'static str;
 }
 macro_rules! streaming_response_type {
     ($request:ty, $response:ty) => {
         impl RequestToStreamingResponse for $request {
             type ResponseItem = $response;
+            const NAME: &'static str = stringify!($request);
         }
     };
 }

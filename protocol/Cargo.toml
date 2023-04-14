@@ -12,3 +12,8 @@ sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-native-tls", 
 derive_more = "0.99.17"
 anyhow = { version = "1.0.70", features = ["backtrace"] }
 base64 = "0.21.0"
+fs-err = "2.9.0"
+tokio = { version = "1.26.0", features = ["full"] }
+bytes = "1.4.0"
+tokio-stream = "0.1.12"
+tracing = "0.1.37"

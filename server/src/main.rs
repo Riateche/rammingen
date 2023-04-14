@@ -122,13 +122,7 @@ async fn try_handle_request(
     };
 
     let path = request.uri().path();
-    if path == "/entries" && request.method() == Method::GET {
-        wrap_stream(ctx, request, handler::get_entries).await
-    } else if path == "/versions" && request.method() == Method::GET {
-        wrap_stream(ctx, request, handler::get_versions).await
-    } else if path == "/versions" && request.method() == Method::POST {
-        wrap_request(ctx, request, handler::add_version).await
-    } else if let Some(hash) = path.strip_prefix("/content/") {
+    if let Some(hash) = path.strip_prefix("/content/") {
         let hash = ContentHash::from_str(hash).map_err(|err| {
             warn!(%err, "invalid hash");
             StatusCode::BAD_REQUEST
@@ -140,6 +134,14 @@ async fn try_handle_request(
         } else {
             Err(StatusCode::NOT_FOUND)
         }
+    } else if request.method() != Method::POST {
+        Err(StatusCode::NOT_FOUND)
+    } else if path == "/GetEntries" {
+        wrap_stream(ctx, request, handler::get_entries).await
+    } else if path == "/GetVersions" {
+        wrap_stream(ctx, request, handler::get_versions).await
+    } else if path == "/AddVersion" {
+        wrap_request(ctx, request, handler::add_version).await
     } else {
         Err(StatusCode::NOT_FOUND)
     }
