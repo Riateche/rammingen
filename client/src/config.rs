@@ -115,6 +115,8 @@ pub struct Config {
     pub server_url: String,
     #[derivative(Debug = "ignore")]
     pub token: String,
+    #[derivative(Debug = "ignore")]
+    pub salt: String,
 }
 
 mod repr {

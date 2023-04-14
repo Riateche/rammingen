@@ -1739,6 +1739,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_regex",
+ "sha2",
  "tempfile",
  "tokio",
  "tracing",

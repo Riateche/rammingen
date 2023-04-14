@@ -7,7 +7,9 @@ use deflate::write::DeflateEncoder;
 use deflate::CompressionOptions;
 use fs_err::File;
 use inflate::InflateWriter;
+use rammingen_protocol::ContentHash;
 use rand::RngCore;
+use sha2::{Digest, Sha256};
 use std::cmp::min;
 use std::io::{self, Write};
 use std::path::Path;
@@ -20,6 +22,31 @@ const MAGIC_NUMBER: u32 = 3137690536;
 
 fn nonce_size() -> usize {
     <Aes256SivAead as AeadCore>::NonceSize::to_int()
+}
+
+struct HashingWriter<W> {
+    hasher: Sha256,
+    inner: W,
+}
+
+impl<W: Write> Write for HashingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let len = self.inner.write(buf)?;
+        self.hasher.update(buf);
+        Ok(len)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl<W> HashingWriter<W> {
+    pub fn new(inner: W, salt: &str) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(salt);
+        Self { hasher, inner }
+    }
 }
 
 struct EncryptingWriter<'a, W> {
@@ -75,19 +102,26 @@ impl<'a, W: Write> Write for EncryptingWriter<'a, W> {
     }
 }
 
-pub fn encrypt_file(path: &Path, cipher: &Aes256SivAead) -> Result<SpooledTempFile> {
+pub fn encrypt_file(
+    path: &Path,
+    cipher: &Aes256SivAead,
+    salt: &str,
+) -> Result<(SpooledTempFile, ContentHash)> {
     let mut file = File::open(path)?;
     let mut output = SpooledTempFile::new(MAX_IN_MEMORY);
     output.write_u32::<LE>(MAGIC_NUMBER)?;
-    let writer = EncryptingWriter {
+    let mut encryptor = EncryptingWriter {
         buf: Vec::new(),
-        output,
+        output: &mut output,
         cipher,
     };
-    let mut encoder = DeflateEncoder::new(writer, CompressionOptions::high());
-    io::copy(&mut file, &mut encoder)?;
-    let writer = encoder.finish()?;
-    Ok(writer.finish()?)
+    let mut encoder = DeflateEncoder::new(&mut encryptor, CompressionOptions::high());
+    let mut hasher = HashingWriter::new(&mut encoder, salt);
+    io::copy(&mut file, &mut hasher)?;
+    let hash = ContentHash(hasher.hasher.finalize().to_vec());
+    encoder.finish()?;
+    encryptor.finish()?;
+    Ok((output, hash))
 }
 
 pub struct Decryptor<'a, W: Write> {
@@ -190,7 +224,7 @@ pub fn file_roundtrip() {
     }
     file.flush().unwrap();
 
-    let mut encrypted_file = encrypt_file(file.path(), &cipher).unwrap();
+    let (mut encrypted_file, _) = encrypt_file(file.path(), &cipher, "salt").unwrap();
     println!(
         "encrypted size {}",
         encrypted_file.seek(SeekFrom::End(0)).unwrap()

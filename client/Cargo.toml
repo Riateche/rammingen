@@ -35,6 +35,7 @@ tempfile = "3.5.0"
 byteorder = "1.4.3"
 deflate = "1.0.0"
 inflate = "0.4.5"
+sha2 = "0.10.6"
 
 [dev-dependencies]
 criterion = "0.4.0"
