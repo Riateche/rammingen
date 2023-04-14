@@ -1,77 +1,185 @@
-use crate::config::EncryptionKey;
 use aes_siv::aead::Aead;
 use aes_siv::AeadCore;
-use aes_siv::{
-    aead::{AeadInPlace, KeyInit, OsRng},
-    Aes256SivAead,
-    Nonce, // Or `Aes128SivAead`
-};
-use anyhow::{anyhow, bail, Result};
+use aes_siv::{aead::OsRng, Aes256SivAead, Nonce};
+use anyhow::Result;
 use byteorder::{ByteOrder, WriteBytesExt, LE};
+use deflate::write::DeflateEncoder;
+use deflate::CompressionOptions;
 use fs_err::File;
+use inflate::InflateWriter;
 use rand::RngCore;
-use std::io::{Seek, SeekFrom, Write};
-use std::{io::Read, path::Path};
-use tempfile::{NamedTempFile, SpooledTempFile};
+use std::cmp::min;
+use std::io::{self, Write};
+use std::path::Path;
+use tempfile::SpooledTempFile;
 use typenum::ToInt;
 
 const BLOCK_SIZE: usize = 1024 * 1024;
 const MAX_IN_MEMORY: usize = 32 * 1024 * 1024;
+const MAGIC_NUMBER: u32 = 3137690536;
 
 fn nonce_size() -> usize {
     <Aes256SivAead as AeadCore>::NonceSize::to_int()
 }
 
-pub fn encrypt_file(path: &Path, cipher: &Aes256SivAead) -> Result<SpooledTempFile> {
-    let mut file = File::open(path)?;
-    let mut buf = vec![0; BLOCK_SIZE];
-    let mut output = SpooledTempFile::new(MAX_IN_MEMORY);
-    let mut nonce = Nonce::default();
-    loop {
-        let input_len = file.read(&mut buf)?;
-        if input_len == 0 {
-            break;
-        }
-        OsRng.fill_bytes(&mut nonce);
-        let ciphertext = cipher
-            .encrypt(&nonce, &buf[..input_len])
-            .map_err(|_| anyhow!("encryption failed"))?;
-        let output_size = nonce.len() + ciphertext.len();
-
-        output.write_u32::<LE>(output_size as u32)?;
-        output.write_all(&nonce)?;
-        output.write_all(&ciphertext)?;
-    }
-    Ok(output)
+struct EncryptingWriter<'a, W> {
+    buf: Vec<u8>,
+    output: W,
+    cipher: &'a Aes256SivAead,
 }
 
-pub fn decrypt_file_chunk(
-    chunk: &[u8],
-    cipher: &Aes256SivAead,
-    output: &mut impl Write,
-) -> Result<()> {
-    if chunk.len() < 4 {
-        bail!("chunk is too short");
+impl<'a, W: Write> EncryptingWriter<'a, W> {
+    fn finish(mut self) -> io::Result<W> {
+        self.write_block()?;
+        self.output.flush()?;
+        Ok(self.output)
     }
-    let len = usize::try_from(LE::read_u32(chunk))?;
-    let chunk_data = &chunk[4..];
-    if len != chunk_data.len() {
-        bail!("chunk length mismatch");
+}
+
+impl<'a, W: Write> EncryptingWriter<'a, W> {
+    fn write_block(&mut self) -> io::Result<()> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let input_len = min(self.buf.len(), BLOCK_SIZE);
+        let mut nonce = Nonce::default();
+        OsRng.fill_bytes(&mut nonce);
+
+        let ciphertext = self
+            .cipher
+            .encrypt(&nonce, &self.buf[..input_len])
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "encryption failed"))?;
+        let output_size = nonce.len() + ciphertext.len();
+
+        self.output.write_u32::<LE>(output_size as u32)?;
+        self.output.write_all(&nonce)?;
+        self.output.write_all(&ciphertext)?;
+
+        self.buf.drain(..input_len);
+
+        Ok(())
     }
-    let nonce_size = nonce_size();
-    let nonce = chunk_data
-        .get(..nonce_size)
-        .ok_or_else(|| anyhow!("chunk data is too short"))?;
-    let nonce = Nonce::from_slice(nonce);
-    let plaintext = cipher
-        .decrypt(nonce, &chunk_data[nonce_size..])
-        .map_err(|_| anyhow!("decryption failed"))?;
-    output.write_all(&plaintext)?;
-    Ok(())
+}
+
+impl<'a, W: Write> Write for EncryptingWriter<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.buf.extend_from_slice(buf);
+        if self.buf.len() >= BLOCK_SIZE {
+            self.write_block()?;
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.output.flush()
+    }
+}
+
+pub fn encrypt_file(path: &Path, cipher: &Aes256SivAead) -> Result<SpooledTempFile> {
+    let mut file = File::open(path)?;
+    let mut output = SpooledTempFile::new(MAX_IN_MEMORY);
+    output.write_u32::<LE>(MAGIC_NUMBER)?;
+    let writer = EncryptingWriter {
+        buf: Vec::new(),
+        output,
+        cipher,
+    };
+    let mut encoder = DeflateEncoder::new(writer, CompressionOptions::high());
+    io::copy(&mut file, &mut encoder)?;
+    let writer = encoder.finish()?;
+    Ok(writer.finish()?)
+}
+
+pub struct Decryptor<'a, W: Write> {
+    got_header: bool,
+    buf: Vec<u8>,
+    cipher: &'a Aes256SivAead,
+    output: InflateWriter<W>,
+}
+
+impl<'a, W: Write> Decryptor<'a, W> {
+    pub fn new(cipher: &'a Aes256SivAead, output: W) -> Self {
+        Self {
+            got_header: false,
+            buf: Vec::new(),
+            cipher,
+            output: InflateWriter::new(output),
+        }
+    }
+
+    pub fn finish(mut self) -> io::Result<W> {
+        self.process_block()?;
+        if !self.buf.is_empty() {
+            return Err(io::Error::new(io::ErrorKind::Other, "trailing data found"));
+        }
+        self.output.finish()
+    }
+
+    fn process_block(&mut self) -> io::Result<()> {
+        if !self.got_header {
+            if self.buf.len() < 4 {
+                return Ok(());
+            }
+            if LE::read_u32(&self.buf) != MAGIC_NUMBER {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "magic number mismatch",
+                ));
+            }
+            self.buf.drain(..4);
+            self.got_header = true;
+        }
+        if self.buf.len() < 4 {
+            return Ok(());
+        }
+        let len = usize::try_from(LE::read_u32(&self.buf))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        if len > BLOCK_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "block size is too large",
+            ));
+        }
+        let rest_of_data = &self.buf[4..];
+        if rest_of_data.len() < len {
+            return Ok(());
+        }
+        let chunk_data = &rest_of_data[..len];
+
+        let nonce_size = nonce_size();
+        let nonce = chunk_data
+            .get(..nonce_size)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "chunk data is too short"))?;
+        let nonce = Nonce::from_slice(nonce);
+        let plaintext = self
+            .cipher
+            .decrypt(nonce, &chunk_data[nonce_size..])
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "decryption failed"))?;
+        self.output.write_all(&plaintext)?;
+        self.buf.drain(..4 + len);
+        Ok(())
+    }
+}
+
+impl<'a, W: Write> Write for Decryptor<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.buf.extend_from_slice(buf);
+        self.process_block()?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.output.flush()?;
+        Ok(())
+    }
 }
 
 #[test]
 pub fn file_roundtrip() {
+    use aes_siv::KeyInit;
+    use std::io::{Read, Seek, SeekFrom};
+    use tempfile::NamedTempFile;
+
     let key = Aes256SivAead::generate_key(&mut OsRng);
     let cipher = Aes256SivAead::new(&key);
 
@@ -83,26 +191,19 @@ pub fn file_roundtrip() {
     file.flush().unwrap();
 
     let mut encrypted_file = encrypt_file(file.path(), &cipher).unwrap();
-    encrypted_file.seek(SeekFrom::Start(0)).unwrap();
-    let mut buf = Vec::new();
+    println!(
+        "encrypted size {}",
+        encrypted_file.seek(SeekFrom::End(0)).unwrap()
+    );
+    encrypted_file.rewind().unwrap();
     let mut decrypted_file = NamedTempFile::new().unwrap();
-    loop {
-        buf.resize(4, 0);
-        let len = encrypted_file.read(&mut buf).unwrap();
-        if len == 0 {
-            break;
-        } else if len != 4 {
-            panic!("unexpected eof");
-        }
-        let size = LE::read_u32(&buf) as usize;
-        buf.resize(4 + size, 0);
-        encrypted_file.read_exact(&mut buf[4..]).unwrap();
-        decrypt_file_chunk(&buf, &cipher, &mut decrypted_file).unwrap();
-    }
+    let mut decryptor = Decryptor::new(&cipher, &mut decrypted_file);
+    io::copy(&mut encrypted_file, &mut decryptor).unwrap();
+    decryptor.finish().unwrap();
     decrypted_file.flush().unwrap();
 
-    file.seek(SeekFrom::Start(0)).unwrap();
-    decrypted_file.seek(SeekFrom::Start(0)).unwrap();
+    file.rewind().unwrap();
+    decrypted_file.rewind().unwrap();
     let mut buf1 = vec![0u8; 1024];
     let mut buf2 = vec![0u8; 1024];
     loop {
