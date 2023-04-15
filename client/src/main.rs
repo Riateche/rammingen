@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use cli::Cli;
+use client::Client;
 use config::Config;
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::{prelude::*, EnvFilter};
@@ -9,6 +10,13 @@ pub mod cli;
 pub mod client;
 pub mod config;
 pub mod encryption;
+pub mod upload;
+
+#[derive(Debug, Clone)]
+pub struct Ctx {
+    pub config: Config,
+    pub client: Client,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,7 +33,11 @@ async fn main() -> Result<()> {
 
     let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
     let config_file = config_dir.join("rammingen.json5");
-    let _config: Config = json5::from_str(&fs_err::read_to_string(config_file)?)?;
+    let config: Config = json5::from_str(&fs_err::read_to_string(config_file)?)?;
+    let ctx = Ctx {
+        client: Client::new(&config.server_url),
+        config,
+    };
     #[allow(unused_variables)]
     match cli.command {
         cli::Command::Sync => todo!(),

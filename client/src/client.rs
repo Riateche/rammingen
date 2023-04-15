@@ -1,6 +1,5 @@
 use aes_siv::Aes256SivAead;
-use anyhow::{anyhow, Result};
-use bytes::Bytes;
+use anyhow::{anyhow, bail, Result};
 use fs_err::File;
 use futures::StreamExt;
 use reqwest::{header::CONTENT_LENGTH, Body, Method};
@@ -11,7 +10,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::{sync::mpsc, task::spawn_blocking};
+use tokio::task::block_in_place;
 
 use rammingen_protocol::{util::stream_file, ContentHash, RequestToResponse};
 
@@ -80,30 +79,19 @@ impl Client {
             .to_str()?
             .parse()?;
 
-        let (tx, mut rx) = mpsc::channel::<Bytes>(5);
-
-        let handle = spawn_blocking(move || {
-            let file = File::open(path)?;
-            let mut decryptor = Decryptor::new(&cipher, file);
-            let mut actual_len = 0;
-            while let Some(bytes) = rx.blocking_recv() {
-                actual_len += bytes.len() as u64;
-                decryptor.write_all(&bytes)?;
-            }
-            decryptor.finish()?;
-            if actual_len != header_len {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "content length mismatch",
-                ));
-            }
-            io::Result::Ok(())
-        });
+        let file = File::open(path)?;
+        let mut decryptor = Decryptor::new(&cipher, file);
+        let mut actual_len = 0;
 
         while let Some(chunk) = response.chunk().await? {
-            tx.send(chunk).await?;
+            actual_len += chunk.len() as u64;
+            block_in_place(|| decryptor.write_all(&chunk))?;
         }
-        handle.await??;
+        block_in_place(|| decryptor.finish())?;
+        if actual_len != header_len {
+            bail!("content length mismatch");
+        }
+
         Ok(())
     }
 }
