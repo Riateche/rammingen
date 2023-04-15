@@ -61,6 +61,11 @@ impl Storage {
         let (_, path) = storage_paths(&self.root, hash);
         Ok(remove_file(path)?)
     }
+
+    pub fn exists(&self, hash: &ContentHash) -> Result<bool> {
+        let (_, path) = storage_paths(&self.root, hash);
+        Ok(path.try_exists()?)
+    }
 }
 
 #[test]

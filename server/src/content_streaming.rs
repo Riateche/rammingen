@@ -27,24 +27,24 @@ pub async fn upload(
         })?
         .to_str()
         .map_err(|err| {
-            warn!(%err, "invalid content length in request");
+            warn!(?err, "invalid content length in request");
             StatusCode::BAD_REQUEST
         })?
         .parse()
         .map_err(|err| {
-            warn!(%err, "invalid content length in request");
+            warn!(?err, "invalid content length in request");
             StatusCode::BAD_REQUEST
         })?;
 
     let mut file = block_in_place(|| ctx.storage.create_file()).map_err(|err| {
-        warn!(%err, "failed to create file");
+        warn!(?err, "failed to create file");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
     let mut received_length = 0;
     while let Some(frame) = request.body_mut().frame().await {
         let frame = frame.map_err(|err| {
-            warn!(%err, "failed to read request frame");
+            warn!(?err, "failed to read request frame");
             StatusCode::BAD_REQUEST
         })?;
         let data = frame.data_ref().ok_or_else(|| {
@@ -53,7 +53,7 @@ pub async fn upload(
         })?;
         received_length += data.len() as u64;
         block_in_place(|| file.write_all(data)).map_err(|err| {
-            warn!(%err, "failed to write to content file");
+            warn!(?err, "failed to write to content file");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     }
@@ -64,7 +64,7 @@ pub async fn upload(
     }
 
     block_in_place(|| ctx.storage.commit_file(file, hash)).map_err(|err| {
-        warn!(%err, "failed to commit content file");
+        warn!(?err, "failed to commit content file");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -76,13 +76,13 @@ pub async fn download(
     hash: &ContentHash,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode> {
     let file = block_in_place(|| ctx.storage.open_file(hash)).map_err(|err| {
-        warn!(%err, "couldn't open content file");
+        warn!(?err, "couldn't open content file");
         StatusCode::NOT_FOUND
     })?;
     let len = file
         .metadata()
         .map_err(|err| {
-            warn!(%err, "couldn't get metadata for content file");
+            warn!(?err, "couldn't get metadata for content file");
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .len();

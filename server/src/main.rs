@@ -85,11 +85,11 @@ async fn main() -> Result<()> {
                         )
                         .await
                     {
-                        warn!(%err, "error while serving HTTP connection");
+                        warn!(?err, "error while serving HTTP connection");
                     }
                 });
             }
-            Err(err) => warn!(%err, "failed to accept"),
+            Err(err) => warn!(?err, "failed to accept"),
         }
     }
 }
@@ -111,7 +111,7 @@ async fn try_handle_request(
     request: Request<body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode> {
     let source_id = auth(&ctx, &request).map_err(|err| {
-        warn!(%err, "auth error");
+        warn!(?err, "auth error");
         StatusCode::UNAUTHORIZED
     })?;
 
@@ -124,7 +124,7 @@ async fn try_handle_request(
     let path = request.uri().path();
     if let Some(hash) = path.strip_prefix("/content/") {
         let hash = ContentHash::from_str(hash).map_err(|err| {
-            warn!(%err, "invalid hash");
+            warn!(?err, "invalid hash");
             StatusCode::BAD_REQUEST
         })?;
         if request.method() == Method::PUT {
@@ -142,6 +142,8 @@ async fn try_handle_request(
         wrap_stream(ctx, request, handler::get_versions).await
     } else if path == "/AddVersion" {
         wrap_request(ctx, request, handler::add_version).await
+    } else if path == "/ContentHashExists" {
+        wrap_request(ctx, request, handler::content_hash_exists).await
     } else {
         Err(StatusCode::NOT_FOUND)
     }
@@ -206,19 +208,19 @@ async fn parse_request<T: DeserializeOwned>(
         .collect()
         .await
         .map_err(|err| {
-            warn!(%err, "failed to read request body");
+            warn!(?err, "failed to read request body");
             StatusCode::BAD_REQUEST
         })?
         .to_bytes();
     bincode::deserialize(&bytes).map_err(|err| {
-        warn!(%err, "failed to deserialize request body");
+        warn!(?err, "failed to deserialize request body");
         StatusCode::BAD_REQUEST
     })
 }
 
 fn serialize_response<T: Serialize>(data: anyhow::Result<T>) -> Bytes {
     bincode::serialize(&data.map_err(|err| {
-        warn!(%err, "handler error");
+        warn!(?err, "handler error");
         err.to_string()
     }))
     .expect("bincode serialization failed")

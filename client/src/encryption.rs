@@ -26,6 +26,7 @@ fn nonce_size() -> usize {
 
 struct HashingWriter<W> {
     hasher: Sha256,
+    size: u64,
     inner: W,
 }
 
@@ -33,6 +34,7 @@ impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let len = self.inner.write(buf)?;
         self.hasher.update(buf);
+        self.size += buf.len() as u64;
         Ok(len)
     }
 
@@ -45,7 +47,11 @@ impl<W> HashingWriter<W> {
     pub fn new(inner: W, salt: &str) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(salt);
-        Self { hasher, inner }
+        Self {
+            hasher,
+            inner,
+            size: 0,
+        }
     }
 }
 
@@ -102,11 +108,13 @@ impl<'a, W: Write> Write for EncryptingWriter<'a, W> {
     }
 }
 
-pub fn encrypt_file(
-    path: &Path,
-    cipher: &Aes256SivAead,
-    salt: &str,
-) -> Result<(SpooledTempFile, ContentHash)> {
+pub struct EncryptedFileData {
+    pub file: SpooledTempFile,
+    pub hash: ContentHash,
+    pub size: u64,
+}
+
+pub fn encrypt_file(path: &Path, cipher: &Aes256SivAead, salt: &str) -> Result<EncryptedFileData> {
     let mut file = File::open(path)?;
     let mut output = SpooledTempFile::new(MAX_IN_MEMORY);
     output.write_u32::<LE>(MAGIC_NUMBER)?;
@@ -119,9 +127,14 @@ pub fn encrypt_file(
     let mut hasher = HashingWriter::new(&mut encoder, salt);
     io::copy(&mut file, &mut hasher)?;
     let hash = ContentHash(hasher.hasher.finalize().to_vec());
+    let size = hasher.size;
     encoder.finish()?;
     encryptor.finish()?;
-    Ok((output, hash))
+    Ok(EncryptedFileData {
+        file: output,
+        hash,
+        size,
+    })
 }
 
 pub struct Decryptor<'a, W: Write> {
@@ -224,7 +237,7 @@ pub fn file_roundtrip() {
     }
     file.flush().unwrap();
 
-    let (mut encrypted_file, _) = encrypt_file(file.path(), &cipher, "salt").unwrap();
+    let mut encrypted_file = encrypt_file(file.path(), &cipher, "salt").unwrap().file;
     println!(
         "encrypted size {}",
         encrypted_file.seek(SeekFrom::End(0)).unwrap()

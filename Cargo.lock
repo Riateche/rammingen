@@ -1733,6 +1733,7 @@ dependencies = [
  "aes-siv",
  "anyhow",
  "base64 0.21.0",
+ "bincode",
  "byteorder",
  "bytes",
  "chacha20poly1305",

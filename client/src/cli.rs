@@ -1,8 +1,7 @@
-use anyhow::anyhow;
 use chrono::{DateTime, FixedOffset};
 use clap::{Parser, Subcommand};
-use core::fmt;
-use std::{path::PathBuf, str::FromStr};
+use rammingen_protocol::ArchivePath;
+use std::path::PathBuf;
 
 // #[clap(author, version, about, long_about = None)]
 // #[clap(propagate_version = true)]
@@ -11,25 +10,6 @@ use std::{path::PathBuf, str::FromStr};
 pub struct Cli {
     #[clap(subcommand)]
     pub command: Command,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ArchivePath(pub String);
-
-impl FromStr for ArchivePath {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.strip_prefix("ar:")
-            .ok_or_else(|| anyhow!("archive path must start with 'ar:'"))
-            .map(|s| Self(s.into()))
-    }
-}
-
-impl fmt::Display for ArchivePath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ar:{}", self.0)
-    }
 }
 
 #[derive(Subcommand, PartialEq, Eq)]

@@ -1,11 +1,11 @@
 use std::{mem, sync::Arc};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use chrono::{TimeZone, Utc};
 use futures_util::TryStreamExt;
 use rammingen_protocol::{
-    AddVersion, DateTime, Entry, EntryVersion, EntryVersionData, FileContent, GetEntries,
-    GetVersions, Response, SourceId, StreamingResponseItem,
+    AddVersion, ArchivePath, ContentHashExists, DateTime, Entry, EntryVersion, EntryVersionData,
+    FileContent, GetEntries, GetVersions, Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool};
 use tokio::sync::mpsc::Sender;
@@ -49,7 +49,7 @@ macro_rules! convert_version_data {
     ($row:expr) => {{
         let row = $row;
         EntryVersionData {
-            path: row.path,
+            path: ArchivePath(row.path),
             recorded_at: row.recorded_at.from_db(),
             source_id: row.source_id.into(),
             record_trigger: row.record_trigger.try_into()?,
@@ -71,23 +71,9 @@ macro_rules! convert_version_data {
     }};
 }
 
-fn check_path(path: &str) -> Result<()> {
-    if path.contains("//") {
-        bail!("path cannot contain '//'");
-    }
-    if !path.starts_with('/') {
-        bail!("path must start with '/'");
-    }
-    if path.ends_with('/') {
-        bail!("path must not end with '/'");
-    }
-    Ok(())
-}
-
 pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<AddVersion>> {
-    check_path(&request.path)?;
     let mut tx = ctx.db_pool.begin().await?;
-    let entry = query!("SELECT * FROM entries WHERE path = $1", request.path)
+    let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0)
         .fetch_optional(&mut tx)
         .await?;
     let size_db = request
@@ -163,7 +149,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
             ) RETURNING id",
             None::<i64>, // TODO: parent dir
-            request.path,
+            request.path.0,
             ctx.source_id.0,
             request.record_trigger as i32,
             request.kind as i32,
@@ -197,7 +183,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
         ) RETURNING id",
         entry_id.0,
-        request.path,
+        request.path.0,
         ctx.source_id.0,
         request.record_trigger as i32,
         request.kind as i32,
@@ -240,12 +226,11 @@ pub async fn get_versions(
     request: GetVersions,
     tx: Sender<Result<Option<StreamingResponseItem<GetVersions>>>>,
 ) -> Result<()> {
-    check_path(&request.path)?;
     let mut output = Vec::new();
     let mut rows =
         query!(
             "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1",
-            request.path,
+            request.path.0,
             request.recorded_at.to_db()?,
         ).fetch(&ctx.db_pool);
 
@@ -306,4 +291,11 @@ impl FromDb for OffsetDateTime {
     fn from_db(&self) -> Self::Output {
         Utc.timestamp_nanos(self.unix_timestamp_nanos() as i64)
     }
+}
+
+pub async fn content_hash_exists(
+    ctx: Context,
+    request: ContentHashExists,
+) -> Result<Response<ContentHashExists>> {
+    ctx.storage.exists(&request.0)
 }

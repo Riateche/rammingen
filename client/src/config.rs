@@ -79,7 +79,7 @@ pub struct MountPoint {
 }
 
 #[derive(Clone)]
-pub struct EncryptionKey(GenericArray<u8, U64>);
+pub struct EncryptionKey(pub GenericArray<u8, U64>);
 
 impl fmt::Debug for EncryptionKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

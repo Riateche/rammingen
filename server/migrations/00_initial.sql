@@ -31,8 +31,6 @@ CREATE INDEX idx_entries_update_number ON entries (update_number);
 CREATE INDEX idx_entries_path ON entries (path varchar_pattern_ops);
 CREATE INDEX idx_entries_parent_dir ON entries (parent_dir);
 
-
-
 CREATE TABLE entry_versions (
     id BIGSERIAL PRIMARY KEY,
     entry_id BIGINT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,

@@ -2,17 +2,66 @@
 
 use std::{fmt, str::FromStr};
 
+use anyhow::anyhow;
 use anyhow::bail;
+use anyhow::Result;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use derive_more::{From, Into};
-use serde::{Deserialize, Serialize};
+use serde::{de::Error, Deserialize, Serialize};
+use util::check_path;
 
 pub mod util;
 
 pub type DateTime = chrono::DateTime<Utc>;
 
 pub const VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct ArchivePath(pub String);
+
+impl ArchivePath {
+    pub fn join(&self, file_name: &str) -> Result<ArchivePath> {
+        if file_name.is_empty() {
+            bail!("file name cannot be empty");
+        }
+        if file_name.contains('/') {
+            bail!("file name cannot contain '/'");
+        }
+        let s = format!("{}/{}", self.0, file_name);
+        check_path(&s)?;
+        Ok(Self(s))
+    }
+}
+
+impl<'de> Deserialize<'de> for ArchivePath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        check_path(&s).map_err(D::Error::custom)?;
+        Ok(Self(s))
+    }
+}
+
+impl FromStr for ArchivePath {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let path = s
+            .strip_prefix("ar:")
+            .ok_or_else(|| anyhow!("archive path must start with 'ar:'"))?;
+        check_path(path)?;
+        Ok(Self(path.into()))
+    }
+}
+
+impl fmt::Display for ArchivePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ar:{}", self.0)
+    }
+}
 
 pub trait RequestToResponse {
     type Response;
@@ -53,7 +102,7 @@ pub enum Request {
     MovePath(MovePath),
     RemovePath(RemovePath),
     RemoveVersion(RemoveVersion),
-    GetContentHead(GetContentHead),
+    GetContentHead(ContentHashExists),
     GetContent(GetContent),
     StartContentUpload(StartContentUpload),
     UploadContentChunk(UploadContentChunk),
@@ -88,8 +137,8 @@ impl FromStr for ContentHash {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = BASE64_URL_SAFE_NO_PAD.decode(s)?;
-        if bytes.len() != 64 {
-            bail!("invalid hash length");
+        if bytes.len() != 32 {
+            bail!("invalid hash length: expected 32, got {}", bytes.len());
         }
         Ok(Self(bytes))
     }
@@ -143,7 +192,7 @@ impl TryFrom<i32> for EntryKind {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntryVersionData {
-    pub path: String,
+    pub path: ArchivePath,
     pub recorded_at: DateTime,
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
@@ -209,7 +258,7 @@ streaming_response_type!(GetEntries, Vec<Entry>);
 pub struct GetVersions {
     pub recorded_at: DateTime,
     // if it's a dir, return a version for each nested path
-    pub path: String,
+    pub path: ArchivePath,
 }
 streaming_response_type!(GetVersions, Vec<EntryVersion>);
 
@@ -217,13 +266,13 @@ streaming_response_type!(GetVersions, Vec<EntryVersion>);
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetAllVersions {
     // if it's a dir, return all versions for each nested path
-    pub path: String,
+    pub path: ArchivePath,
 }
 streaming_response_type!(GetAllVersions, Vec<EntryVersion>);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersion {
-    pub path: String,
+    pub path: ArchivePath,
     pub record_trigger: RecordTrigger,
     pub kind: EntryKind,
     pub exists: bool,
@@ -240,37 +289,35 @@ pub struct BulkActionStats {
 /// If a directory, resets all nested paths.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResetVersion {
-    pub path: String,
+    pub path: ArchivePath,
     pub recorded_at: Option<DateTime>,
 }
 response_type!(ResetVersion, BulkActionStats);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MovePath {
-    pub old_path: String,
-    pub new_path: String,
+    pub old_path: ArchivePath,
+    pub new_path: ArchivePath,
 }
 response_type!(MovePath, BulkActionStats);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemovePath {
-    pub path: String,
+    pub path: ArchivePath,
 }
 response_type!(RemovePath, BulkActionStats);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoveVersion {
     // if dir, remove this version for all nested paths (where it's present)
-    pub path: String,
+    pub path: ArchivePath,
     pub recorded_at: Option<DateTime>,
 }
 response_type!(RemoveVersion, BulkActionStats);
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct GetContentHead {
-    pub content_hash: ContentHash,
-}
-response_type!(GetContentHead, Option<ContentHead>);
+pub struct ContentHashExists(pub ContentHash);
+response_type!(ContentHashExists, bool);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContentHead {

@@ -38,6 +38,7 @@ inflate = "0.4.5"
 sha2 = "0.10.6"
 futures = "0.3.28"
 bytes = "1.4.0"
+bincode = "1.3.3"
 
 [dev-dependencies]
 criterion = "0.4.0"
