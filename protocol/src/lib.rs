@@ -21,6 +21,11 @@ pub const VERSION: u32 = 1;
 pub struct ArchivePath(pub String);
 
 impl ArchivePath {
+    pub fn from_str_without_prefix(path: &str) -> Result<Self> {
+        check_path(path)?;
+        Ok(Self(path.into()))
+    }
+
     pub fn join(&self, file_name: &str) -> Result<ArchivePath> {
         if file_name.is_empty() {
             bail!("file name cannot be empty");

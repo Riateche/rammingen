@@ -8,7 +8,10 @@ use std::{path::Path, time::Duration};
 use tokio::{task::block_in_place, time::sleep};
 use tracing::{info, warn};
 
-use crate::{encryption, Ctx};
+use crate::{
+    encryption::{self, encrypt_path},
+    Ctx,
+};
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_secs(3);
 
@@ -70,7 +73,7 @@ pub fn upload<'a>(
         };
 
         let add_version = AddVersion {
-            path: archive_path.clone(),
+            path: encrypt_path(archive_path, &ctx.cipher)?,
             record_trigger: RecordTrigger::Upload,
             kind: if is_dir {
                 EntryKind::Directory

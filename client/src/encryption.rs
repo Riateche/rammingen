@@ -1,13 +1,14 @@
 use aes_siv::aead::Aead;
 use aes_siv::AeadCore;
 use aes_siv::{aead::OsRng, Aes256SivAead, Nonce};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use byteorder::{ByteOrder, WriteBytesExt, LE};
 use deflate::write::DeflateEncoder;
 use deflate::CompressionOptions;
 use fs_err::File;
 use inflate::InflateWriter;
-use rammingen_protocol::ContentHash;
+use rammingen_protocol::{ArchivePath, ContentHash};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use std::cmp::min;
@@ -219,6 +220,77 @@ impl<'a, W: Write> Write for Decryptor<'a, W> {
         self.output.flush()?;
         Ok(())
     }
+}
+
+pub fn encrypt_str(value: &str, cipher: &Aes256SivAead) -> Result<String> {
+    let ciphertext = cipher
+        .encrypt(&Nonce::default(), value.as_bytes())
+        .map_err(|_| anyhow!("encryption failed"))?;
+    Ok(BASE64_URL_SAFE_NO_PAD.encode(ciphertext))
+}
+
+pub fn decrypt_str(value: &str, cipher: &Aes256SivAead) -> Result<String> {
+    let ciphertext = BASE64_URL_SAFE_NO_PAD.decode(value)?;
+    let plaintext = cipher
+        .decrypt(&Nonce::default(), ciphertext.as_slice())
+        .map_err(|_| anyhow!("encryption failed"))?;
+    Ok(String::from_utf8(plaintext)?)
+}
+
+pub fn encrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<ArchivePath> {
+    let parts = value
+        .0
+        .split('/')
+        .map(|part| {
+            if part.is_empty() {
+                Ok(String::new())
+            } else {
+                encrypt_str(part, cipher)
+            }
+        })
+        .collect::<Result<Vec<String>>>()?;
+    ArchivePath::from_str_without_prefix(&parts.join("/"))
+}
+
+pub fn decrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<ArchivePath> {
+    let parts = value
+        .0
+        .split('/')
+        .map(|part| {
+            if part.is_empty() {
+                Ok(String::new())
+            } else {
+                decrypt_str(part, cipher)
+            }
+        })
+        .collect::<Result<Vec<String>>>()?;
+    ArchivePath::from_str_without_prefix(&parts.join("/"))
+}
+
+#[test]
+pub fn str_roundtrip() {
+    use aes_siv::KeyInit;
+
+    let key = Aes256SivAead::generate_key(&mut OsRng);
+    let cipher = Aes256SivAead::new(&key);
+    let value = "abcd1";
+    let encrypted = encrypt_str(value, &cipher).unwrap();
+    assert_ne!(value, encrypted);
+    let decrypted = decrypt_str(&encrypted, &cipher).unwrap();
+    assert_eq!(value, decrypted);
+}
+
+#[test]
+pub fn path_roundtrip() {
+    use aes_siv::KeyInit;
+
+    let key = Aes256SivAead::generate_key(&mut OsRng);
+    let cipher = Aes256SivAead::new(&key);
+    let value: ArchivePath = "ar:/ab/cd/ef".parse().unwrap();
+    let encrypted = encrypt_path(&value, &cipher).unwrap();
+    assert_ne!(value, encrypted);
+    let decrypted = decrypt_path(&encrypted, &cipher).unwrap();
+    assert_eq!(value, decrypted);
 }
 
 #[test]
