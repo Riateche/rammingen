@@ -37,6 +37,30 @@ impl ArchivePath {
         check_path(&s)?;
         Ok(Self(s))
     }
+
+    pub fn parent(&self) -> Option<ArchivePath> {
+        if self.0 == "/" {
+            None
+        } else {
+            let pos = self.0.rfind('/').expect("any path must contain '/'");
+            let parent = if pos == 0 { "/" } else { &self.0[..pos] };
+            check_path(parent).expect("parent should always be valid");
+            Some(Self(parent.into()))
+        }
+    }
+}
+
+#[test]
+fn parent_path() {
+    assert_eq!(ArchivePath::from_str("ar:/").unwrap().parent(), None);
+    assert_eq!(
+        ArchivePath::from_str("ar:/ab").unwrap().parent(),
+        Some(ArchivePath::from_str("ar:/").unwrap())
+    );
+    assert_eq!(
+        ArchivePath::from_str("ar:/ab/cd").unwrap().parent(),
+        Some(ArchivePath::from_str("ar:/ab").unwrap())
+    );
 }
 
 impl<'de> Deserialize<'de> for ArchivePath {

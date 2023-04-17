@@ -40,7 +40,7 @@ pub fn check_path(path: &str) -> Result<()> {
     if !path.starts_with('/') {
         bail!("path must start with '/'");
     }
-    if path.ends_with('/') {
+    if path != "/" && path.ends_with('/') {
         bail!("path must not end with '/'");
     }
     Ok(())

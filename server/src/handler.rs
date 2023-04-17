@@ -1,13 +1,14 @@
 use std::{mem, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use chrono::{TimeZone, Utc};
-use futures_util::TryStreamExt;
+use futures_util::{future::BoxFuture, TryStreamExt};
 use rammingen_protocol::{
-    AddVersion, ArchivePath, ContentHashExists, DateTime, Entry, EntryVersion, EntryVersionData,
-    FileContent, GetEntries, GetVersions, Response, SourceId, StreamingResponseItem,
+    AddVersion, ArchivePath, ContentHashExists, DateTime, Entry, EntryKind, EntryVersion,
+    EntryVersionData, FileContent, GetEntries, GetVersions, Response, SourceId,
+    StreamingResponseItem,
 };
-use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool};
+use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
 
 use crate::storage::Storage;
@@ -71,6 +72,105 @@ macro_rules! convert_version_data {
     }};
 }
 
+fn get_parent_dir<'a>(
+    ctx: &'a Context,
+    path: &'a ArchivePath,
+    tx: &'a mut Transaction<'_, Postgres>,
+    request: &'a AddVersion,
+) -> BoxFuture<'a, Result<Option<i64>>> {
+    Box::pin(async move {
+        let Some(parent) = path.parent() else { return Ok(None) };
+        let entry = query!(
+            "SELECT id, kind, exists FROM entries WHERE path = $1",
+            parent.0
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        let (entry_id, new_exists) = if let Some(entry) = entry {
+            if entry.kind != EntryKind::Directory as i32 {
+                bail!(
+                    "cannot save dir {} because {} is not a directory",
+                    path,
+                    parent
+                );
+            }
+            if request.exists && !entry.exists {
+                query!("UPDATE entries SET exists = true WHERE id = $1", entry.id)
+                    .execute(&mut *tx)
+                    .await?;
+                (entry.id, true)
+            } else {
+                return Ok(Some(entry.id));
+            }
+        } else {
+            let parent_of_parent = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
+            let id = query_scalar!(
+                "INSERT INTO entries (
+                    update_number,
+                    recorded_at,
+                    kind,
+
+                    parent_dir,
+                    path,
+                    source_id,
+                    record_trigger,
+                    exists,
+
+                    size,
+                    modified_at,
+                    content_hash,
+                    unix_mode
+                ) VALUES (
+                    nextval('entry_update_numbers'),
+                    now(),
+                    1,
+                    $1, $2, $3, $4, $5,
+                    NULL, NULL, NULL, NULL
+                ) RETURNING id",
+                parent_of_parent,
+                parent.0,
+                ctx.source_id.0,
+                request.record_trigger as i32,
+                request.exists,
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+            (id, request.exists)
+        };
+
+        query_scalar!(
+            "INSERT INTO entry_versions (
+                recorded_at,
+                snapshot_id,
+                kind,
+
+                entry_id,
+                path,
+                source_id,
+                record_trigger,
+                exists,
+
+                size,
+                modified_at,
+                content_hash,
+                unix_mode
+            ) VALUES (
+                now(), NULL, 1,
+                $1, $2, $3, $4, $5,
+                NULL, NULL, NULL, NULL
+            )",
+            entry_id,
+            request.path.0,
+            ctx.source_id.0,
+            request.record_trigger as i32,
+            new_exists,
+        )
+        .execute(&mut *tx)
+        .await?;
+        Ok(Some(entry_id))
+    })
+}
+
 pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<AddVersion>> {
     let mut tx = ctx.db_pool.begin().await?;
     let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0)
@@ -130,6 +230,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             .as_ref()
             .and_then(|c| c.unix_mode)
             .map(i64::from);
+        let parent = get_parent_dir(&ctx, &request.path, &mut tx, &request).await?;
         let entry_id = query_scalar!(
             "INSERT INTO entries (
                 update_number,
@@ -148,7 +249,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
                 nextval('entry_update_numbers'), now(),
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
             ) RETURNING id",
-            None::<i64>, // TODO: parent dir
+            parent,
             request.path.0,
             ctx.source_id.0,
             request.record_trigger as i32,
