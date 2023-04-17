@@ -48,6 +48,12 @@ impl ArchivePath {
             Some(Self(parent.into()))
         }
     }
+
+    pub fn strip_prefix(&self, base: &ArchivePath) -> Option<&str> {
+        self.0
+            .strip_prefix(&base.0)
+            .and_then(|prefix| prefix.strip_prefix('/'))
+    }
 }
 
 #[test]
@@ -236,7 +242,7 @@ impl EntryVersionData {
             match (&self.content, &update.content) {
                 (Some(content), Some(update)) => {
                     content.size == update.size
-                        && content.content_hash == update.content_hash
+                        && content.hash == update.hash
                         && match (content.unix_mode, update.unix_mode) {
                             (None, None) => true,
                             (None, Some(_)) => false,
@@ -271,7 +277,7 @@ pub struct EntryVersion {
 pub struct FileContent {
     pub modified_at: DateTime,
     pub size: u64,
-    pub content_hash: ContentHash,
+    pub hash: ContentHash,
     pub unix_mode: Option<u32>,
 }
 

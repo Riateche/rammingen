@@ -14,7 +14,9 @@ pub mod cli;
 pub mod client;
 pub mod config;
 pub mod db;
+pub mod download;
 pub mod encryption;
+pub mod pull_updates;
 pub mod upload;
 
 #[derive(Derivative)]
@@ -23,6 +25,7 @@ pub struct Ctx {
     pub client: Client,
     #[derivative(Debug = "ignore")]
     pub cipher: Aes256SivAead,
+    pub db: crate::db::Db,
 }
 
 #[tokio::main]
@@ -45,6 +48,7 @@ async fn main() -> Result<()> {
         client: Client::new(&config.server_url, &config.token),
         cipher: Aes256SivAead::new(&config.encryption_key.0),
         config,
+        db: crate::db::Db::open()?,
     });
     #[allow(unused_variables)]
     match cli.command {
@@ -58,7 +62,13 @@ async fn main() -> Result<()> {
             archive_path,
             local_path,
             version,
-        } => todo!(),
+        } => {
+            if version.is_some() {
+                todo!()
+            }
+            crate::pull_updates::pull_updates(&ctx).await?;
+            crate::download::download(&ctx, &archive_path, &local_path).await?;
+        }
         cli::Command::ListDirectory { path } => todo!(),
         cli::Command::History {
             archive_path,

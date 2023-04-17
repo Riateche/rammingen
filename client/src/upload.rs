@@ -67,7 +67,7 @@ pub fn upload<'a>(
             Some(FileContent {
                 modified_at: modified.into(),
                 size: file_data.size,
-                content_hash: file_data.hash,
+                hash: file_data.hash,
                 unix_mode: unix_mode(&metadata),
             })
         };

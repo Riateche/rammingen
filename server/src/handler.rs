@@ -62,7 +62,7 @@ macro_rules! convert_version_data {
                 Some(FileContent {
                     modified_at: modified_at.from_db(),
                     size: size.try_into()?,
-                    content_hash: content_hash.into(),
+                    hash: content_hash.into(),
                     unix_mode: row.unix_mode.map(TryInto::try_into).transpose()?,
                 })
             } else {
@@ -186,7 +186,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
         .as_ref()
         .map(|c| c.modified_at.to_db())
         .transpose()?;
-    let content_hash_db = request.content.as_ref().map(|c| &c.content_hash.0);
+    let content_hash_db = request.content.as_ref().map(|c| &c.hash.0);
     let (unix_mode_db, entry_id) = if let Some(entry) = entry {
         let entry = convert_entry!(entry);
         if entry.data.is_same(&request) {

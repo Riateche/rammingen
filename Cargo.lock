@@ -1785,6 +1785,7 @@ dependencies = [
  "serde_regex",
  "sha2",
  "sled",
+ "stream_generator",
  "tempfile",
  "tokio",
  "tracing",

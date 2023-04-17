@@ -2,19 +2,21 @@ use aes_siv::Aes256SivAead;
 use anyhow::{anyhow, bail, Result};
 use derivative::Derivative;
 use fs_err::File;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use reqwest::{header::CONTENT_LENGTH, Body, Method};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     io::{self, Seek, SeekFrom, Write},
-    path::PathBuf,
-    sync::Arc,
+    path::Path,
     time::Duration,
 };
+use stream_generator::generate_try_stream;
 use tempfile::SpooledTempFile;
 use tokio::task::block_in_place;
 
-use rammingen_protocol::{util::stream_file, ContentHash, RequestToResponse};
+use rammingen_protocol::{
+    util::stream_file, ContentHash, RequestToResponse, RequestToStreamingResponse,
+};
 
 use crate::encryption::Decryptor;
 
@@ -53,7 +55,37 @@ impl Client {
             .error_for_status()?
             .bytes()
             .await?;
-        Ok(bincode::deserialize(&response)?)
+        bincode::deserialize::<Result<R::Response, String>>(&response)?.map_err(anyhow::Error::msg)
+    }
+
+    pub fn stream<R>(&self, request: &R) -> impl Stream<Item = Result<R::ResponseItem>>
+    where
+        R: RequestToStreamingResponse + Serialize + Send + Sync + 'static,
+        R::ResponseItem: DeserializeOwned + Send + Sync + 'static,
+    {
+        let this = self.clone();
+        let request = bincode::serialize(&request);
+        generate_try_stream(|mut y| async move {
+            let mut response = this
+                .reqwest
+                .request(Method::POST, format!("{}{}", this.server_url, R::NAME))
+                .bearer_auth(&this.token)
+                .body(request?)
+                .send()
+                .await?
+                .error_for_status()?;
+            while let Some(chunk) = response.chunk().await? {
+                let data = bincode::deserialize::<Result<Option<R::ResponseItem>, String>>(&chunk)?
+                    .map_err(anyhow::Error::msg)?;
+                if let Some(data) = data {
+                    y.send(Ok(data)).await;
+                } else {
+                    return Ok(());
+                }
+            }
+            bail!("unexpected end of response");
+        })
+        .boxed()
     }
 
     pub async fn upload(&self, hash: &ContentHash, mut file: SpooledTempFile) -> Result<()> {
@@ -73,8 +105,8 @@ impl Client {
     pub async fn download(
         &self,
         hash: &ContentHash,
-        path: PathBuf,
-        cipher: Arc<Aes256SivAead>,
+        path: &Path,
+        cipher: &Aes256SivAead,
     ) -> Result<()> {
         let mut response = self
             .reqwest
@@ -90,8 +122,8 @@ impl Client {
             .to_str()?
             .parse()?;
 
-        let file = File::open(path)?;
-        let mut decryptor = Decryptor::new(&cipher, file);
+        let file = File::create(path)?;
+        let mut decryptor = Decryptor::new(cipher, file);
         let mut actual_len = 0;
 
         while let Some(chunk) = response.chunk().await? {
