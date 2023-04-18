@@ -45,6 +45,16 @@ pub async fn download<'a>(
                     .download(&content.hash, &tmp_path, &ctx.cipher)
                     .await?;
                 rename(&tmp_path, &entry_local_path)?;
+
+                #[cfg(target_family = "unix")]
+                {
+                    use std::fs::Permissions;
+                    use std::os::unix::prelude::PermissionsExt;
+
+                    if let Some(mode) = content.unix_mode {
+                        fs_err::set_permissions(&entry_local_path, Permissions::from_mode(mode))?;
+                    }
+                }
             }
         }
     }
