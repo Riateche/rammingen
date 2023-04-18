@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use aes_siv::{Aes256SivAead, KeyInit};
 use anyhow::{anyhow, Result};
@@ -6,17 +6,19 @@ use clap::Parser;
 use cli::Cli;
 use client::Client;
 use config::Config;
+use counters::Counters;
 use derivative::Derivative;
-use tracing::metadata::LevelFilter;
-use tracing_subscriber::{prelude::*, EnvFilter};
+use term::{clear_status, error};
 
 pub mod cli;
 pub mod client;
 pub mod config;
+pub mod counters;
 pub mod db;
 pub mod download;
 pub mod encryption;
 pub mod pull_updates;
+pub mod term;
 pub mod upload;
 
 #[derive(Derivative)]
@@ -26,19 +28,11 @@ pub struct Ctx {
     #[derivative(Debug = "ignore")]
     pub cipher: Aes256SivAead,
     pub db: crate::db::Db,
+    pub counters: Counters,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .from_env()
-                .unwrap(),
-        )
-        .init();
     let cli = Cli::parse();
 
     let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
@@ -49,6 +43,7 @@ async fn main() -> Result<()> {
         cipher: Aes256SivAead::new(&config.encryption_key.0),
         config,
         db: crate::db::Db::open()?,
+        counters: Counters::default(),
     });
     #[allow(unused_variables)]
     match cli.command {
@@ -57,7 +52,14 @@ async fn main() -> Result<()> {
         cli::Command::Upload {
             local_path,
             archive_path,
-        } => crate::upload::upload(&ctx, &local_path, &archive_path).await?,
+        } => {
+            if let Err(err) = crate::upload::upload(&ctx, &local_path, &archive_path).await {
+                error(format!("Failed to process {:?}: {:?}", local_path, err));
+                ctx.counters.failed.fetch_add(1, Ordering::Relaxed);
+            }
+            clear_status();
+            ctx.counters.report();
+        }
         cli::Command::Download {
             archive_path,
             local_path,
