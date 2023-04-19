@@ -7,6 +7,8 @@ use serde::de::Error;
 use serde::Deserialize;
 use typenum::U64;
 
+use crate::rules::Rules;
+
 /*
 global_rules: [
 
@@ -51,7 +53,7 @@ pub enum RuleOperator {
     Matches(Regex),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuleOutcome {
     Include,
     Exclude,
@@ -75,7 +77,7 @@ pub struct Rule {
 pub struct MountPoint {
     pub local: String,
     pub archive: String,
-    pub rules: Vec<Rule>,
+    pub rules: Rules,
 }
 
 #[derive(Clone)]
@@ -109,7 +111,7 @@ impl<'de> Deserialize<'de> for EncryptionKey {
 #[derive(Derivative, Clone, Deserialize)]
 #[derivative(Debug)]
 pub struct Config {
-    pub global_rules: Vec<Rule>,
+    pub global_rules: Rules,
     pub mount_points: Vec<MountPoint>,
     pub encryption_key: EncryptionKey,
     pub server_url: String,

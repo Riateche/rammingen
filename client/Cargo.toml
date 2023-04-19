@@ -45,6 +45,7 @@ stream_generator = "0.1.0"
 crossterm = "0.26.1"
 once_cell = "1.17.1"
 parking_lot = { version = "0.12.1", features = ["arc_lock"] }
+dunce = "1.0.4"
 
 [dev-dependencies]
 criterion = "0.4.0"

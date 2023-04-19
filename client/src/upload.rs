@@ -9,7 +9,8 @@ use tokio::{task::block_in_place, time::sleep};
 
 use crate::{
     encryption::{self, encrypt_path},
-    term::{error, info, set_status, warn},
+    rules::Rules,
+    term::{debug, info, set_status, warn},
     Ctx,
 };
 
@@ -19,12 +20,17 @@ pub fn upload<'a>(
     ctx: &'a Ctx,
     local_path: &'a Path,
     archive_path: &'a ArchivePath,
+    rules: &'a Rules,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
-        set_status(format!("Uploading {:?}", local_path));
+        set_status(format!("Uploading {}", local_path.display()));
         let metadata = fs::symlink_metadata(local_path)?;
         if metadata.is_symlink() {
-            warn(format!("skipping symlink: {:?}", local_path));
+            warn(format!("skipping symlink: {}", local_path.display()));
+            return Ok(());
+        }
+        if !rules.eval(local_path) {
+            debug(format!("ignored: {}", local_path.display()));
             return Ok(());
         }
         ctx.counters.scanned_entries.fetch_add(1, Ordering::Relaxed);
@@ -37,8 +43,8 @@ pub fn upload<'a>(
                 let new_modified = fs::symlink_metadata(local_path)?.modified()?;
                 if new_modified.elapsed()? < TOO_RECENT_INTERVAL {
                     info(format!(
-                        "file {:?} was modified recently, waiting...",
-                        local_path
+                        "file {} was modified recently, waiting...",
+                        local_path.display()
                     ));
                     sleep(TOO_RECENT_INTERVAL).await;
                 } else {
@@ -93,36 +99,25 @@ pub fn upload<'a>(
             ctx.counters
                 .updated_on_server
                 .fetch_add(1, Ordering::Relaxed);
-            info(format!("Uploaded new version of {:?}", local_path));
+            info(format!("Uploaded new version of {}", local_path.display()));
         }
         if is_dir {
             for entry in fs::read_dir(local_path)? {
                 let entry = entry?;
                 let file_name = entry.file_name();
-                let Some(file_name_str) = file_name.to_str() else {
-                    error(format!(
-                        "Unsupported file name: {:?}",
-                        entry.path()
-                    ));
-                    ctx.counters.failed.fetch_add(1, Ordering::Relaxed);
-                    continue;
-                };
-                let entry_archive_path = match archive_path.join(file_name_str) {
-                    Ok(path) => path,
-                    Err(err) => {
-                        error(format!(
-                            "Failed to construct archive path for {:?}: {:?}",
-                            entry.path(),
-                            err
-                        ));
-                        ctx.counters.failed.fetch_add(1, Ordering::Relaxed);
-                        continue;
-                    }
-                };
-                if let Err(err) = upload(ctx, &entry.path(), &entry_archive_path).await {
-                    error(format!("Failed to process {:?}: {:?}", entry.path(), err));
-                    ctx.counters.failed.fetch_add(1, Ordering::Relaxed);
-                }
+                let file_name_str = file_name
+                    .to_str()
+                    .ok_or_else(|| anyhow!("Unsupported file name: {:?}", entry.path()))?;
+                let entry_archive_path = archive_path.join(file_name_str).map_err(|err| {
+                    anyhow!(
+                        "Failed to construct archive path for {:?}: {:?}",
+                        entry.path(),
+                        err
+                    )
+                })?;
+                upload(ctx, &entry.path(), &entry_archive_path, rules)
+                    .await
+                    .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry.path(), err))?;
             }
         }
         Ok(())

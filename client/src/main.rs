@@ -1,4 +1,4 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
 use aes_siv::{Aes256SivAead, KeyInit};
 use anyhow::{anyhow, Result};
@@ -18,6 +18,7 @@ pub mod db;
 pub mod download;
 pub mod encryption;
 pub mod pull_updates;
+pub mod rules;
 pub mod term;
 pub mod upload;
 
@@ -37,7 +38,12 @@ async fn main() -> Result<()> {
 
     let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
     let config_file = config_dir.join("rammingen.json5");
-    let config: Config = json5::from_str(&fs_err::read_to_string(config_file)?)?;
+    let mut config: Config = json5::from_str(&fs_err::read_to_string(config_file)?)?;
+    for mount_point in &mut config.mount_points {
+        let mut all_rules = config.global_rules.clone();
+        all_rules.0.extend_from_slice(&mount_point.rules.0);
+        mount_point.rules = all_rules;
+    }
     let ctx = Arc::new(Ctx {
         client: Client::new(&config.server_url, &config.token),
         cipher: Aes256SivAead::new(&config.encryption_key.0),
@@ -53,9 +59,13 @@ async fn main() -> Result<()> {
             local_path,
             archive_path,
         } => {
-            if let Err(err) = crate::upload::upload(&ctx, &local_path, &archive_path).await {
+            let local_path = dunce::canonicalize(&local_path)
+                .map_err(|e| anyhow!("failed to canonicalize {:?}: {}", local_path, e))?;
+            if let Err(err) =
+                crate::upload::upload(&ctx, &local_path, &archive_path, &ctx.config.global_rules)
+                    .await
+            {
                 error(format!("Failed to process {:?}: {:?}", local_path, err));
-                ctx.counters.failed.fetch_add(1, Ordering::Relaxed);
             }
             clear_status();
             ctx.counters.report();
