@@ -183,6 +183,26 @@
     },
     "query": "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1"
   },
+  "6f1ab74f0229b14d212edc3d28a05aacb4cb1f7f77a330df0e4d83c8d0a5028b": {
+    "describe": {
+      "columns": [
+        {
+          "name": "count",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT count(*) FROM entries\n                WHERE exists = true AND parent_dir = $1"
+  },
   "7cb97c634650ab97097672ca4c6afdd9df6d6048f929d440769d1c8755b4cae3": {
     "describe": {
       "columns": [

@@ -1,6 +1,6 @@
 use std::{mem, sync::Arc};
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, TryStreamExt};
 use rammingen_protocol::{
@@ -95,6 +95,9 @@ fn get_parent_dir<'a>(
                 );
             }
             if request.exists && !entry.exists {
+                // Make sure parent's parent is also marked as existing.
+                let _ = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
+
                 query!("UPDATE entries SET exists = true WHERE id = $1", entry.id)
                     .execute(&mut *tx)
                     .await?;
@@ -191,6 +194,22 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
         let entry = convert_entry!(entry);
         if entry.data.is_same(&request) {
             return Ok(None);
+        }
+        if !request.exists {
+            let child_count = query_scalar!(
+                "SELECT count(*) FROM entries
+                WHERE exists = true AND parent_dir = $1",
+                Some(entry.id.0)
+            )
+            .fetch_one(&mut tx)
+            .await?
+            .ok_or_else(|| anyhow!("missing row in response"))?;
+            if child_count > 0 {
+                bail!(
+                    "cannot mark {} as deleted because it has existing children",
+                    request.path
+                );
+            }
         }
         let unix_mode_db = request
             .content
