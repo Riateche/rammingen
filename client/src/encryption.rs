@@ -115,8 +115,12 @@ pub struct EncryptedFileData {
     pub size: u64,
 }
 
-pub fn encrypt_file(path: &Path, cipher: &Aes256SivAead, salt: &str) -> Result<EncryptedFileData> {
-    let mut file = File::open(path)?;
+pub fn encrypt_file(
+    path: impl AsRef<Path>,
+    cipher: &Aes256SivAead,
+    salt: &str,
+) -> Result<EncryptedFileData> {
+    let mut file = File::open(path.as_ref())?;
     let mut output = SpooledTempFile::new(MAX_IN_MEMORY);
     output.write_u32::<LE>(MAGIC_NUMBER)?;
     let mut encryptor = EncryptingWriter {

@@ -1,8 +1,13 @@
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LE};
-use rammingen_protocol::{ArchivePath, Entry, EntryKind, EntryUpdateNumber, EntryVersionData};
+use rammingen_protocol::{
+    ArchivePath, Entry, EntryKind, EntryUpdateNumber, EntryVersionData, FileContent,
+};
+use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
 use std::{fmt::Debug, io, iter};
+
+use crate::upload::SanitizedLocalPath;
 
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
 
@@ -10,16 +15,23 @@ pub struct Db {
     #[allow(dead_code)]
     db: sled::Db,
     archive_entries: sled::Tree,
+    local_entries: sled::Tree,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LocalEntryInfo {
+    pub kind: EntryKind,
+    pub content: Option<FileContent>,
 }
 
 impl Db {
     pub fn open() -> Result<Db> {
         let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
         let db = sled::open(config_dir.join("rammingen.db"))?;
-        let archive_entries = db.open_tree("archive_entries")?;
         Ok(Self {
+            archive_entries: db.open_tree("archive_entries")?,
+            local_entries: db.open_tree("local_entries")?,
             db,
-            archive_entries,
         })
     }
 
@@ -58,7 +70,7 @@ impl Db {
             .map(|value| EntryUpdateNumber(LE::read_i64(&value))))
     }
 
-    pub fn update_entries(&self, updates: &[Entry]) -> Result<()> {
+    pub fn update_archive_entries(&self, updates: &[Entry]) -> Result<()> {
         if updates.is_empty() {
             return Ok(());
         }
@@ -75,6 +87,36 @@ impl Db {
             )?;
             Ok(())
         })?;
+        Ok(())
+    }
+
+    pub fn get_local_entries(
+        &self,
+    ) -> impl Iterator<Item = Result<(SanitizedLocalPath, LocalEntryInfo)>> {
+        self.local_entries.iter().rev().map(|pair| {
+            let (key, value) = pair?;
+            let path = SanitizedLocalPath(String::from_utf8(key.to_vec())?);
+            let data = bincode::deserialize::<LocalEntryInfo>(&value)?;
+            Ok((path, data))
+        })
+    }
+
+    pub fn get_local_entry(&self, path: &SanitizedLocalPath) -> Result<Option<LocalEntryInfo>> {
+        if let Some(value) = self.local_entries.get(path.0.as_bytes())? {
+            Ok(Some(bincode::deserialize::<LocalEntryInfo>(&value)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn set_local_entry(&self, path: &SanitizedLocalPath, data: &LocalEntryInfo) -> Result<()> {
+        self.local_entries
+            .insert(path.0.as_bytes(), bincode::serialize(data)?)?;
+        Ok(())
+    }
+
+    pub fn remove_local_entry(&self, path: &SanitizedLocalPath) -> Result<()> {
+        self.local_entries.remove(path.0.as_bytes())?;
         Ok(())
     }
 }

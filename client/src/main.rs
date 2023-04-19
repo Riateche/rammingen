@@ -1,15 +1,3 @@
-use std::sync::Arc;
-
-use aes_siv::{Aes256SivAead, KeyInit};
-use anyhow::{anyhow, Result};
-use clap::Parser;
-use cli::Cli;
-use client::Client;
-use config::Config;
-use counters::Counters;
-use derivative::Derivative;
-use term::{clear_status, error};
-
 pub mod cli;
 pub mod client;
 pub mod config;
@@ -19,8 +7,22 @@ pub mod download;
 pub mod encryption;
 pub mod pull_updates;
 pub mod rules;
+pub mod sync;
 pub mod term;
 pub mod upload;
+
+use crate::{download::download, pull_updates::pull_updates, upload::upload};
+use aes_siv::{Aes256SivAead, KeyInit};
+use anyhow::{anyhow, Result};
+use clap::Parser;
+use cli::Cli;
+use client::Client;
+use config::Config;
+use counters::Counters;
+use derivative::Derivative;
+use std::sync::Arc;
+use term::{clear_status, error};
+use upload::SanitizedLocalPath;
 
 #[derive(Derivative)]
 pub struct Ctx {
@@ -59,11 +61,15 @@ async fn main() -> Result<()> {
             local_path,
             archive_path,
         } => {
-            let local_path = dunce::canonicalize(&local_path)
-                .map_err(|e| anyhow!("failed to canonicalize {:?}: {}", local_path, e))?;
-            if let Err(err) =
-                crate::upload::upload(&ctx, &local_path, &archive_path, &ctx.config.global_rules)
-                    .await
+            let local_path = SanitizedLocalPath::new(&local_path)?;
+            if let Err(err) = upload(
+                &ctx,
+                &local_path,
+                &archive_path,
+                &ctx.config.global_rules,
+                false,
+            )
+            .await
             {
                 error(format!("Failed to process {:?}: {:?}", local_path, err));
             }
@@ -78,8 +84,8 @@ async fn main() -> Result<()> {
             if version.is_some() {
                 todo!()
             }
-            crate::pull_updates::pull_updates(&ctx).await?;
-            crate::download::download(&ctx, &archive_path, &local_path).await?;
+            pull_updates(&ctx).await?;
+            download(&ctx, &archive_path, &local_path).await?;
         }
         cli::Command::ListDirectory { path } => todo!(),
         cli::Command::History {

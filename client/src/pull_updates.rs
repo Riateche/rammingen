@@ -12,7 +12,7 @@ pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
         for update in &mut batch {
             update.data.path = decrypt_path(&update.data.path, &ctx.cipher)?;
         }
-        ctx.db.update_entries(&batch)?;
+        ctx.db.update_archive_entries(&batch)?;
     }
     Ok(())
 }

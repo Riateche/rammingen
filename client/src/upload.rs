@@ -4,7 +4,12 @@ use futures::future::BoxFuture;
 use rammingen_protocol::{
     AddVersion, ArchivePath, ContentHashExists, EntryKind, FileContent, RecordTrigger,
 };
-use std::{path::Path, sync::atomic::Ordering, time::Duration};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf, MAIN_SEPARATOR},
+    sync::atomic::Ordering,
+    time::Duration,
+};
 use tokio::{task::block_in_place, time::sleep};
 
 use crate::{
@@ -16,21 +21,100 @@ use crate::{
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_secs(3);
 
+#[derive(Debug, Clone)]
+pub struct SanitizedLocalPath(pub String);
+
+impl From<SanitizedLocalPath> for PathBuf {
+    fn from(value: SanitizedLocalPath) -> Self {
+        value.0.into()
+    }
+}
+
+impl From<&SanitizedLocalPath> for PathBuf {
+    fn from(value: &SanitizedLocalPath) -> Self {
+        value.0.clone().into()
+    }
+}
+
+impl AsRef<Path> for SanitizedLocalPath {
+    fn as_ref(&self) -> &Path {
+        Path::new(&self.0)
+    }
+}
+
+impl Display for SanitizedLocalPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl SanitizedLocalPath {
+    pub fn new(path: &Path) -> Result<Self> {
+        let path = if path.try_exists()? {
+            dunce::canonicalize(path)
+                .map_err(|e| anyhow!("failed to canonicalize {:?}: {}", path, e))?
+        } else {
+            let parent = path
+                .parent()
+                .ok_or_else(|| anyhow!("unsupported path (couldn't get parent): {:?}", path))?;
+            let file_name = path
+                .file_name()
+                .ok_or_else(|| anyhow!("unsupported path (couldn't get parent): {:?}", path))?;
+            let parent = dunce::canonicalize(parent)
+                .map_err(|e| anyhow!("failed to canonicalize {:?}: {}", parent, e))?;
+            parent.join(file_name)
+        };
+
+        let str = path
+            .to_str()
+            .ok_or_else(|| anyhow!("unsupported path: {:?}", path))?;
+        if str.is_empty() {
+            bail!("path cannot be empty");
+        }
+        Ok(Self(str.into()))
+    }
+
+    pub fn join(&self, file_name: &str) -> Result<Self> {
+        if file_name.is_empty() {
+            bail!("file name cannot be empty");
+        }
+        if file_name.contains('/') {
+            bail!("file name cannot contain '/'");
+        }
+        if file_name.contains('\\') {
+            bail!("file name cannot contain '\\'");
+        }
+        let mut path = self.clone();
+        path.0.push(MAIN_SEPARATOR);
+        path.0.push_str(file_name);
+        Ok(path)
+    }
+
+    pub fn file_name(&self) -> &str {
+        self.0
+            .split(MAIN_SEPARATOR)
+            .rev()
+            .next()
+            .expect("cannot be empty")
+    }
+}
+
 pub fn upload<'a>(
     ctx: &'a Ctx,
-    local_path: &'a Path,
+    local_path: &'a SanitizedLocalPath,
     archive_path: &'a ArchivePath,
     rules: &'a Rules,
+    is_mount: bool,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
-        set_status(format!("Uploading {}", local_path.display()));
+        set_status(format!("Uploading {}", local_path));
         let metadata = fs::symlink_metadata(local_path)?;
         if metadata.is_symlink() {
-            warn(format!("skipping symlink: {}", local_path.display()));
+            warn(format!("skipping symlink: {}", local_path));
             return Ok(());
         }
         if !rules.eval(local_path) {
-            debug(format!("ignored: {}", local_path.display()));
+            debug(format!("ignored: {}", local_path));
             return Ok(());
         }
         ctx.counters.scanned_entries.fetch_add(1, Ordering::Relaxed);
@@ -44,7 +128,7 @@ pub fn upload<'a>(
                 if new_modified.elapsed()? < TOO_RECENT_INTERVAL {
                     info(format!(
                         "file {} was modified recently, waiting...",
-                        local_path.display()
+                        local_path
                     ));
                     sleep(TOO_RECENT_INTERVAL).await;
                 } else {
@@ -99,8 +183,9 @@ pub fn upload<'a>(
             ctx.counters
                 .updated_on_server
                 .fetch_add(1, Ordering::Relaxed);
-            info(format!("Uploaded new version of {}", local_path.display()));
+            info(format!("Uploaded new version of {}", local_path));
         }
+        if is_mount {}
         if is_dir {
             for entry in fs::read_dir(local_path)? {
                 let entry = entry?;
@@ -108,6 +193,7 @@ pub fn upload<'a>(
                 let file_name_str = file_name
                     .to_str()
                     .ok_or_else(|| anyhow!("Unsupported file name: {:?}", entry.path()))?;
+                let entry_local_path = local_path.join(file_name_str)?;
                 let entry_archive_path = archive_path.join(file_name_str).map_err(|err| {
                     anyhow!(
                         "Failed to construct archive path for {:?}: {:?}",
@@ -115,7 +201,7 @@ pub fn upload<'a>(
                         err
                     )
                 })?;
-                upload(ctx, &entry.path(), &entry_archive_path, rules)
+                upload(ctx, &entry_local_path, &entry_archive_path, rules, is_mount)
                     .await
                     .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry.path(), err))?;
             }
