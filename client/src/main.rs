@@ -20,7 +20,7 @@ use client::Client;
 use config::Config;
 use counters::Counters;
 use derivative::Derivative;
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use term::{clear_status, error};
 use upload::SanitizedLocalPath;
 
@@ -68,6 +68,7 @@ async fn main() -> Result<()> {
                 &archive_path,
                 &ctx.config.global_rules,
                 false,
+                &mut HashSet::new(),
             )
             .await
             {

@@ -2,9 +2,11 @@ use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use futures::future::BoxFuture;
 use rammingen_protocol::{
-    AddVersion, ArchivePath, ContentHashExists, EntryKind, FileContent, RecordTrigger,
+    AddVersion, ArchivePath, ContentHashExists, DateTime, EntryKind, FileContent, RecordTrigger,
 };
+use serde::{de::Error, Deserialize};
 use std::{
+    collections::HashSet,
     fmt::Display,
     path::{Path, PathBuf, MAIN_SEPARATOR},
     sync::atomic::Ordering,
@@ -13,6 +15,7 @@ use std::{
 use tokio::{task::block_in_place, time::sleep};
 
 use crate::{
+    db::LocalEntryInfo,
     encryption::{self, encrypt_path},
     rules::Rules,
     term::{debug, info, set_status, warn},
@@ -21,7 +24,7 @@ use crate::{
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_secs(3);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SanitizedLocalPath(pub String);
 
 impl From<SanitizedLocalPath> for PathBuf {
@@ -49,7 +52,8 @@ impl Display for SanitizedLocalPath {
 }
 
 impl SanitizedLocalPath {
-    pub fn new(path: &Path) -> Result<Self> {
+    pub fn new(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
         let path = if path.try_exists()? {
             dunce::canonicalize(path)
                 .map_err(|e| anyhow!("failed to canonicalize {:?}: {}", path, e))?
@@ -97,6 +101,27 @@ impl SanitizedLocalPath {
             .next()
             .expect("cannot be empty")
     }
+
+    pub fn parent(&self) -> Option<Self> {
+        Path::new(&self.0).parent().map(|parent| {
+            Self(
+                parent
+                    .to_str()
+                    .expect("parent of sanitized path must be valid utf-8")
+                    .into(),
+            )
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for SanitizedLocalPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        Self::new(string).map_err(D::Error::custom)
+    }
 }
 
 pub fn upload<'a>(
@@ -105,9 +130,11 @@ pub fn upload<'a>(
     archive_path: &'a ArchivePath,
     rules: &'a Rules,
     is_mount: bool,
+    existing_paths: &'a mut HashSet<SanitizedLocalPath>,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
         set_status(format!("Uploading {}", local_path));
+        existing_paths.insert(local_path.clone());
         let metadata = fs::symlink_metadata(local_path)?;
         if metadata.is_symlink() {
             warn(format!("skipping symlink: {}", local_path));
@@ -119,8 +146,21 @@ pub fn upload<'a>(
         }
         ctx.counters.scanned_entries.fetch_add(1, Ordering::Relaxed);
         let is_dir = metadata.is_dir();
-        let content = if is_dir {
-            None
+        let kind = if is_dir {
+            EntryKind::Directory
+        } else {
+            EntryKind::File
+        };
+        let db_data = ctx.db.get_local_entry(local_path)?;
+
+        let changed;
+        let content;
+
+        if is_dir {
+            changed = db_data
+                .as_ref()
+                .map_or(true, |db_data| db_data.kind != kind);
+            content = None;
         } else {
             let mut modified = None;
             for _ in 0..5 {
@@ -138,54 +178,89 @@ pub fn upload<'a>(
             }
             let modified =
                 modified.ok_or_else(|| anyhow!("file {:?} keeps updating", local_path))?;
+            let modified_datetime = DateTime::from(modified);
 
-            let file_data = block_in_place(|| {
-                encryption::encrypt_file(local_path, &ctx.cipher, &ctx.config.salt)
-            })?;
+            let maybe_changed = db_data.as_ref().map_or(true, |db_data| {
+                db_data.kind != kind || {
+                    db_data
+                        .content
+                        .as_ref()
+                        .map_or(true, |content| content.modified_at != modified_datetime)
+                }
+            });
 
-            let final_modified = fs::symlink_metadata(local_path)?.modified()?;
-            if final_modified != modified {
-                bail!(
-                    "file {:?} was updated while it was being processed",
-                    local_path
-                );
-            }
+            if maybe_changed {
+                let file_data = block_in_place(|| {
+                    encryption::encrypt_file(local_path, &ctx.cipher, &ctx.config.salt)
+                })?;
 
-            if !ctx
-                .client
-                .request(&ContentHashExists(file_data.hash.clone()))
-                .await?
-            {
-                ctx.client.upload(&file_data.hash, file_data.file).await?;
-            }
+                let final_modified = fs::symlink_metadata(local_path)?.modified()?;
+                if final_modified != modified {
+                    bail!(
+                        "file {:?} was updated while it was being processed",
+                        local_path
+                    );
+                }
 
-            Some(FileContent {
-                modified_at: modified.into(),
-                size: file_data.size,
-                hash: file_data.hash,
-                unix_mode: unix_mode(&metadata),
-            })
-        };
+                let current_content = FileContent {
+                    modified_at: modified_datetime,
+                    size: file_data.size,
+                    hash: file_data.hash,
+                    unix_mode: unix_mode(&metadata),
+                };
 
-        let add_version = AddVersion {
-            path: encrypt_path(archive_path, &ctx.cipher)?,
-            record_trigger: RecordTrigger::Upload,
-            kind: if is_dir {
-                EntryKind::Directory
+                changed = db_data.as_ref().map_or(true, |db_data| {
+                    db_data.kind != kind || {
+                        db_data.content.as_ref().map_or(true, |content| {
+                            content.hash != current_content.hash
+                                || content.unix_mode != current_content.unix_mode
+                        })
+                    }
+                });
+
+                if changed
+                    && !ctx
+                        .client
+                        .request(&ContentHashExists(current_content.hash.clone()))
+                        .await?
+                {
+                    ctx.client
+                        .upload(&current_content.hash, file_data.file)
+                        .await?;
+                }
+
+                content = Some(current_content);
             } else {
-                EntryKind::File
-            },
-            exists: true,
-            content,
+                changed = false;
+                content = None;
+            }
         };
-        ctx.counters.sent_to_server.fetch_add(1, Ordering::Relaxed);
-        if ctx.client.request(&add_version).await?.is_some() {
-            ctx.counters
-                .updated_on_server
-                .fetch_add(1, Ordering::Relaxed);
-            info(format!("Uploaded new version of {}", local_path));
+
+        if changed {
+            let add_version = AddVersion {
+                path: encrypt_path(archive_path, &ctx.cipher)?,
+                record_trigger: RecordTrigger::Upload,
+                kind,
+                exists: true,
+                content,
+            };
+            ctx.counters.sent_to_server.fetch_add(1, Ordering::Relaxed);
+            if ctx.client.request(&add_version).await?.is_some() {
+                ctx.counters
+                    .updated_on_server
+                    .fetch_add(1, Ordering::Relaxed);
+                info(format!("Uploaded new version of {}", local_path));
+            }
+            if is_mount {
+                ctx.db.set_local_entry(
+                    local_path,
+                    &LocalEntryInfo {
+                        kind: add_version.kind,
+                        content: add_version.content.clone(),
+                    },
+                )?;
+            }
         }
-        if is_mount {}
         if is_dir {
             for entry in fs::read_dir(local_path)? {
                 let entry = entry?;
@@ -201,9 +276,16 @@ pub fn upload<'a>(
                         err
                     )
                 })?;
-                upload(ctx, &entry_local_path, &entry_archive_path, rules, is_mount)
-                    .await
-                    .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry.path(), err))?;
+                upload(
+                    ctx,
+                    &entry_local_path,
+                    &entry_archive_path,
+                    rules,
+                    is_mount,
+                    existing_paths,
+                )
+                .await
+                .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry.path(), err))?;
             }
         }
         Ok(())

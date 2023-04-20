@@ -273,7 +273,7 @@ pub struct EntryVersion {
     pub data: EntryVersionData,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileContent {
     pub modified_at: DateTime,
     pub size: u64,

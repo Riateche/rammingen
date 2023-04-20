@@ -2,12 +2,14 @@ use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use core::fmt;
 use derivative::Derivative;
 use generic_array::GenericArray;
+use rammingen_protocol::ArchivePath;
 use regex::Regex;
 use serde::de::Error;
 use serde::Deserialize;
 use typenum::U64;
 
 use crate::rules::Rules;
+use crate::upload::SanitizedLocalPath;
 
 /*
 global_rules: [
@@ -75,8 +77,8 @@ pub struct Rule {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MountPoint {
-    pub local: String,
-    pub archive: String,
+    pub local: SanitizedLocalPath,
+    pub archive: ArchivePath,
     pub rules: Rules,
 }
 
