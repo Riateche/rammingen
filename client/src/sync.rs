@@ -8,7 +8,7 @@ use crate::{
     Ctx,
 };
 use anyhow::Result;
-use rammingen_protocol::{AddVersion, ArchivePath, RecordTrigger};
+use rammingen_protocol::ArchivePath;
 
 fn to_archive_path<'a>(
     local_path: &SanitizedLocalPath,
@@ -60,11 +60,11 @@ pub async fn sync(ctx: &Ctx) -> Result<()> {
     }
     set_status("Checking for files deleted locally");
     for entry in ctx.db.get_local_entries() {
-        let (local_path, data) = entry?;
+        let (local_path, _data) = entry?;
         if existing_paths.contains(&local_path) {
             continue;
         }
-        let Some((archive_path, _)) =
+        let Some((_archive_path, _)) =
             to_archive_path(&local_path, &ctx.config.mount_points, &mut HashMap::new())
             else {
                 continue;

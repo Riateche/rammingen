@@ -209,19 +209,28 @@ impl TryFrom<i32> for RecordTrigger {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EntryKind {
-    File,
-    Directory,
+    File = 1,
+    Directory = 2,
 }
 
-impl TryFrom<i32> for EntryKind {
-    type Error = anyhow::Error;
+impl EntryKind {
+    pub const NOT_EXISTS: i32 = 0;
+}
 
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::File),
-            1 => Ok(Self::Directory),
-            _ => bail!("invalid value for EntryKind: {}", value),
-        }
+pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
+    match value {
+        0 => Ok(None),
+        1 => Ok(Some(EntryKind::File)),
+        2 => Ok(Some(EntryKind::Directory)),
+        _ => bail!("invalid value for EntryKind: {}", value),
+    }
+}
+
+pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
+    match value {
+        None => 0,
+        Some(EntryKind::File) => 1,
+        Some(EntryKind::Directory) => 2,
     }
 }
 
@@ -231,14 +240,13 @@ pub struct EntryVersionData {
     pub recorded_at: DateTime,
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
-    pub kind: EntryKind,
-    pub exists: bool,
+    pub kind: Option<EntryKind>,
     pub content: Option<FileContent>,
 }
 
 impl EntryVersionData {
     pub fn is_same(&self, update: &AddVersion) -> bool {
-        self.path == update.path && self.kind == update.kind && self.exists == update.exists && {
+        self.path == update.path && self.kind == update.kind && {
             match (&self.content, &update.content) {
                 (Some(content), Some(update)) => {
                     content.size == update.size
@@ -309,8 +317,7 @@ streaming_response_type!(GetAllVersions, Vec<EntryVersion>);
 pub struct AddVersion {
     pub path: ArchivePath,
     pub record_trigger: RecordTrigger,
-    pub kind: EntryKind,
-    pub exists: bool,
+    pub kind: Option<EntryKind>,
     pub content: Option<FileContent>,
 }
 response_type!(AddVersion, Option<VersionId>);

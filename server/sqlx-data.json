@@ -1,25 +1,5 @@
 {
   "db": "PostgreSQL",
-  "0638a7f9468d3975e23dbad2e7e0be88ab1b0b99e349f3a6f5c978787a01725d": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4",
-          "Int4",
-          "Int4",
-          "Bool",
-          "Int8",
-          "Timestamptz",
-          "Bytea",
-          "Int8",
-          "Int8"
-        ]
-      }
-    },
-    "query": "UPDATE entries\n            SET update_number = nextval('entry_update_numbers'),\n                recorded_at = now(),\n                source_id = $1,\n                record_trigger = $2,\n                kind = $3,\n                exists = $4,\n                size = $5,\n                modified_at = $6,\n                content_hash = $7,\n                unix_mode = $8\n            WHERE id = $9"
-  },
   "3aad017f3bd8be03df414e82689a0fc81914007a72885eeaa9376aff3644ab6e": {
     "describe": {
       "columns": [],
@@ -32,36 +12,26 @@
     },
     "query": "UPDATE entries SET exists = true WHERE id = $1"
   },
-  "47d892c683862fc49fbd7e6ac951c773d090c3badb4248bb9665346725606955": {
+  "402176dd33fc3564bab98fe47f00c467651ab3075851998eb6d80fe25e1bc17c": {
     "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        false
-      ],
+      "columns": [],
+      "nullable": [],
       "parameters": {
         "Left": [
-          "Int8",
-          "Varchar",
           "Int4",
           "Int4",
           "Int4",
-          "Bool",
           "Int8",
           "Timestamptz",
           "Bytea",
+          "Int8",
           "Int8"
         ]
       }
     },
-    "query": "INSERT INTO entry_versions (\n            recorded_at,\n            snapshot_id,\n            entry_id,\n            path,\n            source_id,\n            record_trigger,\n            kind,\n            exists,\n            size,\n            modified_at,\n            content_hash,\n            unix_mode\n        ) VALUES (\n            now(), NULL,\n            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10\n        ) RETURNING id"
+    "query": "UPDATE entries\n            SET update_number = nextval('entry_update_numbers'),\n                recorded_at = now(),\n                source_id = $1,\n                record_trigger = $2,\n                kind = $3,\n                size = $4,\n                modified_at = $5,\n                content_hash = $6,\n                unix_mode = $7\n            WHERE id = $8"
   },
-  "5fcd5d1b20f777b1a52907b6ee3500db9f3333a7fe3aa48609b3a6dc7d15316a": {
+  "46bad461edb2812efaba554e6c2dc0dde271c97c1ce7b7da2290c63f8408fb31": {
     "describe": {
       "columns": [
         {
@@ -78,17 +48,11 @@
           "Int8",
           "Varchar",
           "Int4",
-          "Int4",
-          "Int4",
-          "Bool",
-          "Int8",
-          "Timestamptz",
-          "Bytea",
-          "Int8"
+          "Int4"
         ]
       }
     },
-    "query": "INSERT INTO entries (\n                update_number,\n                recorded_at,\n                parent_dir,\n                path,\n                source_id,\n                record_trigger,\n                kind,\n                exists,\n                size,\n                modified_at,\n                content_hash,\n                unix_mode\n            ) VALUES (\n                nextval('entry_update_numbers'), now(),\n                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10\n            ) RETURNING id"
+    "query": "INSERT INTO entries (\n                    update_number,\n                    recorded_at,\n                    kind,\n\n                    parent_dir,\n                    path,\n                    source_id,\n                    record_trigger,\n\n                    size,\n                    modified_at,\n                    content_hash,\n                    unix_mode\n                ) VALUES (\n                    nextval('entry_update_numbers'),\n                    now(),\n                    2,\n                    $1, $2, $3, $4,\n                    NULL, NULL, NULL, NULL\n                ) RETURNING id"
   },
   "6323a5459e04d4b858eedc033932c75f84f47a28eeaa078316094e10943b5aa3": {
     "describe": {
@@ -182,6 +146,34 @@
       }
     },
     "query": "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1"
+  },
+  "68da5c95c3eff8f01627b88e9448f0bb925da59095884fa749bf0df6c95b4a15": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Varchar",
+          "Int4",
+          "Int4",
+          "Int4",
+          "Int8",
+          "Timestamptz",
+          "Bytea",
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO entry_versions (\n            recorded_at,\n            snapshot_id,\n            entry_id,\n            path,\n            source_id,\n            record_trigger,\n            kind,\n            size,\n            modified_at,\n            content_hash,\n            unix_mode\n        ) VALUES (\n            now(), NULL,\n            $1, $2, $3, $4, $5, $6, $7, $8, $9\n        ) RETURNING id"
   },
   "6f1ab74f0229b14d212edc3d28a05aacb4cb1f7f77a330df0e4d83c8d0a5028b": {
     "describe": {
@@ -301,6 +293,34 @@
       }
     },
     "query": "SELECT * FROM (\n            SELECT *,\n            row_number() OVER(PARTITION BY entry_id ORDER BY recorded_at DESC) AS row_number\n            FROM entry_versions\n            WHERE path LIKE $1 AND recorded_at <= $2\n        ) t WHERE row_number = 1"
+  },
+  "89329a72e0b4e698d0477a64c203d7e95be740cb0f0242a073f7aaab134585b1": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Varchar",
+          "Int4",
+          "Int4",
+          "Int4",
+          "Int8",
+          "Timestamptz",
+          "Bytea",
+          "Int8"
+        ]
+      }
+    },
+    "query": "INSERT INTO entries (\n                update_number,\n                recorded_at,\n                parent_dir,\n                path,\n                source_id,\n                record_trigger,\n                kind,\n                size,\n                modified_at,\n                content_hash,\n                unix_mode\n            ) VALUES (\n                nextval('entry_update_numbers'), now(),\n                $1, $2, $3, $4, $5, $6, $7, $8, $9\n            ) RETURNING id"
   },
   "96f4791e4c98af9f2f4b833adc02acdac0ebf6a1a6790dff65a30f6255c4bafa": {
     "describe": {
@@ -465,30 +485,6 @@
       }
     },
     "query": "INSERT INTO entry_versions (\n                recorded_at,\n                snapshot_id,\n                kind,\n\n                entry_id,\n                path,\n                source_id,\n                record_trigger,\n                exists,\n\n                size,\n                modified_at,\n                content_hash,\n                unix_mode\n            ) VALUES (\n                now(), NULL, 1,\n                $1, $2, $3, $4, $5,\n                NULL, NULL, NULL, NULL\n            )"
-  },
-  "f52e4020502ceb205377a09ecc8bbf256422dea34331d1c8391ef95ff051569a": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Int8",
-          "Varchar",
-          "Int4",
-          "Int4",
-          "Bool"
-        ]
-      }
-    },
-    "query": "INSERT INTO entries (\n                    update_number,\n                    recorded_at,\n                    kind,\n\n                    parent_dir,\n                    path,\n                    source_id,\n                    record_trigger,\n                    exists,\n\n                    size,\n                    modified_at,\n                    content_hash,\n                    unix_mode\n                ) VALUES (\n                    nextval('entry_update_numbers'),\n                    now(),\n                    1,\n                    $1, $2, $3, $4, $5,\n                    NULL, NULL, NULL, NULL\n                ) RETURNING id"
   },
   "ff53321c520fe0e9ad62b4803179769db1833d3498e0ed789e7c50c599f7d575": {
     "describe": {

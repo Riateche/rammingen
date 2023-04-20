@@ -20,9 +20,9 @@ pub async fn download<'a>(
         .join("__rammingen_tmp");
     for entry in ctx.db.get_archive_entries(archive_path) {
         let entry = entry?;
-        if !entry.exists {
+        let Some(kind) = entry.kind else {
             continue;
-        }
+        };
         let entry_local_path = if &entry.path == archive_path {
             local_path.to_path_buf()
         } else {
@@ -33,7 +33,7 @@ pub async fn download<'a>(
             local_path.join(&*fix_path_separator(prefix))
         };
 
-        match entry.kind {
+        match kind {
             EntryKind::Directory => {
                 create_dir(&entry_local_path)?;
             }

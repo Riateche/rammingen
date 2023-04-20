@@ -48,7 +48,7 @@ impl Db {
         })();
         let children = if root_entry
             .as_ref()
-            .map_or(false, |entry| entry.kind == EntryKind::Directory)
+            .map_or(false, |entry| entry.kind == Some(EntryKind::Directory))
         {
             let mut prefix = path.0.clone();
             prefix.push('/');

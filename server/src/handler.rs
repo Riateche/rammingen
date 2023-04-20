@@ -4,9 +4,9 @@ use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, TryStreamExt};
 use rammingen_protocol::{
-    AddVersion, ArchivePath, ContentHashExists, DateTime, Entry, EntryKind, EntryVersion,
-    EntryVersionData, FileContent, GetEntries, GetVersions, Response, SourceId,
-    StreamingResponseItem,
+    entry_kind_from_db, entry_kind_to_db, AddVersion, ArchivePath, ContentHashExists, DateTime,
+    Entry, EntryKind, EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions,
+    Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -54,8 +54,7 @@ macro_rules! convert_version_data {
             recorded_at: row.recorded_at.from_db(),
             source_id: row.source_id.into(),
             record_trigger: row.record_trigger.try_into()?,
-            kind: row.kind.try_into()?,
-            exists: row.exists,
+            kind: entry_kind_from_db(row.kind)?,
             content: if let (Some(modified_at), Some(size), Some(content_hash)) =
                 (row.modified_at, row.size, row.content_hash)
             {
@@ -94,7 +93,7 @@ fn get_parent_dir<'a>(
                     parent
                 );
             }
-            if request.exists && !entry.exists {
+            if request.kind.is_some() && entry.kind == EntryKind::NOT_EXISTS {
                 // Make sure parent's parent is also marked as existing.
                 let _ = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
 
@@ -117,7 +116,6 @@ fn get_parent_dir<'a>(
                     path,
                     source_id,
                     record_trigger,
-                    exists,
 
                     size,
                     modified_at,
@@ -126,19 +124,18 @@ fn get_parent_dir<'a>(
                 ) VALUES (
                     nextval('entry_update_numbers'),
                     now(),
-                    1,
-                    $1, $2, $3, $4, $5,
+                    2,
+                    $1, $2, $3, $4,
                     NULL, NULL, NULL, NULL
                 ) RETURNING id",
                 parent_of_parent,
                 parent.0,
                 ctx.source_id.0,
                 request.record_trigger as i32,
-                request.exists,
             )
             .fetch_one(&mut *tx)
             .await?;
-            (id, request.exists)
+            (id, request.kind.is_some())
         };
 
         query_scalar!(
@@ -195,7 +192,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
         if entry.data.is_same(&request) {
             return Ok(None);
         }
-        if !request.exists {
+        if request.kind.is_none() {
             let child_count = query_scalar!(
                 "SELECT count(*) FROM entries
                 WHERE exists = true AND parent_dir = $1",
@@ -224,16 +221,14 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
                 source_id = $1,
                 record_trigger = $2,
                 kind = $3,
-                exists = $4,
-                size = $5,
-                modified_at = $6,
-                content_hash = $7,
-                unix_mode = $8
-            WHERE id = $9",
+                size = $4,
+                modified_at = $5,
+                content_hash = $6,
+                unix_mode = $7
+            WHERE id = $8",
             ctx.source_id.0,
             request.record_trigger as i32,
-            request.kind as i32,
-            request.exists,
+            entry_kind_to_db(request.kind),
             size_db,
             modified_at_db,
             content_hash_db,
@@ -259,21 +254,19 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
                 source_id,
                 record_trigger,
                 kind,
-                exists,
                 size,
                 modified_at,
                 content_hash,
                 unix_mode
             ) VALUES (
                 nextval('entry_update_numbers'), now(),
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+                $1, $2, $3, $4, $5, $6, $7, $8, $9
             ) RETURNING id",
             parent,
             request.path.0,
             ctx.source_id.0,
             request.record_trigger as i32,
-            request.kind as i32,
-            request.exists,
+            entry_kind_to_db(request.kind),
             size_db,
             modified_at_db,
             content_hash_db,
@@ -293,21 +286,19 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             source_id,
             record_trigger,
             kind,
-            exists,
             size,
             modified_at,
             content_hash,
             unix_mode
         ) VALUES (
             now(), NULL,
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+            $1, $2, $3, $4, $5, $6, $7, $8, $9
         ) RETURNING id",
         entry_id.0,
         request.path.0,
         ctx.source_id.0,
         request.record_trigger as i32,
-        request.kind as i32,
-        request.exists,
+        entry_kind_to_db(request.kind),
         size_db,
         modified_at_db,
         content_hash_db,

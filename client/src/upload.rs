@@ -240,8 +240,7 @@ pub fn upload<'a>(
             let add_version = AddVersion {
                 path: encrypt_path(archive_path, &ctx.cipher)?,
                 record_trigger: RecordTrigger::Upload,
-                kind,
-                exists: true,
+                kind: Some(kind),
                 content,
             };
             ctx.counters.sent_to_server.fetch_add(1, Ordering::Relaxed);
@@ -255,7 +254,7 @@ pub fn upload<'a>(
                 ctx.db.set_local_entry(
                     local_path,
                     &LocalEntryInfo {
-                        kind: add_version.kind,
+                        kind,
                         content: add_version.content.clone(),
                     },
                 )?;
