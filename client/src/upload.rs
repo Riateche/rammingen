@@ -19,11 +19,11 @@ use crate::{
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_secs(3);
 
-fn to_archive_path(
+fn to_archive_path<'a>(
     local_path: &SanitizedLocalPath,
-    mount_points: &[MountPoint],
-) -> Result<Option<ArchivePath>> {
-    for mount_point in mount_points {
+    mount_points: &'a mut [(&MountPoint, Rules)],
+) -> Result<Option<(ArchivePath, &'a mut Rules)>> {
+    for (mount_point, rules) in mount_points {
         if let Ok(relative) = local_path.as_path().strip_prefix(&mount_point.local) {
             let mut archive = mount_point.archive.clone();
             for component in relative.components() {
@@ -33,7 +33,7 @@ fn to_archive_path(
                     bail!("unexpected non-normal component in {:?}", relative);
                 };
             }
-            return Ok(Some(archive));
+            return Ok(Some((archive, rules)));
         }
     }
     Ok(None)
@@ -70,6 +70,7 @@ fn to_archive_path(
 
 pub async fn find_local_deletions<'a>(
     ctx: &'a Ctx,
+    mount_points: &'a mut [(&MountPoint, Rules)],
     existing_paths: &'a HashSet<SanitizedLocalPath>,
 ) -> Result<()> {
     set_status("Checking for files deleted locally");
@@ -78,12 +79,15 @@ pub async fn find_local_deletions<'a>(
         if existing_paths.contains(&local_path) {
             continue;
         }
-        // TODO: check rules
-        let Some(archive_path) =
-            to_archive_path(&local_path, &ctx.config.mount_points)?
+
+        let Some((archive_path, rules)) =
+            to_archive_path(&local_path, mount_points)?
             else {
                 continue;
             };
+        if !rules.eval(&local_path)? {
+            continue;
+        }
         let id = ctx
             .client
             .request(&AddVersion {
@@ -108,7 +112,7 @@ pub fn upload<'a>(
     ctx: &'a Ctx,
     local_path: &'a SanitizedLocalPath,
     archive_path: &'a ArchivePath,
-    rules: &'a Rules,
+    rules: &'a mut Rules,
     is_mount: bool,
     existing_paths: &'a mut HashSet<SanitizedLocalPath>,
 ) -> BoxFuture<'a, Result<()>> {
@@ -120,7 +124,7 @@ pub fn upload<'a>(
             warn(format!("skipping symlink: {}", local_path));
             return Ok(());
         }
-        if !rules.eval(local_path) {
+        if !rules.eval(local_path)? {
             debug(format!("ignored: {}", local_path));
             return Ok(());
         }

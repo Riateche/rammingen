@@ -9,7 +9,6 @@ use serde::Deserialize;
 use typenum::U64;
 
 use crate::path::SanitizedLocalPath;
-use crate::rules::Rules;
 
 /*
 global_rules: [
@@ -79,7 +78,7 @@ pub struct Rule {
 pub struct MountPoint {
     pub local: SanitizedLocalPath,
     pub archive: ArchivePath,
-    pub rules: Rules,
+    pub rules: Vec<Rule>,
 }
 
 #[derive(Clone)]
@@ -113,7 +112,7 @@ impl<'de> Deserialize<'de> for EncryptionKey {
 #[derive(Derivative, Clone, Deserialize)]
 #[derivative(Debug)]
 pub struct Config {
-    pub global_rules: Rules,
+    pub global_rules: Vec<Rule>,
     pub mount_points: Vec<MountPoint>,
     pub encryption_key: EncryptionKey,
     pub server_url: String,

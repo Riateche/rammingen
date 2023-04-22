@@ -22,6 +22,7 @@ use config::Config;
 use counters::Counters;
 use derivative::Derivative;
 use path::SanitizedLocalPath;
+use rules::Rules;
 use std::{collections::HashSet, sync::Arc};
 use term::{clear_status, error};
 
@@ -41,12 +42,7 @@ async fn main() -> Result<()> {
 
     let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
     let config_file = config_dir.join("rammingen.json5");
-    let mut config: Config = json5::from_str(&fs_err::read_to_string(config_file)?)?;
-    for mount_point in &mut config.mount_points {
-        let mut all_rules = config.global_rules.clone();
-        all_rules.0.extend_from_slice(&mount_point.rules.0);
-        mount_point.rules = all_rules;
-    }
+    let config: Config = json5::from_str(&fs_err::read_to_string(config_file)?)?;
     let ctx = Arc::new(Ctx {
         client: Client::new(&config.server_url, &config.token),
         cipher: Aes256SivAead::new(&config.encryption_key.0),
@@ -67,7 +63,7 @@ async fn main() -> Result<()> {
                 &ctx,
                 &local_path,
                 &archive_path,
-                &ctx.config.global_rules,
+                &mut Rules::new(&[&ctx.config.global_rules], local_path.clone()),
                 false,
                 &mut HashSet::new(),
             )
@@ -91,7 +87,7 @@ async fn main() -> Result<()> {
                 &ctx,
                 &archive_path,
                 &local_path,
-                &ctx.config.global_rules,
+                &mut Rules::new(&[&ctx.config.global_rules], local_path.clone()),
                 false,
             )
             .await?;

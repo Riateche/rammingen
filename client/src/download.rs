@@ -34,7 +34,7 @@ fn archive_to_local_path(
     } else {
         let relative_path = path
             .strip_prefix(root_archive_path)
-            .expect("failed to strip path prefix from child");
+            .ok_or_else(|| anyhow!("failed to strip path prefix from child"))?;
         root_local_path.join(&*fix_path_separator(relative_path))
     }
 }
@@ -43,7 +43,7 @@ pub async fn download(
     ctx: &Ctx,
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
-    rules: &Rules,
+    rules: &mut Rules,
     is_mount: bool,
 ) -> Result<()> {
     // TODO: better way to select tmp path?
@@ -60,7 +60,7 @@ pub async fn download(
             }
             let entry_local_path =
                 archive_to_local_path(&entry.path, root_archive_path, root_local_path)?;
-            if !rules.eval(&entry_local_path) {
+            if !rules.eval(&entry_local_path)? {
                 continue;
             }
             let Some(db_data) = ctx.db.get_local_entry(&entry_local_path)? else {
@@ -87,7 +87,7 @@ pub async fn download(
         };
         let entry_local_path =
             archive_to_local_path(&entry.path, root_archive_path, root_local_path)?;
-        if !rules.eval(&entry_local_path) {
+        if !rules.eval(&entry_local_path)? {
             continue;
         }
         set_status(format!("Scanning remote files: {}", root_local_path));
