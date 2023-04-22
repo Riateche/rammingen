@@ -86,7 +86,14 @@ async fn main() -> Result<()> {
                 todo!()
             }
             pull_updates(&ctx).await?;
-            download(&ctx, &archive_path, &local_path).await?;
+            download(
+                &ctx,
+                &archive_path,
+                &local_path,
+                &ctx.config.global_rules,
+                false,
+            )
+            .await?;
         }
         cli::Command::ListDirectory { path } => todo!(),
         cli::Command::History {

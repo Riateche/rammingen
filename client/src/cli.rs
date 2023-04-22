@@ -1,7 +1,8 @@
 use chrono::{DateTime, FixedOffset};
 use clap::{Parser, Subcommand};
 use rammingen_protocol::ArchivePath;
-use std::path::PathBuf;
+
+use crate::upload::SanitizedLocalPath;
 
 // #[clap(author, version, about, long_about = None)]
 // #[clap(propagate_version = true)]
@@ -17,12 +18,12 @@ pub enum Command {
     Sync,
     DryRun,
     Upload {
-        local_path: PathBuf,
+        local_path: SanitizedLocalPath,
         archive_path: ArchivePath,
     },
     Download {
         archive_path: ArchivePath,
-        local_path: PathBuf,
+        local_path: SanitizedLocalPath,
         version: Option<DateTime<FixedOffset>>,
         // #[clap(short, long)]
         // replace: bool,

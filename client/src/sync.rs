@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
+    download::download,
     pull_updates::pull_updates,
     upload::{find_local_deletions, upload},
     Ctx,
@@ -22,13 +23,15 @@ pub async fn sync(ctx: &Ctx) -> Result<()> {
     }
     find_local_deletions(ctx, &existing_paths).await?;
     pull_updates(ctx).await?;
-    // set_status("Checking for files deleted remotely");
-    // for entry in ctx.db.get_all_archive_entries().rev() {
-    //     let entry = entry?;
-    //     if entry.kind.is_some() {
-    //         continue;
-    //     }
-
-    // }
+    for mount_point in &ctx.config.mount_points {
+        download(
+            ctx,
+            &mount_point.archive,
+            &mount_point.local,
+            &mount_point.rules,
+            true,
+        )
+        .await?;
+    }
     Ok(())
 }

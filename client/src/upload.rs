@@ -1,14 +1,17 @@
 use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use futures::future::BoxFuture;
+use itertools::Itertools;
 use rammingen_protocol::{
     AddVersion, ArchivePath, ContentHashExists, DateTime, EntryKind, FileContent, RecordTrigger,
 };
 use serde::{de::Error, Deserialize};
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     fmt::Display,
-    path::{Path, PathBuf, MAIN_SEPARATOR},
+    path::{Path, PathBuf, MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
+    str::FromStr,
     sync::atomic::Ordering,
     time::Duration,
 };
@@ -79,7 +82,7 @@ impl SanitizedLocalPath {
         Ok(Self(str.into()))
     }
 
-    pub fn join(&self, file_name: &str) -> Result<Self> {
+    pub fn join_file_name(&self, file_name: &str) -> Result<Self> {
         if file_name.is_empty() {
             bail!("file name cannot be empty");
         }
@@ -92,6 +95,13 @@ impl SanitizedLocalPath {
         let mut path = self.clone();
         path.0.push(MAIN_SEPARATOR);
         path.0.push_str(file_name);
+        Ok(path)
+    }
+
+    pub fn join_path(&self, relative_path: &str) -> Result<Self> {
+        let mut path = self.clone();
+        path.0.push(MAIN_SEPARATOR);
+        path.0.push_str(&fix_path_separator(relative_path));
         Ok(path)
     }
 
@@ -115,6 +125,14 @@ impl SanitizedLocalPath {
     }
 }
 
+fn fix_path_separator(path: &str) -> Cow<'_, str> {
+    if MAIN_SEPARATOR == '/' {
+        Cow::Borrowed(path)
+    } else {
+        Cow::Owned(path.split('/').join(MAIN_SEPARATOR_STR))
+    }
+}
+
 impl<'de> Deserialize<'de> for SanitizedLocalPath {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -122,6 +140,14 @@ impl<'de> Deserialize<'de> for SanitizedLocalPath {
     {
         let string = String::deserialize(deserializer)?;
         Self::new(string).map_err(D::Error::custom)
+    }
+}
+
+impl FromStr for SanitizedLocalPath {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Self::new(s)
     }
 }
 
@@ -319,7 +345,7 @@ pub fn upload<'a>(
                 ctx.counters
                     .updated_on_server
                     .fetch_add(1, Ordering::Relaxed);
-                info(format!("Uploaded new version of {}", local_path));
+                info(format!("Uploaded {}", local_path));
             }
             if is_mount {
                 ctx.db
@@ -333,7 +359,7 @@ pub fn upload<'a>(
                 let file_name_str = file_name
                     .to_str()
                     .ok_or_else(|| anyhow!("Unsupported file name: {:?}", entry.path()))?;
-                let entry_local_path = local_path.join(file_name_str)?;
+                let entry_local_path = local_path.join_file_name(file_name_str)?;
                 let entry_archive_path = archive_path.join(file_name_str).map_err(|err| {
                     anyhow!(
                         "Failed to construct archive path for {:?}: {:?}",

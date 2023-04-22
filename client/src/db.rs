@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LE};
+use fs_err as fs;
 use rammingen_protocol::{
-    ArchivePath, Entry, EntryKind, EntryUpdateNumber, EntryVersionData, FileContent,
+    ArchivePath, DateTime, Entry, EntryKind, EntryUpdateNumber, EntryVersionData, FileContent,
 };
 use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
-use std::{fmt::Debug, io, iter};
+use std::{fmt::Debug, io, iter, path::Path};
 
 use crate::upload::SanitizedLocalPath;
 
@@ -22,6 +23,50 @@ pub struct Db {
 pub struct LocalEntryInfo {
     pub kind: EntryKind,
     pub content: Option<FileContent>,
+}
+
+impl LocalEntryInfo {
+    pub fn is_same_as_entry(&self, other: &EntryVersionData) -> bool {
+        if Some(self.kind) != other.kind {
+            return false;
+        }
+        match self.kind {
+            EntryKind::File => match (&self.content, &other.content) {
+                (Some(content), Some(other)) => {
+                    if content.hash != other.hash {
+                        return false;
+                    }
+                    match (content.unix_mode, other.unix_mode) {
+                        (None, _) => true,
+                        (Some(_), None) => true,
+                        (Some(unix_mode), Some(other)) => unix_mode == other,
+                    }
+                }
+                _ => false,
+            },
+            EntryKind::Directory => true,
+        }
+    }
+
+    pub fn matches_real(&self, path: impl AsRef<Path>) -> Result<bool> {
+        let metadata = fs::metadata(path)?;
+        if metadata.is_symlink() {
+            return Ok(false);
+        }
+        if metadata.is_dir() != (self.kind == EntryKind::Directory) {
+            return Ok(false);
+        }
+        if self.kind == EntryKind::File {
+            let content = self
+                .content
+                .as_ref()
+                .ok_or_else(|| anyhow!("missing content for file"))?;
+            if DateTime::from(metadata.modified()?) != content.modified_at {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
 }
 
 impl Db {

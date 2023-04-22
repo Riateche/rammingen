@@ -105,7 +105,7 @@ impl Client {
     pub async fn download(
         &self,
         hash: &ContentHash,
-        path: &Path,
+        path: impl AsRef<Path>,
         cipher: &Aes256SivAead,
     ) -> Result<()> {
         let mut response = self
@@ -122,7 +122,7 @@ impl Client {
             .to_str()?
             .parse()?;
 
-        let file = File::create(path)?;
+        let file = File::create(path.as_ref())?;
         let mut decryptor = Decryptor::new(cipher, file);
         let mut actual_len = 0;
 
