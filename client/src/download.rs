@@ -4,9 +4,9 @@ use rammingen_protocol::{ArchivePath, EntryKind};
 
 use crate::{
     db::LocalEntryInfo,
+    path::SanitizedLocalPath,
     rules::Rules,
     term::{info, set_status},
-    upload::SanitizedLocalPath,
     Ctx,
 };
 

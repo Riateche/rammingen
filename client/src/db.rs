@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
 use std::{fmt::Debug, io, iter, path::Path};
 
-use crate::upload::SanitizedLocalPath;
+use crate::path::SanitizedLocalPath;
 
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
 

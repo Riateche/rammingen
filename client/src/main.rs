@@ -5,6 +5,7 @@ pub mod counters;
 pub mod db;
 pub mod download;
 pub mod encryption;
+pub mod path;
 pub mod pull_updates;
 pub mod rules;
 pub mod sync;
@@ -20,9 +21,9 @@ use client::Client;
 use config::Config;
 use counters::Counters;
 use derivative::Derivative;
+use path::SanitizedLocalPath;
 use std::{collections::HashSet, sync::Arc};
 use term::{clear_status, error};
-use upload::SanitizedLocalPath;
 
 #[derive(Derivative)]
 pub struct Ctx {

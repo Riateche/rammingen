@@ -8,8 +8,8 @@ use serde::de::Error;
 use serde::Deserialize;
 use typenum::U64;
 
+use crate::path::SanitizedLocalPath;
 use crate::rules::Rules;
-use crate::upload::SanitizedLocalPath;
 
 /*
 global_rules: [

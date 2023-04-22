@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::{
     config::{Rule, RuleInput, RuleOperator, RuleOutcome},
-    upload::SanitizedLocalPath,
+    path::SanitizedLocalPath,
 };
 
 #[derive(Debug, Clone, Deserialize)]

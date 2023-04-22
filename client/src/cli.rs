@@ -2,7 +2,7 @@ use chrono::{DateTime, FixedOffset};
 use clap::{Parser, Subcommand};
 use rammingen_protocol::ArchivePath;
 
-use crate::upload::SanitizedLocalPath;
+use crate::path::SanitizedLocalPath;
 
 // #[clap(author, version, about, long_about = None)]
 // #[clap(propagate_version = true)]
