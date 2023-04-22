@@ -14,6 +14,7 @@ pub async fn download<'a>(
     archive_path: &'a ArchivePath,
     local_path: &'a Path,
 ) -> Result<()> {
+    // TODO: better way to select tmp path?
     let tmp_path = local_path
         .parent()
         .ok_or_else(|| anyhow!("failed to get parent for local path"))?

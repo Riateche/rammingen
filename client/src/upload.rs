@@ -6,7 +6,7 @@ use rammingen_protocol::{
 };
 use serde::{de::Error, Deserialize};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::Display,
     path::{Path, PathBuf, MAIN_SEPARATOR},
     sync::atomic::Ordering,
@@ -15,6 +15,7 @@ use std::{
 use tokio::{task::block_in_place, time::sleep};
 
 use crate::{
+    config::MountPoint,
     db::LocalEntryInfo,
     encryption::{self, encrypt_path},
     rules::Rules,
@@ -124,6 +125,76 @@ impl<'de> Deserialize<'de> for SanitizedLocalPath {
     }
 }
 
+fn to_archive_path<'a>(
+    local_path: &SanitizedLocalPath,
+    mount_points: &'a [MountPoint],
+    cache: &mut HashMap<SanitizedLocalPath, Option<(ArchivePath, &'a Rules)>>,
+) -> Option<(ArchivePath, &'a Rules)> {
+    if let Some(value) = cache.get(local_path) {
+        return value.clone();
+    }
+    let output = if let Some(mount_point) = mount_points.iter().find(|mp| &mp.local == local_path) {
+        if mount_point.rules.eval(local_path) {
+            Some((mount_point.archive.clone(), &mount_point.rules))
+        } else {
+            None
+        }
+    } else if let Some(parent) = local_path.parent() {
+        if let Some((archive_parent, rules)) = to_archive_path(&parent, mount_points, cache) {
+            if rules.eval(local_path) {
+                let new_archive_path = archive_parent
+                    .join(local_path.file_name())
+                    .expect("failed to join archive path");
+                Some((new_archive_path, rules))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    cache.insert(local_path.clone(), output.clone());
+    output
+}
+
+pub async fn find_local_deletions<'a>(
+    ctx: &'a Ctx,
+    existing_paths: &'a HashSet<SanitizedLocalPath>,
+) -> Result<()> {
+    set_status("Checking for files deleted locally");
+    for entry in ctx.db.get_all_local_entries().rev() {
+        let (local_path, _data) = entry?;
+        if existing_paths.contains(&local_path) {
+            continue;
+        }
+        let Some((archive_path, _)) =
+            to_archive_path(&local_path, &ctx.config.mount_points, &mut HashMap::new())
+            else {
+                continue;
+            };
+        let id = ctx
+            .client
+            .request(&AddVersion {
+                path: archive_path,
+                record_trigger: RecordTrigger::Sync,
+                kind: None,
+                content: None,
+            })
+            .await?;
+        if id.is_some() {
+            ctx.counters
+                .updated_on_server
+                .fetch_add(1, Ordering::Relaxed);
+            info(format!("Recorded deletion of {}", local_path));
+        }
+        ctx.db.remove_local_entry(&local_path)?;
+    }
+    Ok(())
+}
+
 pub fn upload<'a>(
     ctx: &'a Ctx,
     local_path: &'a SanitizedLocalPath,
@@ -133,7 +204,7 @@ pub fn upload<'a>(
     existing_paths: &'a mut HashSet<SanitizedLocalPath>,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
-        set_status(format!("Uploading {}", local_path));
+        set_status(format!("Scanning local files: {}", local_path));
         existing_paths.insert(local_path.clone());
         let metadata = fs::symlink_metadata(local_path)?;
         if metadata.is_symlink() {
@@ -241,7 +312,7 @@ pub fn upload<'a>(
                 path: encrypt_path(archive_path, &ctx.cipher)?,
                 record_trigger: RecordTrigger::Upload,
                 kind: Some(kind),
-                content,
+                content: content.clone(),
             };
             ctx.counters.sent_to_server.fetch_add(1, Ordering::Relaxed);
             if ctx.client.request(&add_version).await?.is_some() {
@@ -251,13 +322,8 @@ pub fn upload<'a>(
                 info(format!("Uploaded new version of {}", local_path));
             }
             if is_mount {
-                ctx.db.set_local_entry(
-                    local_path,
-                    &LocalEntryInfo {
-                        kind,
-                        content: add_version.content.clone(),
-                    },
-                )?;
+                ctx.db
+                    .set_local_entry(local_path, &LocalEntryInfo { kind, content })?;
             }
         }
         if is_dir {

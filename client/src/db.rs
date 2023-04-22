@@ -35,10 +35,18 @@ impl Db {
         })
     }
 
+    pub fn get_all_archive_entries(
+        &self,
+    ) -> impl Iterator<Item = Result<EntryVersionData>> + DoubleEndedIterator {
+        self.archive_entries
+            .iter()
+            .map(|pair| Ok(bincode::deserialize::<EntryVersionData>(&pair?.1)?))
+    }
+
     pub fn get_archive_entries(
         &self,
         path: &ArchivePath,
-    ) -> impl Iterator<Item = Result<EntryVersionData>> {
+    ) -> impl Iterator<Item = Result<EntryVersionData>> + DoubleEndedIterator {
         let root_entry = (|| {
             let value = self
                 .archive_entries
@@ -90,10 +98,11 @@ impl Db {
         Ok(())
     }
 
-    pub fn get_local_entries(
+    pub fn get_all_local_entries(
         &self,
-    ) -> impl Iterator<Item = Result<(SanitizedLocalPath, LocalEntryInfo)>> {
-        self.local_entries.iter().rev().map(|pair| {
+    ) -> impl Iterator<Item = Result<(SanitizedLocalPath, LocalEntryInfo)>> + DoubleEndedIterator
+    {
+        self.local_entries.iter().map(|pair| {
             let (key, value) = pair?;
             let path = SanitizedLocalPath(String::from_utf8(key.to_vec())?);
             let data = bincode::deserialize::<LocalEntryInfo>(&value)?;
