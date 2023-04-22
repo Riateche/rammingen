@@ -6,7 +6,7 @@ use rammingen_protocol::{
 };
 use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
-use std::{fmt::Debug, io, iter, path::Path};
+use std::{fmt::Debug, io, iter, path::Path, str};
 
 use crate::path::SanitizedLocalPath;
 
@@ -149,14 +149,14 @@ impl Db {
     {
         self.local_entries.iter().map(|pair| {
             let (key, value) = pair?;
-            let path = SanitizedLocalPath(String::from_utf8(key.to_vec())?);
+            let path = SanitizedLocalPath::new(str::from_utf8(&key)?)?;
             let data = bincode::deserialize::<LocalEntryInfo>(&value)?;
             Ok((path, data))
         })
     }
 
     pub fn get_local_entry(&self, path: &SanitizedLocalPath) -> Result<Option<LocalEntryInfo>> {
-        if let Some(value) = self.local_entries.get(path.0.as_bytes())? {
+        if let Some(value) = self.local_entries.get(path)? {
             Ok(Some(bincode::deserialize::<LocalEntryInfo>(&value)?))
         } else {
             Ok(None)
@@ -164,13 +164,12 @@ impl Db {
     }
 
     pub fn set_local_entry(&self, path: &SanitizedLocalPath, data: &LocalEntryInfo) -> Result<()> {
-        self.local_entries
-            .insert(path.0.as_bytes(), bincode::serialize(data)?)?;
+        self.local_entries.insert(path, bincode::serialize(data)?)?;
         Ok(())
     }
 
     pub fn remove_local_entry(&self, path: &SanitizedLocalPath) -> Result<()> {
-        self.local_entries.remove(path.0.as_bytes())?;
+        self.local_entries.remove(path)?;
         Ok(())
     }
 }

@@ -69,6 +69,17 @@ fn parent_path() {
     );
 }
 
+#[test]
+fn strip_prefix() {
+    fn p(s: &str) -> ArchivePath {
+        ArchivePath::from_str_without_prefix(s).unwrap()
+    }
+    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b")), Some("c/d"));
+    assert_eq!(p("/a1/b1/c1/d1").strip_prefix(&p("/a1/b1")), Some("c1/d1"));
+    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b/c/d")), None);
+    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/d")), None);
+}
+
 impl<'de> Deserialize<'de> for ArchivePath {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

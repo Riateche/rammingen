@@ -4,11 +4,7 @@ use futures::future::BoxFuture;
 use rammingen_protocol::{
     AddVersion, ArchivePath, ContentHashExists, DateTime, EntryKind, FileContent, RecordTrigger,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    sync::atomic::Ordering,
-    time::Duration,
-};
+use std::{collections::HashSet, path::Component, sync::atomic::Ordering, time::Duration};
 use tokio::{task::block_in_place, time::sleep};
 
 use crate::{
@@ -23,39 +19,53 @@ use crate::{
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_secs(3);
 
-fn to_archive_path<'a>(
+fn to_archive_path(
     local_path: &SanitizedLocalPath,
-    mount_points: &'a [MountPoint],
-    cache: &mut HashMap<SanitizedLocalPath, Option<(ArchivePath, &'a Rules)>>,
-) -> Option<(ArchivePath, &'a Rules)> {
-    if let Some(value) = cache.get(local_path) {
-        return value.clone();
-    }
-    let output = if let Some(mount_point) = mount_points.iter().find(|mp| &mp.local == local_path) {
-        if mount_point.rules.eval(local_path) {
-            Some((mount_point.archive.clone(), &mount_point.rules))
-        } else {
-            None
-        }
-    } else if let Some(parent) = local_path.parent() {
-        if let Some((archive_parent, rules)) = to_archive_path(&parent, mount_points, cache) {
-            if rules.eval(local_path) {
-                let new_archive_path = archive_parent
-                    .join(local_path.file_name())
-                    .expect("failed to join archive path");
-                Some((new_archive_path, rules))
-            } else {
-                None
+    mount_points: &[MountPoint],
+) -> Result<Option<ArchivePath>> {
+    for mount_point in mount_points {
+        if let Ok(relative) = local_path.as_path().strip_prefix(&mount_point.local) {
+            let mut archive = mount_point.archive.clone();
+            for component in relative.components() {
+                if let Component::Normal(name) = component {
+                    archive = archive.join(name.to_str().expect("sanitized"))?;
+                } else {
+                    bail!("unexpected non-normal component in {:?}", relative);
+                };
             }
-        } else {
-            None
+            return Ok(Some(archive));
         }
-    } else {
-        None
-    };
+    }
+    Ok(None)
 
-    cache.insert(local_path.clone(), output.clone());
-    output
+    // if let Some(value) = cache.get(local_path) {
+    //     return value.clone();
+    // }
+    // let output = if let Some(mount_point) = mount_points.iter().find(|mp| &mp.local == local_path) {
+    //     if mount_point.rules.eval(local_path) {
+    //         Some((mount_point.archive.clone(), &mount_point.rules))
+    //     } else {
+    //         None
+    //     }
+    // } else if let Some(parent) = local_path.parent()? {
+    //     if let Some((archive_parent, rules)) = to_archive_path(&parent, mount_points, cache) {
+    //         if rules.eval(local_path) {
+    //             let new_archive_path = archive_parent
+    //                 .join(local_path.file_name())
+    //                 .expect("failed to join archive path");
+    //             Some((new_archive_path, rules))
+    //         } else {
+    //             None
+    //         }
+    //     } else {
+    //         None
+    //     }
+    // } else {
+    //     None
+    // };
+
+    // cache.insert(local_path.clone(), output.clone());
+    // output
 }
 
 pub async fn find_local_deletions<'a>(
@@ -68,8 +78,9 @@ pub async fn find_local_deletions<'a>(
         if existing_paths.contains(&local_path) {
             continue;
         }
-        let Some((archive_path, _)) =
-            to_archive_path(&local_path, &ctx.config.mount_points, &mut HashMap::new())
+        // TODO: check rules
+        let Some(archive_path) =
+            to_archive_path(&local_path, &ctx.config.mount_points)?
             else {
                 continue;
             };
@@ -231,7 +242,7 @@ pub fn upload<'a>(
                 let file_name_str = file_name
                     .to_str()
                     .ok_or_else(|| anyhow!("Unsupported file name: {:?}", entry.path()))?;
-                let entry_local_path = local_path.join_file_name(file_name_str)?;
+                let entry_local_path = local_path.join(file_name_str)?;
                 let entry_archive_path = archive_path.join(file_name_str).map_err(|err| {
                     anyhow!(
                         "Failed to construct archive path for {:?}: {:?}",

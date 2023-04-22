@@ -1,5 +1,11 @@
+use std::{
+    borrow::Cow,
+    path::{MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
+};
+
 use anyhow::{anyhow, bail, Result};
 use fs_err::{create_dir, remove_dir, remove_file, rename};
+use itertools::Itertools;
 use rammingen_protocol::{ArchivePath, EntryKind};
 
 use crate::{
@@ -9,6 +15,14 @@ use crate::{
     term::{info, set_status},
     Ctx,
 };
+
+fn fix_path_separator(path: &str) -> Cow<'_, str> {
+    if MAIN_SEPARATOR == '/' {
+        Cow::Borrowed(path)
+    } else {
+        Cow::Owned(path.split('/').join(MAIN_SEPARATOR_STR))
+    }
+}
 
 fn archive_to_local_path(
     path: &ArchivePath,
@@ -21,7 +35,7 @@ fn archive_to_local_path(
         let relative_path = path
             .strip_prefix(root_archive_path)
             .expect("failed to strip path prefix from child");
-        root_local_path.join_path(relative_path)
+        root_local_path.join(&*fix_path_separator(relative_path))
     }
 }
 
@@ -34,9 +48,9 @@ pub async fn download(
 ) -> Result<()> {
     // TODO: better way to select tmp path?
     let tmp_path = root_local_path
-        .parent()
+        .parent()?
         .ok_or_else(|| anyhow!("failed to get parent for local path"))?
-        .join_file_name("__rammingen_tmp")?;
+        .join("__rammingen_tmp")?;
     if is_mount {
         set_status("Checking for files deleted remotely");
         for entry in ctx.db.get_archive_entries(root_archive_path).rev() {
@@ -52,7 +66,7 @@ pub async fn download(
             let Some(db_data) = ctx.db.get_local_entry(&entry_local_path)? else {
                 continue;
             };
-            if entry_local_path.as_ref().try_exists()? {
+            if entry_local_path.as_path().try_exists()? {
                 match db_data.kind {
                     EntryKind::File => {
                         remove_file(&entry_local_path)?;
@@ -96,7 +110,7 @@ pub async fn download(
             }
             must_delete = true;
         }
-        if !must_delete && entry_local_path.as_ref().try_exists()? {
+        if !must_delete && entry_local_path.as_path().try_exists()? {
             bail!("local entry already exists at {:?}", entry_local_path);
         }
 

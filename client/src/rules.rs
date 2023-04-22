@@ -10,12 +10,12 @@ pub struct Rules(pub Vec<Rule>);
 
 impl Rules {
     pub fn eval(&self, path: &SanitizedLocalPath) -> bool {
-        let name = path.file_name();
+        let name = path.file_name().unwrap_or(path.as_str());
         let mut outcome = RuleOutcome::Include;
         for rule in &self.0 {
             let input = match rule.input {
                 RuleInput::Name => name,
-                RuleInput::Path => &path.0,
+                RuleInput::Path => path.as_str(),
             };
             let matches = match &rule.operator {
                 RuleOperator::Equals(needle) => input == needle,
