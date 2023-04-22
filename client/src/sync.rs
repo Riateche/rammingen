@@ -18,8 +18,8 @@ pub async fn sync(ctx: &Ctx) -> Result<()> {
         .iter()
         .map(|mount_point| {
             let rules = Rules::new(
-                &[&ctx.config.global_rules, &mount_point.rules],
-                mount_point.local.clone(),
+                &[&ctx.config.always_exclude, &mount_point.exclude],
+                mount_point.local_path.clone(),
             );
             (mount_point, rules)
         })
@@ -28,8 +28,8 @@ pub async fn sync(ctx: &Ctx) -> Result<()> {
     for (mount_point, rules) in &mut mount_points {
         upload(
             ctx,
-            &mount_point.local,
-            &mount_point.archive,
+            &mount_point.local_path,
+            &mount_point.archive_path,
             rules,
             true,
             &mut existing_paths,
@@ -41,11 +41,11 @@ pub async fn sync(ctx: &Ctx) -> Result<()> {
     for mount_point in &ctx.config.mount_points {
         download(
             ctx,
-            &mount_point.archive,
-            &mount_point.local,
+            &mount_point.archive_path,
+            &mount_point.local_path,
             &mut Rules::new(
-                &[&ctx.config.global_rules, &mount_point.rules],
-                mount_point.local.clone(),
+                &[&ctx.config.always_exclude, &mount_point.exclude],
+                mount_point.local_path.clone(),
             ),
             true,
         )

@@ -24,8 +24,8 @@ fn to_archive_path<'a>(
     mount_points: &'a mut [(&MountPoint, Rules)],
 ) -> Result<Option<(ArchivePath, &'a mut Rules)>> {
     for (mount_point, rules) in mount_points {
-        if let Ok(relative) = local_path.as_path().strip_prefix(&mount_point.local) {
-            let mut archive = mount_point.archive.clone();
+        if let Ok(relative) = local_path.as_path().strip_prefix(&mount_point.local_path) {
+            let mut archive = mount_point.archive_path.clone();
             for component in relative.components() {
                 if let Component::Normal(name) = component {
                     archive = archive.join(name.to_str().expect("sanitized"))?;
@@ -85,7 +85,7 @@ pub async fn find_local_deletions<'a>(
             else {
                 continue;
             };
-        if !rules.eval(&local_path)? {
+        if rules.matches(&local_path)? {
             continue;
         }
         let id = ctx
@@ -124,7 +124,7 @@ pub fn upload<'a>(
             warn(format!("skipping symlink: {}", local_path));
             return Ok(());
         }
-        if !rules.eval(local_path)? {
+        if rules.matches(local_path)? {
             debug(format!("ignored: {}", local_path));
             return Ok(());
         }

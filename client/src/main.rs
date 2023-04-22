@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
                 &ctx,
                 &local_path,
                 &archive_path,
-                &mut Rules::new(&[&ctx.config.global_rules], local_path.clone()),
+                &mut Rules::new(&[&ctx.config.always_exclude], local_path.clone()),
                 false,
                 &mut HashSet::new(),
             )
@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
                 &ctx,
                 &archive_path,
                 &local_path,
-                &mut Rules::new(&[&ctx.config.global_rules], local_path.clone()),
+                &mut Rules::new(&[&ctx.config.always_exclude], local_path.clone()),
                 false,
             )
             .await?;

@@ -1,12 +1,12 @@
 use anyhow::{anyhow, bail, Result};
-use serde::{de::Error, Deserialize};
+use serde::{de::Error, Deserialize, Serialize};
 use std::{
     fmt::Display,
     path::{Component, Path, PathBuf},
     str::FromStr,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct SanitizedLocalPath(PathBuf);
 
 impl From<SanitizedLocalPath> for PathBuf {

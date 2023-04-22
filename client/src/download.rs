@@ -60,7 +60,7 @@ pub async fn download(
             }
             let entry_local_path =
                 archive_to_local_path(&entry.path, root_archive_path, root_local_path)?;
-            if !rules.eval(&entry_local_path)? {
+            if rules.matches(&entry_local_path)? {
                 continue;
             }
             let Some(db_data) = ctx.db.get_local_entry(&entry_local_path)? else {
@@ -87,7 +87,7 @@ pub async fn download(
         };
         let entry_local_path =
             archive_to_local_path(&entry.path, root_archive_path, root_local_path)?;
-        if !rules.eval(&entry_local_path)? {
+        if rules.matches(&entry_local_path)? {
             continue;
         }
         set_status(format!("Scanning remote files: {}", root_local_path));
