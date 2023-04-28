@@ -70,9 +70,8 @@ impl LocalEntryInfo {
 }
 
 impl Db {
-    pub fn open() -> Result<Db> {
-        let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
-        let db = sled::open(config_dir.join("rammingen.db"))?;
+    pub fn open(path: &Path) -> Result<Db> {
+        let db = sled::open(path)?;
         Ok(Self {
             archive_entries: db.open_tree("archive_entries")?,
             local_entries: db.open_tree("local_entries")?,

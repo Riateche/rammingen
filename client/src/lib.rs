@@ -23,6 +23,7 @@ use derivative::Derivative;
 use path::SanitizedLocalPath;
 use rules::Rules;
 use std::{collections::HashSet, sync::Arc};
+use sync::sync;
 use term::{clear_status, error};
 
 #[derive(Derivative)]
@@ -35,20 +36,25 @@ pub struct Ctx {
     pub counters: Counters,
 }
 
-pub async fn run(cli: Cli) -> Result<()> {
-    let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
-    let config_file = config_dir.join("rammingen.json5");
-    let config: Config = json5::from_str(&fs_err::read_to_string(config_file)?)?;
+pub async fn run(cli: Cli, config: Config) -> Result<()> {
+    let local_db_path = if let Some(v) = &config.local_db_path {
+        v.clone()
+    } else {
+        let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
+        data_dir.join("rammingen.db")
+    };
     let ctx = Arc::new(Ctx {
         client: Client::new(&config.server_url, &config.token),
         cipher: Aes256SivAead::new(&config.encryption_key.0),
         config,
-        db: crate::db::Db::open()?,
+        db: crate::db::Db::open(&local_db_path)?,
         counters: Counters::default(),
     });
     #[allow(unused_variables)]
     match cli.command {
-        cli::Command::Sync => todo!(),
+        cli::Command::Sync => {
+            sync(&ctx).await?;
+        }
         cli::Command::DryRun => todo!(),
         cli::Command::Upload {
             local_path,

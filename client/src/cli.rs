@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use chrono::{DateTime, FixedOffset};
 use clap::{Parser, Subcommand};
 use rammingen_protocol::ArchivePath;
@@ -7,13 +9,15 @@ use crate::path::SanitizedLocalPath;
 // #[clap(author, version, about, long_about = None)]
 // #[clap(propagate_version = true)]
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 pub struct Cli {
+    #[clap(long)]
+    pub config: Option<PathBuf>,
     #[clap(subcommand)]
     pub command: Command,
 }
 
-#[derive(Subcommand, PartialEq, Eq)]
+#[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     Sync,
     DryRun,
