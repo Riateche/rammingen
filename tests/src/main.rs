@@ -1,3 +1,5 @@
+mod shuffle;
+
 use std::{net::SocketAddr, path::PathBuf};
 
 use anyhow::Result;
