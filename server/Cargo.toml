@@ -2,6 +2,7 @@
 name = "rammingen_server"
 version = "0.1.0"
 edition = "2021"
+default-run = "rammingen_server"
 
 [dependencies]
 rammingen_protocol = { path = "../protocol" }

@@ -1780,7 +1780,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rammingen_client"
+name = "rammingen"
 version = "0.1.0"
 dependencies = [
  "aes-siv",
@@ -1860,6 +1860,15 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "rammingen_tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]

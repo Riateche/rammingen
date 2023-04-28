@@ -47,5 +47,3 @@ CREATE TABLE entry_versions (
 );
 CREATE INDEX idx_entry_versions_entry_id ON entry_versions (entry_id);
 CREATE INDEX idx_entry_versions_path ON entry_versions (path varchar_pattern_ops);
-
-

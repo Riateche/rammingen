@@ -1,8 +1,8 @@
 [package]
-name = "rammingen_client"
+name = "rammingen"
 version = "0.1.0"
 edition = "2021"
-default-run = "rammingen_client"
+default-run = "rammingen"
 
 [[bench]]
 name = "encryption"
