@@ -4,6 +4,8 @@ use std::env;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+
     let config_path = env::args().nth(1).expect("missing config arg");
     let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
     rammingen_server::run(config).await?;

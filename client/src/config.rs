@@ -1,3 +1,5 @@
+use aes_siv::aead::OsRng;
+use aes_siv::{Aes256SivAead, KeyInit};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use core::fmt;
 use derivative::Derivative;
@@ -5,6 +7,7 @@ use generic_array::GenericArray;
 use rammingen_protocol::ArchivePath;
 use serde::de::Error;
 use serde::Deserialize;
+use std::path::PathBuf;
 use typenum::U64;
 
 use crate::path::SanitizedLocalPath;
@@ -19,6 +22,12 @@ pub struct MountPoint {
 
 #[derive(Clone)]
 pub struct EncryptionKey(pub GenericArray<u8, U64>);
+
+impl EncryptionKey {
+    pub fn generate() -> Self {
+        Self(Aes256SivAead::generate_key(&mut OsRng))
+    }
+}
 
 impl fmt::Debug for EncryptionKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -56,4 +65,6 @@ pub struct Config {
     pub token: String,
     #[derivative(Debug = "ignore")]
     pub salt: String,
+    #[serde(default)]
+    pub local_db_path: Option<PathBuf>,
 }

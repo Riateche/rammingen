@@ -63,8 +63,6 @@ pub async fn run(config: Config) -> Result<()> {
         ),
     };
 
-    tracing_subscriber::fmt::init();
-
     // Create the event loop and TCP listener we'll accept connections on.
     let listener = TcpListener::bind(&config.bind_addr).await?;
     info!("Listening on: {}", config.bind_addr);
@@ -237,4 +235,10 @@ fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<Sour
         .get(secret)
         .copied()
         .ok_or_else(|| anyhow!("invalid bearer token"))
+}
+
+pub async fn migrate(db_url: &str) -> anyhow::Result<()> {
+    let pool = PgPool::connect(db_url).await?;
+    sqlx::migrate!().run(&pool).await?;
+    Ok(())
 }
