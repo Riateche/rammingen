@@ -79,39 +79,41 @@ fn get_parent_dir<'a>(
 ) -> BoxFuture<'a, Result<Option<i64>>> {
     Box::pin(async move {
         let Some(parent) = path.parent() else { return Ok(None) };
-        let entry = query!(
-            "SELECT id, kind, exists FROM entries WHERE path = $1",
-            parent.0
-        )
-        .fetch_optional(&mut *tx)
-        .await?;
-        let (entry_id, new_exists) = if let Some(entry) = entry {
-            if entry.kind != EntryKind::Directory as i32 {
-                bail!(
-                    "cannot save dir {} because {} is not a directory",
-                    path,
-                    parent
-                );
+        let entry = query!("SELECT id, kind FROM entries WHERE path = $1", parent.0)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let (entry_id, new_kind) = if let Some(entry) = entry {
+            if entry.kind == EntryKind::File as i32 {
+                bail!("cannot save entry {} because {} is a file", path, parent);
             }
             if request.kind.is_some() && entry.kind == EntryKind::NOT_EXISTS {
                 // Make sure parent's parent is also marked as existing.
                 let _ = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
 
-                query!("UPDATE entries SET exists = true WHERE id = $1", entry.id)
-                    .execute(&mut *tx)
-                    .await?;
-                (entry.id, true)
+                query!(
+                    "UPDATE entries SET kind = $1 WHERE id = $2",
+                    EntryKind::Directory as i32,
+                    entry.id
+                )
+                .execute(&mut *tx)
+                .await?;
+                (entry.id, EntryKind::Directory as i32)
             } else {
                 return Ok(Some(entry.id));
             }
         } else {
             let parent_of_parent = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
+            let kind = if request.kind.is_some() {
+                EntryKind::Directory as i32
+            } else {
+                EntryKind::NOT_EXISTS
+            };
             let id = query_scalar!(
                 "INSERT INTO entries (
                     update_number,
                     recorded_at,
-                    kind,
 
+                    kind,
                     parent_dir,
                     path,
                     source_id,
@@ -124,10 +126,10 @@ fn get_parent_dir<'a>(
                 ) VALUES (
                     nextval('entry_update_numbers'),
                     now(),
-                    2,
-                    $1, $2, $3, $4,
+                    $1, $2, $3, $4, $5,
                     NULL, NULL, NULL, NULL
                 ) RETURNING id",
+                kind,
                 parent_of_parent,
                 parent.0,
                 ctx.source_id.0,
@@ -135,35 +137,34 @@ fn get_parent_dir<'a>(
             )
             .fetch_one(&mut *tx)
             .await?;
-            (id, request.kind.is_some())
+            (id, kind)
         };
 
         query_scalar!(
             "INSERT INTO entry_versions (
                 recorded_at,
                 snapshot_id,
-                kind,
 
+                kind,
                 entry_id,
                 path,
                 source_id,
                 record_trigger,
-                exists,
 
                 size,
                 modified_at,
                 content_hash,
                 unix_mode
             ) VALUES (
-                now(), NULL, 1,
+                now(), NULL,
                 $1, $2, $3, $4, $5,
                 NULL, NULL, NULL, NULL
             )",
+            new_kind,
             entry_id,
             request.path.0,
             ctx.source_id.0,
             request.record_trigger as i32,
-            new_exists,
         )
         .execute(&mut *tx)
         .await?;
@@ -195,7 +196,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
         if request.kind.is_none() {
             let child_count = query_scalar!(
                 "SELECT count(*) FROM entries
-                WHERE exists = true AND parent_dir = $1",
+                WHERE kind != 0 AND parent_dir = $1",
                 Some(entry.id.0)
             )
             .fetch_one(&mut tx)
