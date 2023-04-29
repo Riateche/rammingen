@@ -1854,6 +1854,7 @@ dependencies = [
  "anyhow",
  "base64 0.21.0",
  "bincode",
+ "bytes",
  "chrono",
  "fs-err",
  "futures-util",

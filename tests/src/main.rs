@@ -18,8 +18,9 @@ use tempfile::TempDir;
 
 #[tokio::main]
 async fn main() {
-    if let Err(err) = try_main().await {
-        clear_status();
+    let r = try_main().await;
+    clear_status();
+    if let Err(err) = r {
         error(format!("{:?}", err));
     }
 }
@@ -46,7 +47,7 @@ async fn try_main() -> Result<()> {
     let encryption_key = EncryptionKey::generate();
     let db_pool = PgPool::connect(&database_url).await?;
     let mut clients = Vec::new();
-    for client_index in 0..2 {
+    for client_index in 0..3 {
         let client_dir = dir.join(format!("client{client_index}"));
         let mount_dir = client_dir.join("mount1");
         fs_err::create_dir_all(&mount_dir)?;
@@ -81,7 +82,7 @@ async fn try_main() -> Result<()> {
         }
     });
 
-    for _ in 0..100 {
+    for _ in 0..1000 {
         let index = thread_rng().gen_range(0..clients.len());
         for _ in 0..thread_rng().gen_range(1..=3) {
             debug(format!("shuffling mount for client {index}"));

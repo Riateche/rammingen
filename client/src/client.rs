@@ -1,5 +1,6 @@
 use aes_siv::Aes256SivAead;
 use anyhow::{anyhow, bail, Result};
+use byteorder::{ByteOrder, LE};
 use derivative::Derivative;
 use fs_err::File;
 use futures::{Stream, StreamExt};
@@ -18,7 +19,7 @@ use rammingen_protocol::{
     util::stream_file, ContentHash, RequestToResponse, RequestToStreamingResponse,
 };
 
-use crate::{encryption::Decryptor, term::debug};
+use crate::encryption::Decryptor;
 
 #[derive(Derivative, Clone)]
 pub struct Client {
@@ -74,14 +75,20 @@ impl Client {
                 .send()
                 .await?
                 .error_for_status()?;
+            let mut buf = Vec::new();
             while let Some(chunk) = response.chunk().await? {
-                debug(format!("chunk from server: {:?}", chunk));
-                let data = bincode::deserialize::<Result<Option<R::ResponseItem>, String>>(&chunk)?
-                    .map_err(anyhow::Error::msg)?;
-                if let Some(data) = data {
-                    y.send(Ok(data)).await;
-                } else {
-                    return Ok(());
+                buf.extend_from_slice(&chunk);
+                while let Some((chunk, index)) = take_chunk(&buf) {
+                    //debug(format!("chunk from server: {:?}", chunk));
+                    let data =
+                        bincode::deserialize::<Result<Option<R::ResponseItem>, String>>(chunk)?
+                            .map_err(anyhow::Error::msg)?;
+                    buf.drain(..index);
+                    if let Some(data) = data {
+                        y.send(Ok(data)).await;
+                    } else {
+                        return Ok(());
+                    }
                 }
             }
             bail!("unexpected end of response");
@@ -138,4 +145,15 @@ impl Client {
 
         Ok(())
     }
+}
+
+fn take_chunk(buf: &[u8]) -> Option<(&[u8], usize)> {
+    if buf.len() < 4 {
+        return None;
+    }
+    let len = LE::read_u32(buf) as usize;
+    if buf.len() < 4 + len {
+        return None;
+    }
+    Some((&buf[4..4 + len], 4 + len))
 }

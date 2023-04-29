@@ -88,7 +88,7 @@ pub fn shuffle(dir: &Path) -> Result<()> {
                 } else {
                     from.parent().unwrap().join(random_name())
                 };
-                if !to.starts_with(&from) {
+                if !to.exists() && !to.starts_with(&from) {
                     rename(&from, &to)?;
                     debug(format!("renamed {} -> {}", from.display(), to.display()));
                 }

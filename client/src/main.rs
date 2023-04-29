@@ -8,8 +8,9 @@ use rammingen::{
 
 #[tokio::main]
 async fn main() {
-    if let Err(err) = try_main().await {
-        clear_status();
+    let r = try_main().await;
+    clear_status();
+    if let Err(err) = r {
         error(format!("{:?}", err));
     }
 }

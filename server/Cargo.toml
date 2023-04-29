@@ -24,3 +24,4 @@ hyper = { version = "1.0.0-rc.3", features = ["server", "http1"] }
 http-body-util = "0.1.0-rc.2"
 stream_generator = "0.1.0"
 tokio-stream = "0.1.12"
+bytes = "1.4.0"

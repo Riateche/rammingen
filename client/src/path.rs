@@ -1,5 +1,4 @@
 use anyhow::{anyhow, bail, Result};
-use rammingen_protocol::util::try_exists;
 use serde::{de::Error, Deserialize, Serialize};
 use std::{
     fmt::Display,
@@ -41,7 +40,9 @@ impl Display for SanitizedLocalPath {
 }
 
 fn canonicalize(path: &Path) -> Result<PathBuf> {
-    if try_exists(path)? {
+    // We intentionally ignore I/O errors on `exists()` because
+    // it can fail with a "not a directory" error if a parent path is a file.
+    if path.exists() {
         return Ok(fs_err::canonicalize(path)?);
     }
 

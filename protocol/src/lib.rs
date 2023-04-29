@@ -55,7 +55,6 @@ pub enum Request {
     ResetVersion(ResetVersion),
     MovePath(MovePath),
     RemovePath(RemovePath),
-    RemoveVersion(RemoveVersion),
     GetContentHead(ContentHashExists),
     GetContent(GetContent),
     StartContentUpload(StartContentUpload),

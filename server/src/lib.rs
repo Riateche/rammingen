@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use bytes::{BufMut, BytesMut};
 use futures_util::{Future, StreamExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
@@ -190,7 +191,7 @@ where
 
     Ok(Response::new(BodyExt::boxed(StreamBody::new(
         ReceiverStream::new(rx)
-            .map(serialize_response)
+            .map(serialize_response_with_length)
             .map(|bytes| Ok(Frame::data(bytes))),
     ))))
 }
@@ -220,6 +221,21 @@ fn serialize_response<T: Serialize>(data: anyhow::Result<T>) -> Bytes {
     }))
     .expect("bincode serialization failed")
     .into()
+}
+
+fn serialize_response_with_length<T: Serialize>(data: anyhow::Result<T>) -> Bytes {
+    let mut buf = BytesMut::zeroed(4);
+    bincode::serialize_into(
+        (&mut buf).writer(),
+        &data.map_err(|err| {
+            warn!(?err, "handler error");
+            err.to_string()
+        }),
+    )
+    .expect("bincode serialization failed");
+    let len = (buf.len() - 4) as u32;
+    buf[0..4].copy_from_slice(&len.to_le_bytes());
+    buf.freeze()
 }
 
 fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<SourceId> {
