@@ -14,10 +14,10 @@ use crate::{
     path::SanitizedLocalPath,
     rules::Rules,
     term::{debug, info, set_status, warn},
-    Ctx,
+    unix_mode, Ctx,
 };
 
-const TOO_RECENT_INTERVAL: Duration = Duration::from_secs(3);
+const TOO_RECENT_INTERVAL: Duration = Duration::from_millis(50);
 
 fn to_archive_path<'a>(
     local_path: &SanitizedLocalPath,
@@ -91,7 +91,7 @@ pub async fn find_local_deletions<'a>(
         let id = ctx
             .client
             .request(&AddVersion {
-                path: archive_path,
+                path: encrypt_path(&archive_path, &ctx.cipher)?,
                 record_trigger: RecordTrigger::Sync,
                 kind: None,
                 content: None,
@@ -268,16 +268,4 @@ pub fn upload<'a>(
         }
         Ok(())
     })
-}
-
-#[cfg(target_family = "unix")]
-fn unix_mode(metadata: &std::fs::Metadata) -> Option<u32> {
-    use std::os::unix::prelude::PermissionsExt;
-
-    Some(metadata.permissions().mode())
-}
-
-#[cfg(not(target_family = "unix"))]
-fn unix_mode(_metadata: &Metadata) -> Option<u32> {
-    None
 }

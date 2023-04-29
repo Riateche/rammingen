@@ -18,7 +18,7 @@ use rammingen_protocol::{
     util::stream_file, ContentHash, RequestToResponse, RequestToStreamingResponse,
 };
 
-use crate::encryption::Decryptor;
+use crate::{encryption::Decryptor, term::debug};
 
 #[derive(Derivative, Clone)]
 pub struct Client {
@@ -75,6 +75,7 @@ impl Client {
                 .await?
                 .error_for_status()?;
             while let Some(chunk) = response.chunk().await? {
+                debug(format!("chunk from server: {:?}", chunk));
                 let data = bincode::deserialize::<Result<Option<R::ResponseItem>, String>>(&chunk)?
                     .map_err(anyhow::Error::msg)?;
                 if let Some(data) = data {

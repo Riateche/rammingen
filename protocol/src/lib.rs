@@ -1,113 +1,21 @@
 #![allow(clippy::collapsible_else_if)]
 
-use std::{fmt, str::FromStr};
+mod path;
 
-use anyhow::anyhow;
+pub use crate::path::ArchivePath;
 use anyhow::bail;
 use anyhow::Result;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use derive_more::{From, Into};
-use serde::{de::Error, Deserialize, Serialize};
-use util::check_path;
+use serde::{Deserialize, Serialize};
+use std::{fmt, str::FromStr};
 
 pub mod util;
 
 pub type DateTime = chrono::DateTime<Utc>;
 
 pub const VERSION: u32 = 1;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-pub struct ArchivePath(pub String);
-
-impl ArchivePath {
-    pub fn from_str_without_prefix(path: &str) -> Result<Self> {
-        check_path(path)?;
-        Ok(Self(path.into()))
-    }
-
-    pub fn join(&self, file_name: &str) -> Result<ArchivePath> {
-        if file_name.is_empty() {
-            bail!("file name cannot be empty");
-        }
-        if file_name.contains('/') {
-            bail!("file name cannot contain '/'");
-        }
-        let s = format!("{}/{}", self.0, file_name);
-        check_path(&s)?;
-        Ok(Self(s))
-    }
-
-    pub fn parent(&self) -> Option<ArchivePath> {
-        if self.0 == "/" {
-            None
-        } else {
-            let pos = self.0.rfind('/').expect("any path must contain '/'");
-            let parent = if pos == 0 { "/" } else { &self.0[..pos] };
-            check_path(parent).expect("parent should always be valid");
-            Some(Self(parent.into()))
-        }
-    }
-
-    pub fn strip_prefix(&self, base: &ArchivePath) -> Option<&str> {
-        self.0
-            .strip_prefix(&base.0)
-            .and_then(|prefix| prefix.strip_prefix('/'))
-    }
-}
-
-#[test]
-fn parent_path() {
-    assert_eq!(ArchivePath::from_str("ar:/").unwrap().parent(), None);
-    assert_eq!(
-        ArchivePath::from_str("ar:/ab").unwrap().parent(),
-        Some(ArchivePath::from_str("ar:/").unwrap())
-    );
-    assert_eq!(
-        ArchivePath::from_str("ar:/ab/cd").unwrap().parent(),
-        Some(ArchivePath::from_str("ar:/ab").unwrap())
-    );
-}
-
-#[test]
-fn strip_prefix() {
-    fn p(s: &str) -> ArchivePath {
-        ArchivePath::from_str_without_prefix(s).unwrap()
-    }
-    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b")), Some("c/d"));
-    assert_eq!(p("/a1/b1/c1/d1").strip_prefix(&p("/a1/b1")), Some("c1/d1"));
-    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b/c/d")), None);
-    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/d")), None);
-}
-
-impl<'de> Deserialize<'de> for ArchivePath {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        check_path(&s).map_err(D::Error::custom)?;
-        Ok(Self(s))
-    }
-}
-
-impl FromStr for ArchivePath {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let path = s
-            .strip_prefix("ar:")
-            .ok_or_else(|| anyhow!("archive path must start with 'ar:'"))?;
-        check_path(path)?;
-        Ok(Self(path.into()))
-    }
-}
-
-impl fmt::Display for ArchivePath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ar:{}", self.0)
-    }
-}
 
 pub trait RequestToResponse {
     type Response;
@@ -157,7 +65,9 @@ pub enum Request {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct SourceId(pub i32);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, From, Into,
+)]
 pub struct EntryUpdateNumber(pub i64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
@@ -245,9 +155,12 @@ pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EncryptedArchivePath(pub ArchivePath);
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntryVersionData {
-    pub path: ArchivePath,
+    pub path: EncryptedArchivePath,
     pub recorded_at: DateTime,
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
@@ -303,7 +216,7 @@ pub struct FileContent {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetEntries {
     // for incremental updates
-    pub last_update_number: Option<EntryUpdateNumber>,
+    pub last_update_number: EntryUpdateNumber,
 }
 streaming_response_type!(GetEntries, Vec<Entry>);
 
@@ -312,7 +225,7 @@ streaming_response_type!(GetEntries, Vec<Entry>);
 pub struct GetVersions {
     pub recorded_at: DateTime,
     // if it's a dir, return a version for each nested path
-    pub path: ArchivePath,
+    pub path: EncryptedArchivePath,
 }
 streaming_response_type!(GetVersions, Vec<EntryVersion>);
 
@@ -320,13 +233,13 @@ streaming_response_type!(GetVersions, Vec<EntryVersion>);
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetAllVersions {
     // if it's a dir, return all versions for each nested path
-    pub path: ArchivePath,
+    pub path: EncryptedArchivePath,
 }
 streaming_response_type!(GetAllVersions, Vec<EntryVersion>);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersion {
-    pub path: ArchivePath,
+    pub path: EncryptedArchivePath,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
     pub content: Option<FileContent>,
@@ -342,28 +255,28 @@ pub struct BulkActionStats {
 /// If a directory, resets all nested paths.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResetVersion {
-    pub path: ArchivePath,
+    pub path: EncryptedArchivePath,
     pub recorded_at: Option<DateTime>,
 }
 response_type!(ResetVersion, BulkActionStats);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MovePath {
-    pub old_path: ArchivePath,
-    pub new_path: ArchivePath,
+    pub old_path: EncryptedArchivePath,
+    pub new_path: EncryptedArchivePath,
 }
 response_type!(MovePath, BulkActionStats);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemovePath {
-    pub path: ArchivePath,
+    pub path: EncryptedArchivePath,
 }
 response_type!(RemovePath, BulkActionStats);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoveVersion {
     // if dir, remove this version for all nested paths (where it's present)
-    pub path: ArchivePath,
+    pub path: EncryptedArchivePath,
     pub recorded_at: Option<DateTime>,
 }
 response_type!(RemoveVersion, BulkActionStats);

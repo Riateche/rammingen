@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use fs_err::{create_dir_all, remove_file, rename, File};
-use rammingen_protocol::ContentHash;
+use rammingen_protocol::{util::try_exists, ContentHash};
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -26,7 +26,7 @@ fn storage_paths(root: &Path, hash: &ContentHash) -> (PathBuf, PathBuf) {
 
 impl Storage {
     pub fn new(root: PathBuf) -> Result<Self> {
-        if !root.try_exists()? {
+        if !try_exists(&root)? {
             bail!("storage root doesn't exist");
         }
 
@@ -64,7 +64,7 @@ impl Storage {
 
     pub fn exists(&self, hash: &ContentHash) -> Result<bool> {
         let (_, path) = storage_paths(&self.root, hash);
-        Ok(path.try_exists()?)
+        try_exists(path)
     }
 }
 

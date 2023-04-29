@@ -5,8 +5,8 @@ use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, TryStreamExt};
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, AddVersion, ArchivePath, ContentHashExists, DateTime,
-    Entry, EntryKind, EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions,
-    Response, SourceId, StreamingResponseItem,
+    EncryptedArchivePath, Entry, EntryKind, EntryVersion, EntryVersionData, FileContent,
+    GetEntries, GetVersions, Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -50,7 +50,7 @@ macro_rules! convert_version_data {
     ($row:expr) => {{
         let row = $row;
         EntryVersionData {
-            path: ArchivePath(row.path),
+            path: EncryptedArchivePath(ArchivePath(row.path)),
             recorded_at: row.recorded_at.from_db(),
             source_id: row.source_id.into(),
             record_trigger: row.record_trigger.try_into()?,
@@ -73,18 +73,23 @@ macro_rules! convert_version_data {
 
 fn get_parent_dir<'a>(
     ctx: &'a Context,
-    path: &'a ArchivePath,
+    path: &'a EncryptedArchivePath,
     tx: &'a mut Transaction<'_, Postgres>,
     request: &'a AddVersion,
 ) -> BoxFuture<'a, Result<Option<i64>>> {
     Box::pin(async move {
-        let Some(parent) = path.parent() else { return Ok(None) };
-        let entry = query!("SELECT id, kind FROM entries WHERE path = $1", parent.0)
+        let Some(parent) = path.0.parent() else { return Ok(None) };
+        let parent = EncryptedArchivePath(parent);
+        let entry = query!("SELECT id, kind FROM entries WHERE path = $1", parent.0 .0)
             .fetch_optional(&mut *tx)
             .await?;
         let (entry_id, new_kind) = if let Some(entry) = entry {
             if entry.kind == EntryKind::File as i32 {
-                bail!("cannot save entry {} because {} is a file", path, parent);
+                bail!(
+                    "cannot save entry {} because {} is a file",
+                    path.0,
+                    parent.0
+                );
             }
             if request.kind.is_some() && entry.kind == EntryKind::NOT_EXISTS {
                 // Make sure parent's parent is also marked as existing.
@@ -131,7 +136,7 @@ fn get_parent_dir<'a>(
                 ) RETURNING id",
                 kind,
                 parent_of_parent,
-                parent.0,
+                parent.0 .0,
                 ctx.source_id.0,
                 request.record_trigger as i32,
             )
@@ -162,7 +167,7 @@ fn get_parent_dir<'a>(
             )",
             new_kind,
             entry_id,
-            request.path.0,
+            request.path.0 .0,
             ctx.source_id.0,
             request.record_trigger as i32,
         )
@@ -174,7 +179,7 @@ fn get_parent_dir<'a>(
 
 pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<AddVersion>> {
     let mut tx = ctx.db_pool.begin().await?;
-    let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0)
+    let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0 .0)
         .fetch_optional(&mut tx)
         .await?;
     let size_db = request
@@ -205,7 +210,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             if child_count > 0 {
                 bail!(
                     "cannot mark {} as deleted because it has existing children",
-                    request.path
+                    request.path.0
                 );
             }
         }
@@ -264,7 +269,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
                 $1, $2, $3, $4, $5, $6, $7, $8, $9
             ) RETURNING id",
             parent,
-            request.path.0,
+            request.path.0 .0,
             ctx.source_id.0,
             request.record_trigger as i32,
             entry_kind_to_db(request.kind),
@@ -296,7 +301,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             $1, $2, $3, $4, $5, $6, $7, $8, $9
         ) RETURNING id",
         entry_id.0,
-        request.path.0,
+        request.path.0 .0,
         ctx.source_id.0,
         request.record_trigger as i32,
         entry_kind_to_db(request.kind),
@@ -320,7 +325,7 @@ pub async fn get_entries(
     let mut output = Vec::new();
     let mut rows = query!(
         "SELECT * FROM entries WHERE update_number > $1",
-        request.last_update_number.map(|x| x.0).unwrap_or(0)
+        request.last_update_number.0
     )
     .fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
@@ -342,7 +347,7 @@ pub async fn get_versions(
     let mut rows =
         query!(
             "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1",
-            request.path.0,
+            request.path.0 .0,
             request.recorded_at.to_db()?,
         ).fetch(&ctx.db_pool);
 
@@ -360,7 +365,7 @@ pub async fn get_versions(
             FROM entry_versions
             WHERE path LIKE $1 AND recorded_at <= $2
         ) t WHERE row_number = 1",
-        format!("{}/", request.path),
+        format!("{}/", request.path.0),
         request.recorded_at.to_db()?,
     )
     .fetch(&ctx.db_pool);

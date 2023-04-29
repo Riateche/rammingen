@@ -99,6 +99,7 @@ impl Term {
         if let Some(old_status) = old_status {
             self.set_status(old_status);
         }
+        self.stdout.flush().unwrap();
     }
 
     pub fn debug(&mut self, text: impl Display) {

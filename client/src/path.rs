@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use rammingen_protocol::util::try_exists;
 use serde::{de::Error, Deserialize, Serialize};
 use std::{
     fmt::Display,
@@ -40,7 +41,7 @@ impl Display for SanitizedLocalPath {
 }
 
 fn canonicalize(path: &Path) -> Result<PathBuf> {
-    if path.try_exists()? {
+    if try_exists(path)? {
         return Ok(fs_err::canonicalize(path)?);
     }
 

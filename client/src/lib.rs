@@ -117,3 +117,15 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
     #[allow(unreachable_code)]
     Ok(())
 }
+
+#[cfg(target_family = "unix")]
+pub fn unix_mode(metadata: &std::fs::Metadata) -> Option<u32> {
+    use std::os::unix::prelude::PermissionsExt;
+
+    Some(metadata.permissions().mode())
+}
+
+#[cfg(not(target_family = "unix"))]
+pub fn unix_mode(_metadata: &Metadata) -> Option<u32> {
+    None
+}

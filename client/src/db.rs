@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LE};
 use fs_err as fs;
 use rammingen_protocol::{
-    ArchivePath, DateTime, Entry, EntryKind, EntryUpdateNumber, EntryVersionData, FileContent,
+    ArchivePath, DateTime, EntryKind, EntryUpdateNumber, FileContent, RecordTrigger, SourceId,
 };
 use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
@@ -26,7 +26,7 @@ pub struct LocalEntryInfo {
 }
 
 impl LocalEntryInfo {
-    pub fn is_same_as_entry(&self, other: &EntryVersionData) -> bool {
+    pub fn is_same_as_entry(&self, other: &DecryptedEntryVersionData) -> bool {
         if Some(self.kind) != other.kind {
             return false;
         }
@@ -69,6 +69,16 @@ impl LocalEntryInfo {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DecryptedEntryVersionData {
+    pub path: ArchivePath,
+    pub recorded_at: DateTime,
+    pub source_id: SourceId,
+    pub record_trigger: RecordTrigger,
+    pub kind: Option<EntryKind>,
+    pub content: Option<FileContent>,
+}
+
 impl Db {
     pub fn open(path: &Path) -> Result<Db> {
         let db = sled::open(path)?;
@@ -81,22 +91,22 @@ impl Db {
 
     pub fn get_all_archive_entries(
         &self,
-    ) -> impl Iterator<Item = Result<EntryVersionData>> + DoubleEndedIterator {
+    ) -> impl Iterator<Item = Result<DecryptedEntryVersionData>> + DoubleEndedIterator {
         self.archive_entries
             .iter()
-            .map(|pair| Ok(bincode::deserialize::<EntryVersionData>(&pair?.1)?))
+            .map(|pair| Ok(bincode::deserialize::<DecryptedEntryVersionData>(&pair?.1)?))
     }
 
     pub fn get_archive_entries(
         &self,
         path: &ArchivePath,
-    ) -> impl Iterator<Item = Result<EntryVersionData>> + DoubleEndedIterator {
+    ) -> impl Iterator<Item = Result<DecryptedEntryVersionData>> + DoubleEndedIterator {
         let root_entry = (|| {
             let value = self
                 .archive_entries
                 .get(path.0.as_bytes())?
                 .ok_or_else(|| anyhow!("no such archive path: {}", path))?;
-            anyhow::Ok(bincode::deserialize::<EntryVersionData>(&value)?)
+            anyhow::Ok(bincode::deserialize::<DecryptedEntryVersionData>(&value)?)
         })();
         let children = if root_entry
             .as_ref()
@@ -107,7 +117,7 @@ impl Db {
             Some(
                 self.archive_entries
                     .scan_prefix(prefix)
-                    .map(|pair| Ok(bincode::deserialize::<EntryVersionData>(&pair?.1)?)),
+                    .map(|pair| Ok(bincode::deserialize::<DecryptedEntryVersionData>(&pair?.1)?)),
             )
         } else {
             None
@@ -115,27 +125,32 @@ impl Db {
         iter::once(root_entry).chain(children.into_iter().flatten())
     }
 
-    pub fn last_entry_update_number(&self) -> Result<Option<EntryUpdateNumber>> {
+    pub fn last_entry_update_number(&self) -> Result<EntryUpdateNumber> {
         Ok(self
             .db
             .get(KEY_LAST_ENTRY_UPDATE_NUMBER)?
-            .map(|value| EntryUpdateNumber(LE::read_i64(&value))))
+            .map(|value| EntryUpdateNumber(LE::read_i64(&value)))
+            .unwrap_or(EntryUpdateNumber(0)))
     }
 
-    pub fn update_archive_entries(&self, updates: &[Entry]) -> Result<()> {
+    pub fn update_archive_entries(
+        &self,
+        updates: &[DecryptedEntryVersionData],
+        update_number: EntryUpdateNumber,
+    ) -> Result<()> {
         if updates.is_empty() {
             return Ok(());
         }
         (&*self.db, &self.archive_entries).transaction(|(db, archive_entries)| {
             for update in updates {
                 archive_entries.insert(
-                    update.data.path.0.as_bytes(),
-                    bincode::serialize(&update.data).map_err(into_abort_err)?,
+                    update.path.0.as_bytes(),
+                    bincode::serialize(update).map_err(into_abort_err)?,
                 )?;
             }
             db.insert(
                 &KEY_LAST_ENTRY_UPDATE_NUMBER,
-                &updates.last().unwrap().update_number.0.to_le_bytes(),
+                &update_number.0.to_le_bytes(),
             )?;
             Ok(())
         })?;

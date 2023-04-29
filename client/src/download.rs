@@ -6,7 +6,7 @@ use std::{
 use anyhow::{anyhow, bail, Result};
 use fs_err::{create_dir, remove_dir, remove_file, rename};
 use itertools::Itertools;
-use rammingen_protocol::{ArchivePath, EntryKind};
+use rammingen_protocol::{util::try_exists, ArchivePath, EntryKind};
 
 use crate::{
     db::LocalEntryInfo,
@@ -66,7 +66,7 @@ pub async fn download(
             let Some(db_data) = ctx.db.get_local_entry(&entry_local_path)? else {
                 continue;
             };
-            if entry_local_path.as_path().try_exists()? {
+            if try_exists(entry_local_path.as_path())? {
                 match db_data.kind {
                     EntryKind::File => {
                         remove_file(&entry_local_path)?;
@@ -110,7 +110,7 @@ pub async fn download(
             }
             must_delete = true;
         }
-        if !must_delete && entry_local_path.as_path().try_exists()? {
+        if !must_delete && try_exists(entry_local_path.as_path())? {
             bail!("local entry already exists at {:?}", entry_local_path);
         }
 

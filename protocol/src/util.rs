@@ -1,6 +1,8 @@
-use std::io::Read;
+use std::{
+    io::{ErrorKind, Read},
+    path::Path,
+};
 
-use anyhow::{bail, Result};
 use bytes::Bytes;
 use tokio::{sync::mpsc, task::block_in_place};
 use tokio_stream::{wrappers::ReceiverStream, Stream};
@@ -33,15 +35,10 @@ pub fn stream_file(mut file: impl Read + Send + 'static) -> impl Stream<Item = B
     ReceiverStream::new(rx)
 }
 
-pub fn check_path(path: &str) -> Result<()> {
-    if path.contains("//") {
-        bail!("path cannot contain '//'");
+pub fn try_exists(path: impl AsRef<Path>) -> anyhow::Result<bool> {
+    match fs_err::metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
     }
-    if !path.starts_with('/') {
-        bail!("path must start with '/'");
-    }
-    if path != "/" && path.ends_with('/') {
-        bail!("path must not end with '/'");
-    }
-    Ok(())
 }

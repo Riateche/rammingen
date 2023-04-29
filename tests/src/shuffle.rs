@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write};
+use rammingen::term::debug;
 use rand::{
     distributions::{Alphanumeric, DistString},
     seq::SliceRandom,
@@ -56,7 +57,7 @@ fn choose_path(
     Ok(paths.choose(&mut thread_rng()).cloned())
 }
 
-fn shuffle(dir: &Path) -> Result<()> {
+pub fn shuffle(dir: &Path) -> Result<()> {
     let mut rng = thread_rng();
     let num_mutations = rng.gen_range(1..=30);
     for _ in 0..num_mutations {
@@ -64,17 +65,15 @@ fn shuffle(dir: &Path) -> Result<()> {
             // create
             0 => {
                 let parent = choose_path(dir, false, true, true)?.unwrap();
-                let name_len = rng.gen_range(1..=10);
                 let path = parent.join(random_name());
                 if rng.gen_bool(0.1) {
                     // dir
                     create_dir(&path)?;
-                    println!("created dir {}", path.display());
+                    debug(format!("created dir {}", path.display()));
                 } else {
                     // file
-                    let content_len = rng.gen_range(0..=30_000);
                     write(&path, random_content())?;
-                    println!("created file {}", path.display());
+                    debug(format!("created file {}", path.display()));
                 }
             }
             // rename
@@ -83,15 +82,16 @@ fn shuffle(dir: &Path) -> Result<()> {
                     continue;
                 };
                 let to = if rng.gen_bool(0.2) {
-                    // TODO: forbid destination inside source
                     choose_path(dir, false, true, true)?
                         .unwrap()
                         .join(random_name())
                 } else {
                     from.parent().unwrap().join(random_name())
                 };
-                rename(&from, &to)?;
-                println!("renamed {} -> {}", from.display(), to.display());
+                if !to.starts_with(&from) {
+                    rename(&from, &to)?;
+                    debug(format!("renamed {} -> {}", from.display(), to.display()));
+                }
             }
             // edit
             2 => {
@@ -99,7 +99,7 @@ fn shuffle(dir: &Path) -> Result<()> {
                     continue;
                 };
                 write(&path, random_content())?;
-                println!("edited file {}", path.display());
+                debug(format!("edited file {}", path.display()));
             }
             // delete
             3 => {
@@ -108,15 +108,15 @@ fn shuffle(dir: &Path) -> Result<()> {
                     let Some(path) = choose_path(dir, false, true, false)? else {
                         continue;
                     };
-                    remove_file(&path)?;
-                    println!("removed file {}", path.display());
+                    remove_dir_all(&path)?;
+                    debug(format!("removed dir {}", path.display()));
                 } else {
                     // file
                     let Some(path) = choose_path(dir, true, false, false)? else {
                         continue;
                     };
-                    remove_dir_all(&path)?;
-                    println!("removed dir {}", path.display());
+                    remove_file(&path)?;
+                    debug(format!("removed file {}", path.display()));
                 }
             }
             _ => unreachable!(),

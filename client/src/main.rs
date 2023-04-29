@@ -1,9 +1,20 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
-use rammingen::{cli::Cli, config::Config};
+use rammingen::{
+    cli::Cli,
+    config::Config,
+    term::{clear_status, error},
+};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    if let Err(err) = try_main().await {
+        clear_status();
+        error(format!("{:?}", err));
+    }
+}
+
+async fn try_main() -> Result<()> {
     let cli = Cli::parse();
 
     let config_path = if let Some(config) = &cli.config {

@@ -8,7 +8,7 @@ use deflate::write::DeflateEncoder;
 use deflate::CompressionOptions;
 use fs_err::File;
 use inflate::InflateWriter;
-use rammingen_protocol::{ArchivePath, ContentHash};
+use rammingen_protocol::{ArchivePath, ContentHash, EncryptedArchivePath};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use std::cmp::min;
@@ -237,11 +237,11 @@ pub fn decrypt_str(value: &str, cipher: &Aes256SivAead) -> Result<String> {
     let ciphertext = BASE64_URL_SAFE_NO_PAD.decode(value)?;
     let plaintext = cipher
         .decrypt(&Nonce::default(), ciphertext.as_slice())
-        .map_err(|_| anyhow!("encryption failed"))?;
+        .map_err(|_| anyhow!("decryption failed for {:?}", value))?;
     Ok(String::from_utf8(plaintext)?)
 }
 
-pub fn encrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<ArchivePath> {
+pub fn encrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<EncryptedArchivePath> {
     let parts = value
         .0
         .split('/')
@@ -253,12 +253,14 @@ pub fn encrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<Archi
             }
         })
         .collect::<Result<Vec<String>>>()?;
-    ArchivePath::from_str_without_prefix(&parts.join("/"))
+    let path = ArchivePath::from_str_without_prefix(&parts.join("/"))?;
+    Ok(EncryptedArchivePath(path))
 }
 
-pub fn decrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<ArchivePath> {
+pub fn decrypt_path(value: &EncryptedArchivePath, cipher: &Aes256SivAead) -> Result<ArchivePath> {
     let parts = value
         .0
+         .0
         .split('/')
         .map(|part| {
             if part.is_empty() {
@@ -292,7 +294,7 @@ pub fn path_roundtrip() {
     let cipher = Aes256SivAead::new(&key);
     let value: ArchivePath = "ar:/ab/cd/ef".parse().unwrap();
     let encrypted = encrypt_path(&value, &cipher).unwrap();
-    assert_ne!(value, encrypted);
+    assert_ne!(value, encrypted.0);
     let decrypted = decrypt_path(&encrypted, &cipher).unwrap();
     assert_eq!(value, decrypted);
 }
