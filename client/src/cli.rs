@@ -32,7 +32,7 @@ pub enum Command {
         // #[clap(short, long)]
         // replace: bool,
     },
-    ListDirectory {
+    Ls {
         path: String,
     },
     History {

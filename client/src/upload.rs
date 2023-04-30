@@ -19,7 +19,7 @@ use crate::{
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_millis(1);
 
-fn to_archive_path<'a>(
+pub fn to_archive_path<'a>(
     local_path: &SanitizedLocalPath,
     mount_points: &'a mut [(&MountPoint, Rules)],
 ) -> Result<Option<(ArchivePath, &'a mut Rules)>> {

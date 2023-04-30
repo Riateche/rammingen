@@ -5,6 +5,7 @@ pub mod counters;
 pub mod db;
 pub mod download;
 pub mod encryption;
+pub mod ls;
 pub mod path;
 pub mod pull_updates;
 pub mod rules;
@@ -94,7 +95,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             )
             .await?;
         }
-        cli::Command::ListDirectory { path } => todo!(),
+        cli::Command::Ls { path } => todo!(),
         cli::Command::History {
             archive_path,
             time_spec,
