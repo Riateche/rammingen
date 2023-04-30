@@ -9,6 +9,7 @@ use portpicker::pick_unused_port;
 use rammingen::{
     cli::{Cli, Command},
     config::{EncryptionKey, MountPoint},
+    rules::Rule,
     term::{clear_status, debug, error},
 };
 use rand::{thread_rng, Rng};
@@ -34,7 +35,7 @@ async fn try_main() -> Result<()> {
     // TODO: remove into_path
     let dir = TempDir::new()?.into_path();
     debug(format!("dir: {}", dir.display()));
-    let storage_path = dir.join(&dir);
+    let storage_path = dir.join("storage");
     fs_err::create_dir_all(&storage_path)?;
 
     let port = pick_unused_port().expect("failed to pick port");
@@ -53,11 +54,11 @@ async fn try_main() -> Result<()> {
         fs_err::create_dir_all(&mount_dir)?;
         let token = format!("token{client_index}");
         let config = rammingen::config::Config {
-            always_exclude: Vec::new(), // TODO
+            always_exclude: vec![Rule::NameEquals("target".into())],
             mount_points: vec![MountPoint {
                 local_path: mount_dir.to_str().unwrap().parse()?,
                 archive_path: "ar:/my_files".parse()?,
-                exclude: Vec::new(), // TODO
+                exclude: vec![Rule::NameMatches("^build_".parse()?)],
             }],
             encryption_key: encryption_key.clone(),
             server_url: format!("http://127.0.0.1:{port}/"),

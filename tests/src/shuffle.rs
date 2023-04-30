@@ -38,8 +38,16 @@ fn find_paths_inner(
 }
 
 fn random_name() -> String {
-    let name_len = thread_rng().gen_range(1..=10);
-    Alphanumeric.sample_string(&mut thread_rng(), name_len)
+    if thread_rng().gen_bool(0.1) {
+        // ignored name
+        "target".into()
+    } else if thread_rng().gen_bool(0.1) {
+        // ignored name
+        format!("build_{}", thread_rng().gen_range(0..1000))
+    } else {
+        let name_len = thread_rng().gen_range(1..=10);
+        Alphanumeric.sample_string(&mut thread_rng(), name_len)
+    }
 }
 
 fn random_content() -> String {
@@ -61,6 +69,9 @@ fn choose_path(
 fn create(dir: &Path) -> Result<()> {
     let parent = choose_path(dir, false, true, true)?.unwrap();
     let path = parent.join(random_name());
+    if path.exists() {
+        return Ok(());
+    }
     if thread_rng().gen_bool(0.1) {
         // dir
         create_dir(&path)?;

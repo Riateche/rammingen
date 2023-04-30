@@ -97,9 +97,17 @@ fn get_parent_dir<'a>(
                 let _ = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
 
                 query!(
-                    "UPDATE entries SET kind = $1 WHERE id = $2",
+                    "UPDATE entries SET
+                        update_number = nextval('entry_update_numbers'),
+                        recorded_at = now(),
+                        kind = $1,
+                        source_id = $2,
+                        record_trigger = $3
+                    WHERE id = $4",
                     EntryKind::Directory as i32,
-                    entry.id
+                    ctx.source_id.0,
+                    request.record_trigger as i32,
+                    entry.id,
                 )
                 .execute(&mut *tx)
                 .await?;
@@ -186,6 +194,10 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
                 );
             }
         }
+        if request.kind.is_some() && entry.data.kind.is_none() {
+            // Make sure parent is marked as existing.
+            let _ = get_parent_dir(&ctx, &request.path, &mut tx, &request).await?;
+        }
         let unix_mode_db = request
             .content
             .as_ref()
@@ -264,7 +276,7 @@ pub async fn get_entries(
 ) -> Result<()> {
     let mut output = Vec::new();
     let mut rows = query!(
-        "SELECT * FROM entries WHERE update_number > $1",
+        "SELECT * FROM entries WHERE update_number > $1 ORDER BY update_number",
         request.last_update_number.0
     )
     .fetch(&ctx.db_pool);

@@ -33,6 +33,7 @@ CREATE INDEX idx_entries_parent_dir ON entries (parent_dir);
 CREATE TABLE entry_versions (
     id BIGSERIAL PRIMARY KEY,
     entry_id BIGINT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    update_number BIGINT NOT NULL,
     snapshot_id INT REFERENCES snapshots(id) ON DELETE CASCADE,
 
     path VARCHAR NOT NULL,
@@ -54,11 +55,11 @@ CREATE FUNCTION on_entry_update()
 AS $$
 BEGIN
     INSERT INTO entry_versions (
-        entry_id, snapshot_id, path, recorded_at, source_id, record_trigger,
-        kind, size, modified_at, content_hash, unix_mode
+        entry_id, update_number, snapshot_id, path, recorded_at, source_id,
+        record_trigger, kind, size, modified_at, content_hash, unix_mode
     ) VALUES (
-        NEW.id, NULL, NEW.path, NEW.recorded_at, NEW.source_id, NEW.record_trigger,
-        NEW.kind, NEW.size, NEW.modified_at, NEW.content_hash, NEW.unix_mode
+        NEW.id, NEW.update_number, NULL, NEW.path, NEW.recorded_at, NEW.source_id,
+        NEW.record_trigger, NEW.kind, NEW.size, NEW.modified_at, NEW.content_hash, NEW.unix_mode
     );
     RETURN NULL;
 END;

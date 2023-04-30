@@ -12,7 +12,7 @@ use crate::{
     db::LocalEntryInfo,
     path::SanitizedLocalPath,
     rules::Rules,
-    term::{info, set_status},
+    term::{info, set_status, warn},
     Ctx,
 };
 
@@ -72,7 +72,13 @@ pub async fn download(
                         remove_file(&entry_local_path)?;
                     }
                     EntryKind::Directory => {
-                        remove_dir(&entry_local_path)?;
+                        if let Err(err) = remove_dir(&entry_local_path) {
+                            warn(format!(
+                                "Cannot remove directory {}: {}",
+                                entry_local_path, err
+                            ));
+                            continue;
+                        }
                     }
                 }
             }

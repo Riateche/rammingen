@@ -1,18 +1,5 @@
 {
   "db": "PostgreSQL",
-  "0b4b72e7681ab5a163cc9c1866551543c26b0b5534c04023e60be0a47e22ee21": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4",
-          "Int8"
-        ]
-      }
-    },
-    "query": "UPDATE entries SET kind = $1 WHERE id = $2"
-  },
   "402176dd33fc3564bab98fe47f00c467651ab3075851998eb6d80fe25e1bc17c": {
     "describe": {
       "columns": [],
@@ -32,7 +19,7 @@
     },
     "query": "UPDATE entries\n            SET update_number = nextval('entry_update_numbers'),\n                recorded_at = now(),\n                source_id = $1,\n                record_trigger = $2,\n                kind = $3,\n                size = $4,\n                modified_at = $5,\n                content_hash = $6,\n                unix_mode = $7\n            WHERE id = $8"
   },
-  "6323a5459e04d4b858eedc033932c75f84f47a28eeaa078316094e10943b5aa3": {
+  "53d5f5bbbb16979c34322ed58f576750d1daab3c8114bf7d08e8ba2aef436109": {
     "describe": {
       "columns": [
         {
@@ -41,14 +28,14 @@
           "type_info": "Int8"
         },
         {
-          "name": "entry_id",
+          "name": "update_number",
           "ordinal": 1,
           "type_info": "Int8"
         },
         {
-          "name": "snapshot_id",
+          "name": "parent_dir",
           "ordinal": 2,
-          "type_info": "Int4"
+          "type_info": "Int8"
         },
         {
           "name": "path",
@@ -112,40 +99,104 @@
       ],
       "parameters": {
         "Left": [
-          "Text",
-          "Timestamptz"
+          "Int8"
         ]
       }
     },
-    "query": "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1"
+    "query": "SELECT * FROM entries WHERE update_number > $1 ORDER BY update_number"
   },
-  "68da5c95c3eff8f01627b88e9448f0bb925da59095884fa749bf0df6c95b4a15": {
+  "6323a5459e04d4b858eedc033932c75f84f47a28eeaa078316094e10943b5aa3": {
     "describe": {
       "columns": [
         {
           "name": "id",
           "ordinal": 0,
           "type_info": "Int8"
+        },
+        {
+          "name": "entry_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "update_number",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "snapshot_id",
+          "ordinal": 3,
+          "type_info": "Int4"
+        },
+        {
+          "name": "path",
+          "ordinal": 4,
+          "type_info": "Varchar"
+        },
+        {
+          "name": "recorded_at",
+          "ordinal": 5,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "source_id",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "record_trigger",
+          "ordinal": 7,
+          "type_info": "Int4"
+        },
+        {
+          "name": "kind",
+          "ordinal": 8,
+          "type_info": "Int4"
+        },
+        {
+          "name": "size",
+          "ordinal": 9,
+          "type_info": "Int8"
+        },
+        {
+          "name": "modified_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 11,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "unix_mode",
+          "ordinal": 12,
+          "type_info": "Int8"
         }
       ],
       "nullable": [
-        false
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true
       ],
       "parameters": {
         "Left": [
-          "Int8",
-          "Varchar",
-          "Int4",
-          "Int4",
-          "Int4",
-          "Int8",
-          "Timestamptz",
-          "Bytea",
-          "Int8"
+          "Text",
+          "Timestamptz"
         ]
       }
     },
-    "query": "INSERT INTO entry_versions (\n            recorded_at,\n            snapshot_id,\n            entry_id,\n            path,\n            source_id,\n            record_trigger,\n            kind,\n            size,\n            modified_at,\n            content_hash,\n            unix_mode\n        ) VALUES (\n            now(), NULL,\n            $1, $2, $3, $4, $5, $6, $7, $8, $9\n        ) RETURNING id"
+    "query": "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1"
   },
   "7cb97c634650ab97097672ca4c6afdd9df6d6048f929d440769d1c8755b4cae3": {
     "describe": {
@@ -161,62 +212,68 @@
           "type_info": "Int8"
         },
         {
-          "name": "snapshot_id",
+          "name": "update_number",
           "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "snapshot_id",
+          "ordinal": 3,
           "type_info": "Int4"
         },
         {
           "name": "path",
-          "ordinal": 3,
+          "ordinal": 4,
           "type_info": "Varchar"
         },
         {
           "name": "recorded_at",
-          "ordinal": 4,
+          "ordinal": 5,
           "type_info": "Timestamptz"
         },
         {
           "name": "source_id",
-          "ordinal": 5,
-          "type_info": "Int4"
-        },
-        {
-          "name": "record_trigger",
           "ordinal": 6,
           "type_info": "Int4"
         },
         {
-          "name": "kind",
+          "name": "record_trigger",
           "ordinal": 7,
           "type_info": "Int4"
         },
         {
-          "name": "size",
+          "name": "kind",
           "ordinal": 8,
+          "type_info": "Int4"
+        },
+        {
+          "name": "size",
+          "ordinal": 9,
           "type_info": "Int8"
         },
         {
           "name": "modified_at",
-          "ordinal": 9,
+          "ordinal": 10,
           "type_info": "Timestamptz"
         },
         {
           "name": "content_hash",
-          "ordinal": 10,
+          "ordinal": 11,
           "type_info": "Bytea"
         },
         {
           "name": "unix_mode",
-          "ordinal": 11,
+          "ordinal": 12,
           "type_info": "Int8"
         },
         {
           "name": "row_number",
-          "ordinal": 12,
+          "ordinal": 13,
           "type_info": "Int8"
         }
       ],
       "nullable": [
+        false,
         false,
         false,
         true,
@@ -267,6 +324,21 @@
       }
     },
     "query": "INSERT INTO entries (\n                update_number,\n                recorded_at,\n                parent_dir,\n                path,\n                source_id,\n                record_trigger,\n                kind,\n                size,\n                modified_at,\n                content_hash,\n                unix_mode\n            ) VALUES (\n                nextval('entry_update_numbers'), now(),\n                $1, $2, $3, $4, $5, $6, $7, $8, $9\n            ) RETURNING id"
+  },
+  "93f2f96d0a5b1247557cc869e02c14b6b17630eeac13136cd3ec5dfa5d51ac09": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4",
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE entries SET\n                        update_number = nextval('entry_update_numbers'),\n                        recorded_at = now(),\n                        kind = $1,\n                        source_id = $2,\n                        record_trigger = $3\n                    WHERE id = $4"
   },
   "96f4791e4c98af9f2f4b833adc02acdac0ebf6a1a6790dff65a30f6255c4bafa": {
     "describe": {
@@ -447,107 +519,5 @@
       }
     },
     "query": "INSERT INTO entries (\n                    update_number,\n                    recorded_at,\n\n                    kind,\n                    parent_dir,\n                    path,\n                    source_id,\n                    record_trigger,\n\n                    size,\n                    modified_at,\n                    content_hash,\n                    unix_mode\n                ) VALUES (\n                    nextval('entry_update_numbers'),\n                    now(),\n                    $1, $2, $3, $4, $5,\n                    NULL, NULL, NULL, NULL\n                ) RETURNING id"
-  },
-  "e4b63ba146e5b836cc5fd18ebe0243e8419ec3b781052b38d4c8176364813882": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Int4",
-          "Int8",
-          "Varchar",
-          "Int4",
-          "Int4"
-        ]
-      }
-    },
-    "query": "INSERT INTO entry_versions (\n                recorded_at,\n                snapshot_id,\n\n                kind,\n                entry_id,\n                path,\n                source_id,\n                record_trigger,\n\n                size,\n                modified_at,\n                content_hash,\n                unix_mode\n            ) VALUES (\n                now(), NULL,\n                $1, $2, $3, $4, $5,\n                NULL, NULL, NULL, NULL\n            )"
-  },
-  "ff53321c520fe0e9ad62b4803179769db1833d3498e0ed789e7c50c599f7d575": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Int8"
-        },
-        {
-          "name": "update_number",
-          "ordinal": 1,
-          "type_info": "Int8"
-        },
-        {
-          "name": "parent_dir",
-          "ordinal": 2,
-          "type_info": "Int8"
-        },
-        {
-          "name": "path",
-          "ordinal": 3,
-          "type_info": "Varchar"
-        },
-        {
-          "name": "recorded_at",
-          "ordinal": 4,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "source_id",
-          "ordinal": 5,
-          "type_info": "Int4"
-        },
-        {
-          "name": "record_trigger",
-          "ordinal": 6,
-          "type_info": "Int4"
-        },
-        {
-          "name": "kind",
-          "ordinal": 7,
-          "type_info": "Int4"
-        },
-        {
-          "name": "size",
-          "ordinal": 8,
-          "type_info": "Int8"
-        },
-        {
-          "name": "modified_at",
-          "ordinal": 9,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "content_hash",
-          "ordinal": 10,
-          "type_info": "Bytea"
-        },
-        {
-          "name": "unix_mode",
-          "ordinal": 11,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
-        true,
-        true,
-        true,
-        true
-      ],
-      "parameters": {
-        "Left": [
-          "Int8"
-        ]
-      }
-    },
-    "query": "SELECT * FROM entries WHERE update_number > $1"
   }
 }
