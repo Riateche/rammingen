@@ -1,10 +1,14 @@
 mod diff;
 mod shuffle;
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
-use diff::diff;
+use diff::{diff, diff_ignored};
+use fs_err::{create_dir_all, read_dir, remove_dir_all};
 use portpicker::pick_unused_port;
 use rammingen::{
     cli::{Cli, Command},
@@ -16,6 +20,19 @@ use rand::{thread_rng, Rng};
 use shuffle::shuffle;
 use sqlx::{query, PgPool};
 use tempfile::TempDir;
+
+fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
+    create_dir_all(&dst)?;
+    for entry in read_dir(src)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            fs_err::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() {
@@ -36,7 +53,7 @@ async fn try_main() -> Result<()> {
     let dir = TempDir::new()?.into_path();
     debug(format!("dir: {}", dir.display()));
     let storage_path = dir.join("storage");
-    fs_err::create_dir_all(&storage_path)?;
+    create_dir_all(&storage_path)?;
 
     let port = pick_unused_port().expect("failed to pick port");
     let server_config = rammingen_server::Config {
@@ -51,7 +68,7 @@ async fn try_main() -> Result<()> {
     for client_index in 0..3 {
         let client_dir = dir.join(format!("client{client_index}"));
         let mount_dir = client_dir.join("mount1");
-        fs_err::create_dir_all(&mount_dir)?;
+        create_dir_all(&mount_dir)?;
         let token = format!("token{client_index}");
         let config = rammingen::config::Config {
             always_exclude: vec![Rule::NameEquals("target".into())],
@@ -94,7 +111,11 @@ async fn try_main() -> Result<()> {
         for (index2, client) in clients.iter().enumerate() {
             if index2 != index {
                 debug(format!("syncing client {index2}"));
+                let before_sync_snapshot = dir.join("snapshot");
+                copy_dir_all(&client.mount_dir, &before_sync_snapshot)?;
                 client.sync().await?;
+                diff_ignored(&client.mount_dir, &before_sync_snapshot)?;
+                remove_dir_all(&before_sync_snapshot)?;
             }
         }
         for client in &clients[1..] {

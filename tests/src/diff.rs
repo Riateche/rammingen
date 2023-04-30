@@ -105,3 +105,42 @@ pub fn diff(path1: &Path, path2: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+pub fn diff_ignored(path1: &Path, path2: &Path) -> Result<()> {
+    if is_ignored(path1) {
+        assert!(is_ignored(path2));
+        diff(path1, path2)?;
+        return Ok(());
+    }
+    assert!(!is_ignored(path2));
+    let meta1 = symlink_metadata(path1)?;
+    if !meta1.is_dir() {
+        return Ok(());
+    }
+
+    let mut names1 = Vec::new();
+    for entry in read_dir(path1)? {
+        let entry = entry?;
+        names1.push(entry.file_name());
+    }
+
+    let mut names2 = Vec::new();
+    for entry in read_dir(path2)? {
+        let entry = entry?;
+        names2.push(entry.file_name());
+    }
+
+    for name2 in &names2 {
+        if !names1.contains(name2) && is_ignored(&path1.join(name2)) {
+            bail!("missing {}", path1.join(name2).display());
+        }
+    }
+    for name1 in &names1 {
+        if names2.contains(name1) {
+            diff_ignored(&path1.join(name1), &path2.join(name1))?;
+        } else if is_ignored(&path2.join(name1)) {
+            bail!("missing {}", path2.join(name1).display());
+        }
+    }
+    Ok(())
+}
