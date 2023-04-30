@@ -243,7 +243,12 @@ pub struct AddVersion {
     pub kind: Option<EntryKind>,
     pub content: Option<FileContent>,
 }
-response_type!(AddVersion, Option<VersionId>);
+response_type!(AddVersion, AddVersionResponse);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddVersionResponse {
+    pub added: bool,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BulkActionStats {

@@ -88,7 +88,7 @@ pub async fn find_local_deletions<'a>(
         if rules.matches(&local_path)? {
             continue;
         }
-        let id = ctx
+        let response = ctx
             .client
             .request(&AddVersion {
                 path: encrypt_path(&archive_path, &ctx.cipher)?,
@@ -97,7 +97,7 @@ pub async fn find_local_deletions<'a>(
                 content: None,
             })
             .await?;
-        if id.is_some() {
+        if response.added {
             ctx.counters
                 .updated_on_server
                 .fetch_add(1, Ordering::Relaxed);
@@ -228,7 +228,7 @@ pub fn upload<'a>(
                 content: content.clone(),
             };
             ctx.counters.sent_to_server.fetch_add(1, Ordering::Relaxed);
-            if ctx.client.request(&add_version).await?.is_some() {
+            if ctx.client.request(&add_version).await?.added {
                 ctx.counters
                     .updated_on_server
                     .fetch_add(1, Ordering::Relaxed);

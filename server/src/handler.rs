@@ -4,9 +4,10 @@ use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, TryStreamExt};
 use rammingen_protocol::{
-    entry_kind_from_db, entry_kind_to_db, AddVersion, ArchivePath, ContentHashExists, DateTime,
-    EncryptedArchivePath, Entry, EntryKind, EntryVersion, EntryVersionData, FileContent,
-    GetEntries, GetVersions, Response, SourceId, StreamingResponseItem,
+    entry_kind_from_db, entry_kind_to_db, AddVersion, AddVersionResponse, ArchivePath,
+    ContentHashExists, DateTime, EncryptedArchivePath, Entry, EntryKind, EntryVersion,
+    EntryVersionData, FileContent, GetEntries, GetVersions, Response, SourceId,
+    StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -83,7 +84,7 @@ fn get_parent_dir<'a>(
         let entry = query!("SELECT id, kind FROM entries WHERE path = $1", parent.0 .0)
             .fetch_optional(&mut *tx)
             .await?;
-        let (entry_id, new_kind) = if let Some(entry) = entry {
+        let entry_id = if let Some(entry) = entry {
             if entry.kind == EntryKind::File as i32 {
                 bail!(
                     "cannot save entry {} because {} is a file",
@@ -102,7 +103,7 @@ fn get_parent_dir<'a>(
                 )
                 .execute(&mut *tx)
                 .await?;
-                (entry.id, EntryKind::Directory as i32)
+                entry.id
             } else {
                 return Ok(Some(entry.id));
             }
@@ -113,7 +114,7 @@ fn get_parent_dir<'a>(
             } else {
                 EntryKind::NOT_EXISTS
             };
-            let id = query_scalar!(
+            query_scalar!(
                 "INSERT INTO entries (
                     update_number,
                     recorded_at,
@@ -141,38 +142,9 @@ fn get_parent_dir<'a>(
                 request.record_trigger as i32,
             )
             .fetch_one(&mut *tx)
-            .await?;
-            (id, kind)
+            .await?
         };
 
-        query_scalar!(
-            "INSERT INTO entry_versions (
-                recorded_at,
-                snapshot_id,
-
-                kind,
-                entry_id,
-                path,
-                source_id,
-                record_trigger,
-
-                size,
-                modified_at,
-                content_hash,
-                unix_mode
-            ) VALUES (
-                now(), NULL,
-                $1, $2, $3, $4, $5,
-                NULL, NULL, NULL, NULL
-            )",
-            new_kind,
-            entry_id,
-            request.path.0 .0,
-            ctx.source_id.0,
-            request.record_trigger as i32,
-        )
-        .execute(&mut *tx)
-        .await?;
         Ok(Some(entry_id))
     })
 }
@@ -193,10 +165,10 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
         .map(|c| c.modified_at.to_db())
         .transpose()?;
     let content_hash_db = request.content.as_ref().map(|c| &c.hash.0);
-    let (unix_mode_db, entry_id) = if let Some(entry) = entry {
+    if let Some(entry) = entry {
         let entry = convert_entry!(entry);
         if entry.data.is_same(&request) {
-            return Ok(None);
+            return Ok(AddVersionResponse { added: false });
         }
         if request.kind.is_none() {
             let child_count = query_scalar!(
@@ -243,7 +215,6 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
         )
         .execute(&mut tx)
         .await?;
-        (unix_mode_db, entry.id)
     } else {
         let unix_mode_db = request
             .content
@@ -251,7 +222,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             .and_then(|c| c.unix_mode)
             .map(i64::from);
         let parent = get_parent_dir(&ctx, &request.path, &mut tx, &request).await?;
-        let entry_id = query_scalar!(
+        query_scalar!(
             "INSERT INTO entries (
                 update_number,
                 recorded_at,
@@ -280,41 +251,10 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
         )
         .fetch_one(&mut tx)
         .await?;
-        (unix_mode_db, entry_id.into())
     };
 
-    let version_id = query_scalar!(
-        "INSERT INTO entry_versions (
-            recorded_at,
-            snapshot_id,
-            entry_id,
-            path,
-            source_id,
-            record_trigger,
-            kind,
-            size,
-            modified_at,
-            content_hash,
-            unix_mode
-        ) VALUES (
-            now(), NULL,
-            $1, $2, $3, $4, $5, $6, $7, $8, $9
-        ) RETURNING id",
-        entry_id.0,
-        request.path.0 .0,
-        ctx.source_id.0,
-        request.record_trigger as i32,
-        entry_kind_to_db(request.kind),
-        size_db,
-        modified_at_db,
-        content_hash_db,
-        unix_mode_db,
-    )
-    .fetch_one(&mut tx)
-    .await?;
-
     tx.commit().await?;
-    Ok(Some(version_id.into()))
+    Ok(AddVersionResponse { added: true })
 }
 
 pub async fn get_entries(
