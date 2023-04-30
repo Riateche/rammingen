@@ -61,11 +61,11 @@ pub fn diff(path1: &Path, path2: &Path) -> Result<()> {
         }
         if unix_mode(&meta1) != unix_mode(&meta2) {
             bail!(
-                "unix_mode mismatch for {} ({:?}) <-> {} ({:?})",
+                "unix_mode mismatch for {} ({:#o}) <-> {} ({:#o})",
                 path1.display(),
-                unix_mode(&meta1),
+                unix_mode(&meta1).unwrap(),
                 path2.display(),
-                unix_mode(&meta2),
+                unix_mode(&meta2).unwrap(),
             );
         }
     }

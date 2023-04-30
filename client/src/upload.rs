@@ -119,7 +119,7 @@ pub fn upload<'a>(
     Box::pin(async move {
         set_status(format!("Scanning local files: {}", local_path));
         existing_paths.insert(local_path.clone());
-        let metadata = fs::symlink_metadata(local_path)?;
+        let mut metadata = fs::symlink_metadata(local_path)?;
         if metadata.is_symlink() {
             warn(format!("skipping symlink: {}", local_path));
             return Ok(());
@@ -148,7 +148,8 @@ pub fn upload<'a>(
         } else {
             let mut modified = None;
             for _ in 0..5 {
-                let new_modified = fs::symlink_metadata(local_path)?.modified()?;
+                metadata = fs::symlink_metadata(local_path)?;
+                let new_modified = metadata.modified()?;
                 if new_modified.elapsed()? < TOO_RECENT_INTERVAL {
                     info(format!(
                         "file {} was modified recently, waiting...",
@@ -163,13 +164,13 @@ pub fn upload<'a>(
             let modified =
                 modified.ok_or_else(|| anyhow!("file {:?} keeps updating", local_path))?;
             let modified_datetime = DateTime::from(modified);
+            let unix_mode = unix_mode(&metadata);
 
             let maybe_changed = db_data.as_ref().map_or(true, |db_data| {
                 db_data.kind != kind || {
-                    db_data
-                        .content
-                        .as_ref()
-                        .map_or(true, |content| content.modified_at != modified_datetime)
+                    db_data.content.as_ref().map_or(true, |content| {
+                        content.modified_at != modified_datetime || content.unix_mode != unix_mode
+                    })
                 }
             });
 
@@ -190,7 +191,7 @@ pub fn upload<'a>(
                     modified_at: modified_datetime,
                     size: file_data.size,
                     hash: file_data.hash,
-                    unix_mode: unix_mode(&metadata),
+                    unix_mode,
                 };
 
                 changed = db_data.as_ref().map_or(true, |db_data| {
