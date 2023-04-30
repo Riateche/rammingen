@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    path::{MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
+    path::{Path, MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
 };
 
 use anyhow::{anyhow, bail, Result};
@@ -37,6 +37,23 @@ fn archive_to_local_path(
             .ok_or_else(|| anyhow!("failed to strip path prefix from child"))?;
         root_local_path.join(&*fix_path_separator(relative_path))
     }
+}
+
+fn remove_dir_or_file(path: impl AsRef<Path>) -> Result<bool> {
+    let path = path.as_ref();
+    if fs_err::metadata(path)?.is_dir() {
+        if let Err(err) = remove_dir(path) {
+            warn(format!(
+                "Cannot remove directory {}: {}",
+                path.display(),
+                err
+            ));
+            return Ok(false);
+        }
+    } else {
+        remove_file(path)?;
+    }
+    Ok(true)
 }
 
 pub async fn download(
@@ -123,7 +140,9 @@ pub async fn download(
         match kind {
             EntryKind::Directory => {
                 if must_delete {
-                    remove_dir(&entry_local_path)?;
+                    if !remove_dir_or_file(&entry_local_path)? {
+                        continue;
+                    }
                 }
                 create_dir(&entry_local_path)?;
                 ctx.db.set_local_entry(
@@ -151,7 +170,9 @@ pub async fn download(
                     }
                 }
                 if must_delete {
-                    remove_file(&entry_local_path)?;
+                    if !remove_dir_or_file(&entry_local_path)? {
+                        continue;
+                    }
                 }
                 rename(&tmp_path, &entry_local_path)?;
 

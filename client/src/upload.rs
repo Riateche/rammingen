@@ -17,7 +17,7 @@ use crate::{
     unix_mode, Ctx,
 };
 
-const TOO_RECENT_INTERVAL: Duration = Duration::from_millis(1);
+const TOO_RECENT_INTERVAL: Duration = Duration::from_millis(100);
 
 pub fn to_archive_path<'a>(
     local_path: &SanitizedLocalPath,

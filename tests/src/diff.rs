@@ -45,6 +45,10 @@ pub fn diff(path1: &Path, path2: &Path) -> Result<()> {
         );
     }
     if meta1.is_dir() != meta2.is_dir() {
+        if is_leftover_dir_with_ignored_files(path1)? || is_leftover_dir_with_ignored_files(path2)?
+        {
+            return Ok(());
+        }
         bail!(
             "is_dir mismatch for {} ({}) <-> {} ({})",
             path1.display(),
@@ -114,7 +118,8 @@ pub fn diff_ignored(path1: &Path, path2: &Path) -> Result<()> {
     }
     assert!(!is_ignored(path2));
     let meta1 = symlink_metadata(path1)?;
-    if !meta1.is_dir() {
+    let meta2 = symlink_metadata(path2)?;
+    if !meta1.is_dir() || !meta2.is_dir() {
         return Ok(());
     }
 

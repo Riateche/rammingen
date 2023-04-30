@@ -1,4 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    thread::sleep,
+    time::Duration,
+};
 
 use anyhow::Result;
 use fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write};
@@ -84,6 +88,26 @@ fn create(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn file_to_dir(dir: &Path) -> Result<()> {
+    let Some(path) = choose_path(dir, true, false, false)? else {
+        return Ok(());
+    };
+    remove_file(&path)?;
+    create_dir(&path)?;
+    debug(format!("replaced file with dir {}", path.display()));
+    Ok(())
+}
+
+fn dir_to_file(dir: &Path) -> Result<()> {
+    let Some(path) = choose_path(dir, false, true, false)? else {
+        return Ok(());
+    };
+    remove_dir_all(&path)?;
+    write(&path, random_content())?;
+    debug(format!("replaced dir with file {}", path.display()));
+    Ok(())
+}
+
 fn random_rename(dir: &Path) -> Result<()> {
     let Some(from) = choose_path(dir, true, true, false)? else {
         return Ok(());
@@ -106,8 +130,17 @@ fn edit(dir: &Path) -> Result<()> {
     let Some(path) = choose_path(dir, true, false, false)? else {
         return Ok(());
     };
+    if symlink_metadata(&path)?.modified()?.elapsed()? < Duration::from_millis(50) {
+        sleep(Duration::from_millis(50));
+    }
     write(&path, random_content())?;
-    debug(format!("edited file {}", path.display()));
+    //let new_modified = symlink_metadata(&path)?.modified()?;
+    debug(format!(
+        "edited file {}", // (modified: {:?} -> {:?})",
+        path.display(),
+        //   old_modified,
+        //   new_modified
+    ));
     Ok(())
 }
 
@@ -161,9 +194,11 @@ pub fn shuffle(dir: &Path) -> Result<()> {
     let shufflers: &[(Shuffler, i32)] = &[
         (create, 10),
         (random_rename, 5),
-        (edit, 10),
+        (edit, 20),
         (delete, 10),
         (change_mode, 3),
+        (file_to_dir, 3),
+        (dir_to_file, 3),
     ];
     let shufflers_distribution = WeightedIndex::new(shufflers.iter().map(|(_, w)| w))?;
     for _ in 0..num_mutations {
