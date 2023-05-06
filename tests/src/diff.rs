@@ -4,12 +4,9 @@ use anyhow::{bail, Result};
 use fs_err::{read_dir, symlink_metadata};
 use rammingen::unix_mode;
 
-fn is_ignored(path: &Path) -> bool {
-    let name = path.file_name().unwrap().to_str().unwrap();
-    name == "target" || name.starts_with("build_")
-}
+use crate::is_ignored;
 
-fn is_leftover_dir_with_ignored_files(path: &Path) -> Result<bool> {
+pub fn is_leftover_dir_with_ignored_files(path: &Path) -> Result<bool> {
     let meta = symlink_metadata(path)?;
     if meta.is_file() {
         return Ok(false);

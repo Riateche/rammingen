@@ -3,21 +3,24 @@ mod shuffle;
 
 use std::{
     net::SocketAddr,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
 };
 
-use anyhow::Result;
-use diff::{diff, diff_ignored};
-use fs_err::{create_dir_all, read_dir, remove_dir_all};
+use anyhow::{bail, Result};
+use chrono::{DateTime, FixedOffset};
+use diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files};
+use fs_err::{create_dir_all, read_dir, remove_dir_all, remove_file};
 use portpicker::pick_unused_port;
 use rammingen::{
     cli::{Cli, Command},
     config::{EncryptionKey, MountPoint},
+    path::SanitizedLocalPath,
     rules::Rule,
-    term::{clear_status, debug, error},
+    term::{clear_status, debug, error, info},
 };
-use rand::{thread_rng, Rng};
-use shuffle::shuffle;
+use rammingen_protocol::ArchivePath;
+use rand::{seq::SliceRandom, thread_rng, Rng};
+use shuffle::{choose_path, shuffle};
 use sqlx::{query, PgPool};
 use tempfile::TempDir;
 
@@ -65,6 +68,7 @@ async fn try_main() -> Result<()> {
     let encryption_key = EncryptionKey::generate();
     let db_pool = PgPool::connect(&database_url).await?;
     let mut clients = Vec::new();
+    let archive_mount_path: ArchivePath = "ar:/my_files".parse()?;
     for client_index in 0..3 {
         let client_dir = dir.join(format!("client{client_index}"));
         let mount_dir = client_dir.join("mount1");
@@ -74,7 +78,7 @@ async fn try_main() -> Result<()> {
             always_exclude: vec![Rule::NameEquals("target".into())],
             mount_points: vec![MountPoint {
                 local_path: mount_dir.to_str().unwrap().parse()?,
-                archive_path: "ar:/my_files".parse()?,
+                archive_path: archive_mount_path.clone(),
                 exclude: vec![Rule::NameMatches("^build_".parse()?)],
             }],
             encryption_key: encryption_key.clone(),
@@ -121,6 +125,7 @@ async fn try_main() -> Result<()> {
         for client in &clients[1..] {
             diff(&clients[0].mount_dir, &client.mount_dir)?;
         }
+        check_download_latest(&dir, &archive_mount_path, &clients).await?;
     }
 
     Ok(())
@@ -142,4 +147,68 @@ impl ClientData {
         )
         .await
     }
+    async fn download(
+        &self,
+        archive_path: ArchivePath,
+        local_path: SanitizedLocalPath,
+        version: Option<DateTime<FixedOffset>>,
+    ) -> Result<()> {
+        rammingen::run(
+            Cli {
+                config: None,
+                command: Command::Download {
+                    archive_path,
+                    local_path,
+                    version,
+                },
+            },
+            self.config.clone(),
+        )
+        .await
+    }
+}
+
+async fn check_download_latest(
+    dir: &Path,
+    archive_mount_path: &ArchivePath,
+    clients: &[ClientData],
+) -> Result<()> {
+    let client1 = clients.choose(&mut thread_rng()).unwrap();
+    let local_path = choose_path(&client1.mount_dir, true, true, true, false)?.unwrap();
+    if is_leftover_dir_with_ignored_files(&local_path)? {
+        return Ok(());
+    }
+    let archive_path = if local_path == client1.mount_dir {
+        archive_mount_path.clone()
+    } else {
+        let relative = local_path.strip_prefix(&client1.mount_dir)?;
+        let mut path = archive_mount_path.clone();
+        for component in relative.components() {
+            if let path::Component::Normal(name) = component {
+                path = path.join(name.to_str().unwrap())?;
+            } else {
+                bail!("invalid path: {:?}", relative);
+            }
+        }
+        path
+    };
+    info(format!("Checking download: {}", archive_path));
+    let client2 = clients.choose(&mut thread_rng()).unwrap();
+    let destination = dir.join("tmp_download");
+    client2
+        .download(archive_path, destination.to_str().unwrap().parse()?, None)
+        .await?;
+    diff(&local_path, &destination)?;
+    if destination.is_dir() {
+        remove_dir_all(&destination)?;
+    } else {
+        remove_file(&destination)?;
+    }
+
+    Ok(())
+}
+
+fn is_ignored(path: &Path) -> bool {
+    let name = path.file_name().unwrap().to_str().unwrap();
+    name == "target" || name.starts_with("build_")
 }

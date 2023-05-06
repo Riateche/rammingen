@@ -1877,10 +1877,12 @@ name = "rammingen_tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "fs-err",
  "json5",
  "portpicker",
  "rammingen",
+ "rammingen_protocol",
  "rammingen_server",
  "rand",
  "sqlx",
