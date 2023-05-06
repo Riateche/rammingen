@@ -5,11 +5,14 @@ use std::{
 
 use anyhow::{anyhow, bail, Result};
 use fs_err::{create_dir, remove_dir, remove_file, rename};
+use futures::{stream, Stream, TryStreamExt};
 use itertools::Itertools;
-use rammingen_protocol::{util::try_exists, ArchivePath, EntryKind};
+use rammingen_protocol::{util::try_exists, ArchivePath, DateTime, EntryKind, GetVersions};
+use stream_generator::generate_try_stream;
 
 use crate::{
-    db::LocalEntryInfo,
+    db::{DecryptedEntryVersionData, LocalEntryInfo},
+    encryption::encrypt_path,
     path::SanitizedLocalPath,
     rules::Rules,
     term::{info, set_status, warn},
@@ -56,13 +59,67 @@ fn remove_dir_or_file(path: impl AsRef<Path>) -> Result<bool> {
     Ok(true)
 }
 
-pub async fn download(
+pub async fn download_version(
+    ctx: &Ctx,
+    root_archive_path: &ArchivePath,
+    root_local_path: &SanitizedLocalPath,
+    version: DateTime,
+) -> Result<()> {
+    crate::term::debug("download_version");
+    let stream = generate_try_stream(move |mut y| async move {
+        let mut response_stream = ctx.client.stream(&GetVersions {
+            path: encrypt_path(root_archive_path, &ctx.cipher)?,
+            recorded_at: version,
+        });
+        while let Some(batch) = response_stream.try_next().await? {
+            for entry in batch {
+                let entry = DecryptedEntryVersionData::new(ctx, entry.data)?;
+                y.send(Ok(entry)).await;
+            }
+        }
+        Ok(())
+    });
+    download(
+        ctx,
+        root_archive_path,
+        root_local_path,
+        &mut Rules::new(&[&ctx.config.always_exclude], root_local_path.clone()),
+        false,
+        stream,
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn download_latest(
     ctx: &Ctx,
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
     rules: &mut Rules,
     is_mount: bool,
 ) -> Result<()> {
+    let data = stream::iter(ctx.db.get_archive_entries(root_archive_path));
+    download(
+        ctx,
+        root_archive_path,
+        root_local_path,
+        rules,
+        is_mount,
+        data,
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn download(
+    ctx: &Ctx,
+    root_archive_path: &ArchivePath,
+    root_local_path: &SanitizedLocalPath,
+    rules: &mut Rules,
+    is_mount: bool,
+    versions: impl Stream<Item = Result<DecryptedEntryVersionData>>,
+) -> Result<()> {
+    tokio::pin!(versions);
     // TODO: better way to select tmp path?
     let tmp_path = root_local_path
         .parent()?
@@ -103,8 +160,7 @@ pub async fn download(
             info(format!("Removed {}", entry_local_path));
         }
     }
-    for entry in ctx.db.get_archive_entries(root_archive_path) {
-        let entry = entry?;
+    while let Some(entry) = versions.try_next().await? {
         let Some(kind) = entry.kind else {
             continue;
         };
@@ -134,7 +190,11 @@ pub async fn download(
             must_delete = true;
         }
         if !must_delete && try_exists(entry_local_path.as_path())? {
-            bail!("local entry already exists at {:?}", entry_local_path);
+            bail!(
+                "local entry already exists at {:?} (while processing entry: {:?}",
+                entry_local_path,
+                entry
+            );
         }
 
         match kind {

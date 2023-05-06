@@ -4,10 +4,11 @@ mod shuffle;
 use std::{
     net::SocketAddr,
     path::{self, Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{bail, Result};
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files};
 use fs_err::{create_dir_all, read_dir, remove_dir_all, remove_file};
 use portpicker::pick_unused_port;
@@ -23,6 +24,7 @@ use rand::{seq::SliceRandom, thread_rng, Rng};
 use shuffle::{choose_path, shuffle};
 use sqlx::{query, PgPool};
 use tempfile::TempDir;
+use tokio::time::sleep;
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
     create_dir_all(&dst)?;
@@ -104,6 +106,8 @@ async fn try_main() -> Result<()> {
         }
     });
 
+    let snapshot_for_download_version_path = dir.join("snapshot_for_download_version");
+    let mut snapshot_time: Option<DateTime<Utc>> = None;
     for _ in 0..1000 {
         let index = thread_rng().gen_range(0..clients.len());
         for _ in 0..thread_rng().gen_range(1..=3) {
@@ -125,7 +129,38 @@ async fn try_main() -> Result<()> {
         for client in &clients[1..] {
             diff(&clients[0].mount_dir, &client.mount_dir)?;
         }
-        check_download_latest(&dir, &archive_mount_path, &clients).await?;
+        check_download(
+            &dir,
+            &archive_mount_path,
+            &clients,
+            None,
+            &clients.choose(&mut thread_rng()).unwrap().mount_dir,
+        )
+        .await?;
+        if thread_rng().gen_bool(0.3) {
+            if let Some(snapshot_time_value) = snapshot_time {
+                check_download(
+                    &dir,
+                    &archive_mount_path,
+                    &clients,
+                    Some(snapshot_time_value),
+                    &snapshot_for_download_version_path,
+                )
+                .await?;
+                if snapshot_for_download_version_path.is_dir() {
+                    remove_dir_all(&snapshot_for_download_version_path)?;
+                } else {
+                    remove_file(&snapshot_for_download_version_path)?;
+                }
+                snapshot_time = None;
+            } else {
+                info("Saving snapshot for download_version test");
+                sleep(Duration::from_millis(500)).await;
+                snapshot_time = Some(Utc::now());
+                copy_dir_all(&clients[0].mount_dir, &snapshot_for_download_version_path)?;
+                sleep(Duration::from_millis(500)).await;
+            }
+        }
     }
 
     Ok(())
@@ -168,20 +203,21 @@ impl ClientData {
     }
 }
 
-async fn check_download_latest(
+async fn check_download(
     dir: &Path,
     archive_mount_path: &ArchivePath,
     clients: &[ClientData],
+    version: Option<DateTime<Utc>>,
+    source_dir: &Path,
 ) -> Result<()> {
-    let client1 = clients.choose(&mut thread_rng()).unwrap();
-    let local_path = choose_path(&client1.mount_dir, true, true, true, false)?.unwrap();
+    let local_path = choose_path(source_dir, true, true, true, false)?.unwrap();
     if is_leftover_dir_with_ignored_files(&local_path)? {
         return Ok(());
     }
-    let archive_path = if local_path == client1.mount_dir {
+    let archive_path = if local_path == source_dir {
         archive_mount_path.clone()
     } else {
-        let relative = local_path.strip_prefix(&client1.mount_dir)?;
+        let relative = local_path.strip_prefix(source_dir)?;
         let mut path = archive_mount_path.clone();
         for component in relative.components() {
             if let path::Component::Normal(name) = component {
@@ -192,11 +228,18 @@ async fn check_download_latest(
         }
         path
     };
-    info(format!("Checking download: {}", archive_path));
+    info(format!(
+        "Checking download: {}, {:?}",
+        archive_path, version
+    ));
     let client2 = clients.choose(&mut thread_rng()).unwrap();
     let destination = dir.join("tmp_download");
     client2
-        .download(archive_path, destination.to_str().unwrap().parse()?, None)
+        .download(
+            archive_path,
+            destination.to_str().unwrap().parse()?,
+            version.map(Into::into),
+        )
         .await?;
     diff(&local_path, &destination)?;
     if destination.is_dir() {

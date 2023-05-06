@@ -15,7 +15,7 @@ pub mod sync;
 pub mod term;
 pub mod upload;
 
-use crate::{download::download, pull_updates::pull_updates, upload::upload};
+use crate::{pull_updates::pull_updates, upload::upload};
 use aes_siv::{Aes256SivAead, KeyInit};
 use anyhow::{anyhow, Result};
 use cli::Cli;
@@ -23,6 +23,7 @@ use client::Client;
 use config::Config;
 use counters::Counters;
 use derivative::Derivative;
+use download::{download_latest, download_version};
 use path::SanitizedLocalPath;
 use rules::Rules;
 use std::{collections::HashSet, sync::Arc};
@@ -84,18 +85,19 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             local_path,
             version,
         } => {
-            if version.is_some() {
-                todo!()
+            if let Some(version) = version {
+                download_version(&ctx, &archive_path, &local_path, version.into()).await?;
+            } else {
+                pull_updates(&ctx).await?;
+                download_latest(
+                    &ctx,
+                    &archive_path,
+                    &local_path,
+                    &mut Rules::new(&[&ctx.config.always_exclude], local_path.clone()),
+                    false,
+                )
+                .await?;
             }
-            pull_updates(&ctx).await?;
-            download(
-                &ctx,
-                &archive_path,
-                &local_path,
-                &mut Rules::new(&[&ctx.config.always_exclude], local_path.clone()),
-                false,
-            )
-            .await?;
         }
         cli::Command::Ls { path } => todo!(),
         cli::Command::History {

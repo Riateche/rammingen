@@ -311,13 +311,20 @@ pub async fn get_versions(
     }
 
     let mut rows2 = query!(
-        "SELECT * FROM (
-            SELECT *,
-            row_number() OVER(PARTITION BY entry_id ORDER BY recorded_at DESC) AS row_number
-            FROM entry_versions
-            WHERE path LIKE $1 AND recorded_at <= $2
-        ) t WHERE row_number = 1",
-        format!("{}/", request.path.0),
+        "SELECT DISTINCT ON (path) *
+        FROM entry_versions
+        WHERE path LIKE $1 AND recorded_at <= $2
+        ORDER BY path, recorded_at DESC",
+        format!(
+            "{}/%",
+            request
+                .path
+                .0
+                 .0
+                .replace(r"\", r"\\")
+                .replace(r"%", r"\%")
+                .replace(r"_", r"\_")
+        ),
         request.recorded_at.to_db()?,
     )
     .fetch(&ctx.db_pool);

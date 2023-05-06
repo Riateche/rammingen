@@ -79,7 +79,7 @@ impl Client {
             while let Some(chunk) = response.chunk().await? {
                 buf.extend_from_slice(&chunk);
                 while let Some((chunk, index)) = take_chunk(&buf) {
-                    //debug(format!("chunk from server: {:?}", chunk));
+                    //crate::term::debug(format!("chunk from server: {:?}", chunk));
                     let data =
                         bincode::deserialize::<Result<Option<R::ResponseItem>, String>>(chunk)?
                             .map_err(anyhow::Error::msg)?;

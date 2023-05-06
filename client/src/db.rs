@@ -2,13 +2,14 @@ use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LE};
 use fs_err as fs;
 use rammingen_protocol::{
-    ArchivePath, DateTime, EntryKind, EntryUpdateNumber, FileContent, RecordTrigger, SourceId,
+    ArchivePath, DateTime, EntryKind, EntryUpdateNumber, EntryVersionData, FileContent,
+    RecordTrigger, SourceId,
 };
 use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
 use std::{fmt::Debug, io, iter, path::Path, str};
 
-use crate::path::SanitizedLocalPath;
+use crate::{encryption::decrypt_path, path::SanitizedLocalPath, Ctx};
 
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
 
@@ -77,6 +78,19 @@ pub struct DecryptedEntryVersionData {
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
     pub content: Option<FileContent>,
+}
+
+impl DecryptedEntryVersionData {
+    pub fn new(ctx: &Ctx, data: EntryVersionData) -> Result<Self> {
+        Ok(Self {
+            path: decrypt_path(&data.path, &ctx.cipher)?,
+            recorded_at: data.recorded_at,
+            source_id: data.source_id,
+            record_trigger: data.record_trigger,
+            kind: data.kind,
+            content: data.content,
+        })
+    }
 }
 
 impl Db {

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    download::download,
+    download::download_latest,
     pull_updates::pull_updates,
     rules::Rules,
     upload::{find_local_deletions, upload},
@@ -39,7 +39,7 @@ pub async fn sync(ctx: &Ctx) -> Result<()> {
     find_local_deletions(ctx, &mut mount_points, &existing_paths).await?;
     pull_updates(ctx).await?;
     for mount_point in &ctx.config.mount_points {
-        download(
+        download_latest(
             ctx,
             &mount_point.archive_path,
             &mount_point.local_path,
