@@ -1,9 +1,12 @@
 use std::{
+    borrow::Cow,
     io::{ErrorKind, Read},
-    path::Path,
+    path::{self, Path, MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
 };
 
+use anyhow::{anyhow, bail};
 use bytes::Bytes;
+use itertools::Itertools;
 use tokio::{sync::mpsc, task::block_in_place};
 use tokio_stream::{wrappers::ReceiverStream, Stream};
 use tracing::warn;
@@ -41,4 +44,28 @@ pub fn try_exists(path: impl AsRef<Path>) -> anyhow::Result<bool> {
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.into()),
     }
+}
+
+pub fn archive_to_native_relative_path(relative_archive_path: &str) -> Cow<'_, str> {
+    if MAIN_SEPARATOR == '/' {
+        Cow::Borrowed(relative_archive_path)
+    } else {
+        Cow::Owned(relative_archive_path.split('/').join(MAIN_SEPARATOR_STR))
+    }
+}
+
+pub fn native_to_archive_relative_path(relative_path: &Path) -> anyhow::Result<String> {
+    let mut result = Vec::new();
+    for component in relative_path.components() {
+        if let path::Component::Normal(component) = component {
+            result.push(
+                component
+                    .to_str()
+                    .ok_or_else(|| anyhow!("unsupported path: {:?}", relative_path))?,
+            );
+        } else {
+            bail!("found invalid component in {:?}", relative_path);
+        }
+    }
+    Ok(result.join("/"))
 }

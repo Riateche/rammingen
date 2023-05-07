@@ -1,13 +1,12 @@
-use std::{
-    borrow::Cow,
-    path::{Path, MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
-};
+use std::path::Path;
 
 use anyhow::{anyhow, bail, Result};
 use fs_err::{create_dir, remove_dir, remove_file, rename};
 use futures::{stream, Stream, TryStreamExt};
-use itertools::Itertools;
-use rammingen_protocol::{util::try_exists, ArchivePath, DateTime, EntryKind, GetVersions};
+use rammingen_protocol::{
+    util::{archive_to_native_relative_path, try_exists},
+    ArchivePath, DateTime, EntryKind, GetVersions,
+};
 use stream_generator::generate_try_stream;
 
 use crate::{
@@ -18,14 +17,6 @@ use crate::{
     term::{info, set_status, warn},
     Ctx,
 };
-
-fn fix_path_separator(path: &str) -> Cow<'_, str> {
-    if MAIN_SEPARATOR == '/' {
-        Cow::Borrowed(path)
-    } else {
-        Cow::Owned(path.split('/').join(MAIN_SEPARATOR_STR))
-    }
-}
 
 fn archive_to_local_path(
     path: &ArchivePath,
@@ -38,7 +29,7 @@ fn archive_to_local_path(
         let relative_path = path
             .strip_prefix(root_archive_path)
             .ok_or_else(|| anyhow!("failed to strip path prefix from child"))?;
-        root_local_path.join(&*fix_path_separator(relative_path))
+        root_local_path.join(&*archive_to_native_relative_path(relative_path))
     }
 }
 

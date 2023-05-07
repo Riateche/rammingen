@@ -5,9 +5,9 @@ use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, TryStreamExt};
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, AddVersion, AddVersionResponse, ArchivePath,
-    ContentHashExists, DateTime, EncryptedArchivePath, Entry, EntryKind, EntryVersion,
-    EntryVersionData, FileContent, GetEntries, GetVersions, Response, SourceId,
-    StreamingResponseItem,
+    BulkActionStats, ContentHashExists, DateTime, EncryptedArchivePath, Entry, EntryKind,
+    EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions, MovePath, RecordTrigger,
+    Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -157,10 +157,13 @@ fn get_parent_dir<'a>(
     })
 }
 
-pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<AddVersion>> {
-    let mut tx = ctx.db_pool.begin().await?;
+async fn add_version_inner<'a>(
+    ctx: &'a Context,
+    request: AddVersion,
+    tx: &'a mut Transaction<'_, Postgres>,
+) -> Result<Response<AddVersion>> {
     let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0 .0)
-        .fetch_optional(&mut tx)
+        .fetch_optional(&mut *tx)
         .await?;
     let size_db = request
         .content
@@ -184,7 +187,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
                 WHERE kind != 0 AND parent_dir = $1",
                 Some(entry.id.0)
             )
-            .fetch_one(&mut tx)
+            .fetch_one(&mut *tx)
             .await?
             .ok_or_else(|| anyhow!("missing row in response"))?;
             if child_count > 0 {
@@ -197,7 +200,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
         }
         if request.kind.is_some() && entry.data.kind.is_none() {
             // Make sure parent is marked as existing.
-            let _ = get_parent_dir(&ctx, &request.path, &mut tx, &request).await?;
+            let _ = get_parent_dir(ctx, &request.path, &mut *tx, &request).await?;
         }
         let unix_mode_db = request
             .content
@@ -226,7 +229,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             unix_mode_db,
             entry.id.0,
         )
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await?;
     } else {
         let unix_mode_db = request
@@ -234,7 +237,7 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             .as_ref()
             .and_then(|c| c.unix_mode)
             .map(i64::from);
-        let parent = get_parent_dir(&ctx, &request.path, &mut tx, &request).await?;
+        let parent = get_parent_dir(ctx, &request.path, &mut *tx, &request).await?;
         query_scalar!(
             "INSERT INTO entries (
                 update_number,
@@ -262,12 +265,17 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             content_hash_db,
             unix_mode_db,
         )
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await?;
     };
-
-    tx.commit().await?;
     Ok(AddVersionResponse { added: true })
+}
+
+pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<AddVersion>> {
+    let mut tx = ctx.db_pool.begin().await?;
+    let r = add_version_inner(&ctx, request, &mut tx).await?;
+    tx.commit().await?;
+    Ok(r)
 }
 
 pub async fn get_entries(
@@ -316,16 +324,7 @@ pub async fn get_versions(
         FROM entry_versions
         WHERE path LIKE $1 AND recorded_at <= $2
         ORDER BY path, recorded_at DESC",
-        format!(
-            "{}/%",
-            request
-                .path
-                .0
-                 .0
-                .replace(r"\", r"\\")
-                .replace(r"%", r"\%")
-                .replace(r"_", r"\_")
-        ),
+        starts_with(&request.path),
         request.recorded_at.to_db()?,
     )
     .fetch(&ctx.db_pool);
@@ -339,6 +338,91 @@ pub async fn get_versions(
 
     tx.send(Ok(Some(output))).await?;
     Ok(())
+}
+
+fn starts_with(path: &EncryptedArchivePath) -> String {
+    format!(
+        "{}/%",
+        path.0
+             .0
+            .replace('\\', r"\\")
+            .replace('%', r"\%")
+            .replace('_', r"\_")
+    )
+}
+
+pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MovePath>> {
+    let mut tx = ctx.db_pool.begin().await?;
+    let mut old_entries = Vec::new();
+    {
+        let count_existing = query_scalar!(
+            "SELECT COUNT(*) FROM entries WHERE (path = $1 OR path LIKE $2) AND kind > 0",
+            request.new_path.0 .0,
+            starts_with(&request.new_path)
+        )
+        .fetch_one(&mut tx)
+        .await?
+        .ok_or_else(|| anyhow!("expected 1 row in SELECT COUNT query"))?;
+
+        if count_existing > 0 {
+            bail!("destination path already exists");
+        }
+
+        let mut entries = query!(
+            "SELECT * FROM entries WHERE (path = $1 OR path LIKE $2) AND kind > 0 ORDER BY path",
+            request.old_path.0 .0,
+            starts_with(&request.old_path),
+        )
+        .fetch(&mut tx);
+        while let Some(row) = entries.try_next().await? {
+            old_entries.push(convert_entry!(row));
+        }
+    }
+
+    query!(
+        "UPDATE entries
+        SET update_number = nextval('entry_update_numbers'),
+            recorded_at = now(),
+            source_id = $1,
+            record_trigger = $2,
+            kind = $3,
+            size = NULL,
+            modified_at = NULL,
+            content_hash = NULL,
+            unix_mode = NULL
+        WHERE (path = $4 OR path LIKE $5) AND kind > 0",
+        ctx.source_id.0,
+        RecordTrigger::Move as i32,
+        EntryKind::NOT_EXISTS,
+        request.old_path.0 .0,
+        starts_with(&request.old_path),
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let affected_paths = old_entries.len().try_into()?;
+    for entry in old_entries {
+        let new_path = if entry.data.path == request.old_path {
+            request.new_path.clone()
+        } else if let Some(relative) = entry.data.path.0.strip_prefix(&request.old_path.0) {
+            EncryptedArchivePath(request.new_path.0.join_multiple(relative)?)
+        } else {
+            bail!("strip_prefix failed while processing entry: {:?}", entry);
+        };
+        let add_version = AddVersion {
+            path: new_path,
+            record_trigger: RecordTrigger::Move,
+            kind: entry.data.kind,
+            content: entry.data.content,
+        };
+        let result = add_version_inner(&ctx, add_version, &mut tx).await?;
+        if !result.added {
+            bail!("unexpected added = false while moving path");
+        }
+    }
+
+    tx.commit().await?;
+    Ok(BulkActionStats { affected_paths })
 }
 
 trait ToDb {

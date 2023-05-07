@@ -15,7 +15,7 @@ impl ArchivePath {
         Ok(Self(path.into()))
     }
 
-    pub fn join(&self, file_name: &str) -> Result<ArchivePath> {
+    pub fn join_one(&self, file_name: &str) -> Result<ArchivePath> {
         if file_name.is_empty() {
             bail!("file name cannot be empty");
         }
@@ -23,6 +23,25 @@ impl ArchivePath {
             bail!("file name cannot contain '/'");
         }
         let s = format!("{}/{}", self.0, file_name);
+        check_path(&s)?;
+        Ok(Self(s))
+    }
+
+    pub fn join_multiple(&self, relative_archive_path: &str) -> Result<ArchivePath> {
+        if relative_archive_path.is_empty() {
+            bail!("relative_archive_path cannot be empty");
+        }
+        if relative_archive_path.contains("//") {
+            bail!("relative_archive_path cannot contain '//'");
+        }
+        if relative_archive_path.starts_with('/') {
+            bail!("relative_archive_path cannot start with '/'");
+        }
+        if relative_archive_path.ends_with('/') {
+            bail!("relative_archive_path must not end with '/'");
+        }
+
+        let s = format!("{}/{}", self.0, relative_archive_path);
         check_path(&s)?;
         Ok(Self(s))
     }

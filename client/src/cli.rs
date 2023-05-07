@@ -44,14 +44,10 @@ pub enum Command {
         version: DateTime<FixedOffset>,
     },
     Move {
-        archive_path: ArchivePath,
-        new_archive_path: ArchivePath,
+        old_path: ArchivePath,
+        new_path: ArchivePath,
     },
     Remove {
         archive_path: ArchivePath,
-    },
-    RemoveVersion {
-        archive_path: ArchivePath,
-        version: DateTime<FixedOffset>,
     },
 }

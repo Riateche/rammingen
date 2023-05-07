@@ -1840,6 +1840,7 @@ dependencies = [
  "chrono",
  "derive_more",
  "fs-err",
+ "itertools",
  "serde",
  "sqlx",
  "tokio",

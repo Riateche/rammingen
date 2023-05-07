@@ -24,11 +24,13 @@ use config::Config;
 use counters::Counters;
 use derivative::Derivative;
 use download::{download_latest, download_version};
+use encryption::encrypt_path;
 use path::SanitizedLocalPath;
+use rammingen_protocol::MovePath;
 use rules::Rules;
 use std::{collections::HashSet, sync::Arc};
 use sync::sync;
-use term::{clear_status, error};
+use term::{clear_status, error, info};
 
 #[derive(Derivative)]
 pub struct Ctx {
@@ -108,15 +110,17 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             archive_path,
             version,
         } => todo!(),
-        cli::Command::Move {
-            archive_path,
-            new_archive_path,
-        } => todo!(),
+        cli::Command::Move { old_path, new_path } => {
+            let stats = ctx
+                .client
+                .request(&MovePath {
+                    old_path: encrypt_path(&old_path, &ctx.cipher)?,
+                    new_path: encrypt_path(&new_path, &ctx.cipher)?,
+                })
+                .await?;
+            info(format!("{:?}", stats));
+        }
         cli::Command::Remove { archive_path } => todo!(),
-        cli::Command::RemoveVersion {
-            archive_path,
-            version,
-        } => todo!(),
     }
 
     #[allow(unreachable_code)]

@@ -112,6 +112,7 @@ pub enum RecordTrigger {
     Sync,
     Upload,
     Reset,
+    Move,
 }
 
 impl TryFrom<i32> for RecordTrigger {
@@ -122,6 +123,7 @@ impl TryFrom<i32> for RecordTrigger {
             0 => Ok(Self::Sync),
             1 => Ok(Self::Upload),
             2 => Ok(Self::Reset),
+            3 => Ok(Self::Move),
             _ => bail!("invalid value for RecordTrigger: {}", value),
         }
     }

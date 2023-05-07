@@ -138,6 +138,8 @@ async fn try_handle_request(
         wrap_stream(ctx, request, handler::get_versions).await
     } else if path == "/AddVersion" {
         wrap_request(ctx, request, handler::add_version).await
+    } else if path == "/MovePath" {
+        wrap_request(ctx, request, handler::move_path).await
     } else if path == "/ContentHashExists" {
         wrap_request(ctx, request, handler::content_hash_exists).await
     } else {
@@ -217,7 +219,7 @@ async fn parse_request<T: DeserializeOwned>(
 fn serialize_response<T: Serialize>(data: anyhow::Result<T>) -> Bytes {
     bincode::serialize(&data.map_err(|err| {
         warn!(?err, "handler error");
-        err.to_string()
+        format!("{err:?}")
     }))
     .expect("bincode serialization failed")
     .into()
@@ -229,7 +231,7 @@ fn serialize_response_with_length<T: Serialize>(data: anyhow::Result<T>) -> Byte
         (&mut buf).writer(),
         &data.map_err(|err| {
             warn!(?err, "handler error");
-            err.to_string()
+            format!("{err:?}")
         }),
     )
     .expect("bincode serialization failed");

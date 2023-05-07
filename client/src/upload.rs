@@ -2,9 +2,10 @@ use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use futures::future::BoxFuture;
 use rammingen_protocol::{
-    AddVersion, ArchivePath, ContentHashExists, DateTime, EntryKind, FileContent, RecordTrigger,
+    util::native_to_archive_relative_path, AddVersion, ArchivePath, ContentHashExists, DateTime,
+    EntryKind, FileContent, RecordTrigger,
 };
-use std::{collections::HashSet, path::Component, sync::atomic::Ordering, time::Duration};
+use std::{collections::HashSet, sync::atomic::Ordering, time::Duration};
 use tokio::{task::block_in_place, time::sleep};
 
 use crate::{
@@ -25,14 +26,9 @@ pub fn to_archive_path<'a>(
 ) -> Result<Option<(ArchivePath, &'a mut Rules)>> {
     for (mount_point, rules) in mount_points {
         if let Ok(relative) = local_path.as_path().strip_prefix(&mount_point.local_path) {
-            let mut archive = mount_point.archive_path.clone();
-            for component in relative.components() {
-                if let Component::Normal(name) = component {
-                    archive = archive.join(name.to_str().expect("sanitized"))?;
-                } else {
-                    bail!("unexpected non-normal component in {:?}", relative);
-                };
-            }
+            let archive = mount_point
+                .archive_path
+                .join_multiple(&native_to_archive_relative_path(relative)?)?;
             return Ok(Some((archive, rules)));
         }
     }
@@ -248,7 +244,7 @@ pub fn upload<'a>(
                     .to_str()
                     .ok_or_else(|| anyhow!("Unsupported file name: {:?}", entry.path()))?;
                 let entry_local_path = local_path.join(file_name_str)?;
-                let entry_archive_path = archive_path.join(file_name_str).map_err(|err| {
+                let entry_archive_path = archive_path.join_one(file_name_str).map_err(|err| {
                     anyhow!(
                         "Failed to construct archive path for {:?}: {:?}",
                         entry.path(),
