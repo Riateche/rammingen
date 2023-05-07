@@ -10,7 +10,7 @@ use std::{
 use anyhow::{bail, Result};
 use chrono::{DateTime, FixedOffset, Utc};
 use diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files};
-use fs_err::{create_dir_all, read_dir, remove_dir_all, remove_file};
+use fs_err::{copy, create_dir, create_dir_all, read_dir, remove_dir_all, remove_file, write};
 use portpicker::pick_unused_port;
 use rammingen::{
     cli::{Cli, Command},
@@ -21,7 +21,7 @@ use rammingen::{
 };
 use rammingen_protocol::ArchivePath;
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use shuffle::{choose_path, shuffle};
+use shuffle::{choose_path, random_content, random_name, shuffle};
 use sqlx::{query, PgPool};
 use tempfile::TempDir;
 use tokio::time::sleep;
@@ -77,11 +77,14 @@ async fn try_main() -> Result<()> {
         create_dir_all(&mount_dir)?;
         let token = format!("token{client_index}");
         let config = rammingen::config::Config {
-            always_exclude: vec![Rule::NameEquals("target".into())],
+            always_exclude: vec![
+                Rule::NameEquals("target".into()),
+                Rule::NameMatches("^build_".parse()?),
+            ],
             mount_points: vec![MountPoint {
                 local_path: mount_dir.to_str().unwrap().parse()?,
                 archive_path: archive_mount_path.clone(),
-                exclude: vec![Rule::NameMatches("^build_".parse()?)],
+                exclude: vec![],
             }],
             encryption_key: encryption_key.clone(),
             server_url: format!("http://127.0.0.1:{port}/"),
@@ -109,25 +112,62 @@ async fn try_main() -> Result<()> {
     let snapshot_for_download_version_path = dir.join("snapshot_for_download_version");
     let mut snapshot_time: Option<DateTime<Utc>> = None;
     for _ in 0..1000 {
-        let index = thread_rng().gen_range(0..clients.len());
-        for _ in 0..thread_rng().gen_range(1..=3) {
-            debug(format!("shuffling mount for client {index}"));
-            shuffle(&clients[index].mount_dir)?;
-            debug(format!("syncing client {index}"));
-            clients[index].sync().await?;
-        }
-        for (index2, client) in clients.iter().enumerate() {
-            if index2 != index {
-                debug(format!("syncing client {index2}"));
-                let before_sync_snapshot = dir.join("snapshot");
-                copy_dir_all(&client.mount_dir, &before_sync_snapshot)?;
-                client.sync().await?;
-                diff_ignored(&client.mount_dir, &before_sync_snapshot)?;
-                remove_dir_all(&before_sync_snapshot)?;
+        if thread_rng().gen_bool(0.3) {
+            // upload
+            let path_for_upload = dir.join("for_upload");
+            if thread_rng().gen_bool(0.3) {
+                write(&path_for_upload, random_content())?;
+            } else {
+                create_dir(&path_for_upload)?;
+                shuffle(&path_for_upload)?;
             }
-        }
-        for client in &clients[1..] {
-            diff(&clients[0].mount_dir, &client.mount_dir)?;
+            let expected = dir.join("expected");
+            copy_dir_all(&clients[0].mount_dir, &expected)?;
+            let parent_path = choose_path(&expected, false, true, true, false)?.unwrap();
+            let path_in_expected = parent_path.join(random_name(false));
+            if path_in_expected.exists() {
+                continue;
+            }
+            if path_for_upload.is_dir() {
+                copy_dir_all(&path_for_upload, &path_in_expected)?;
+            } else {
+                copy(&path_for_upload, &path_in_expected)?;
+            }
+            let archive_path = archive_subpath(&archive_mount_path, &expected, &path_in_expected)?;
+            debug(format!("Checking upload ({archive_path})"));
+            clients
+                .choose(&mut thread_rng())
+                .unwrap()
+                .upload(SanitizedLocalPath::new(&path_for_upload)?, archive_path)
+                .await?;
+            for client in &clients {
+                client.sync().await?;
+                diff(&expected, &client.mount_dir)?;
+            }
+            remove_dir_or_file(&expected)?;
+            remove_dir_or_file(&path_for_upload)?;
+        } else {
+            // edit mount
+            let index = thread_rng().gen_range(0..clients.len());
+            for _ in 0..thread_rng().gen_range(1..=3) {
+                debug(format!("shuffling mount for client {index}"));
+                shuffle(&clients[index].mount_dir)?;
+                debug(format!("syncing client {index}"));
+                clients[index].sync().await?;
+            }
+            for (index2, client) in clients.iter().enumerate() {
+                if index2 != index {
+                    debug(format!("syncing client {index2}"));
+                    let before_sync_snapshot = dir.join("snapshot");
+                    copy_dir_all(&client.mount_dir, &before_sync_snapshot)?;
+                    client.sync().await?;
+                    diff_ignored(&client.mount_dir, &before_sync_snapshot)?;
+                    remove_dir_all(&before_sync_snapshot)?;
+                }
+            }
+            for client in &clients[1..] {
+                diff(&clients[0].mount_dir, &client.mount_dir)?;
+            }
         }
         check_download(
             &dir,
@@ -201,6 +241,44 @@ impl ClientData {
         )
         .await
     }
+    async fn upload(
+        &self,
+        local_path: SanitizedLocalPath,
+        archive_path: ArchivePath,
+    ) -> Result<()> {
+        rammingen::run(
+            Cli {
+                config: None,
+                command: Command::Upload {
+                    local_path,
+                    archive_path,
+                },
+            },
+            self.config.clone(),
+        )
+        .await
+    }
+}
+
+fn archive_subpath(
+    archive_root_path: &ArchivePath,
+    local_root_path: &Path,
+    path: &Path,
+) -> Result<ArchivePath> {
+    if path == local_root_path {
+        Ok(archive_root_path.clone())
+    } else {
+        let relative = path.strip_prefix(local_root_path)?;
+        let mut path = archive_root_path.clone();
+        for component in relative.components() {
+            if let path::Component::Normal(name) = component {
+                path = path.join(name.to_str().unwrap())?;
+            } else {
+                bail!("invalid path: {:?}", relative);
+            }
+        }
+        Ok(path)
+    }
 }
 
 async fn check_download(
@@ -214,20 +292,7 @@ async fn check_download(
     if is_leftover_dir_with_ignored_files(&local_path)? {
         return Ok(());
     }
-    let archive_path = if local_path == source_dir {
-        archive_mount_path.clone()
-    } else {
-        let relative = local_path.strip_prefix(source_dir)?;
-        let mut path = archive_mount_path.clone();
-        for component in relative.components() {
-            if let path::Component::Normal(name) = component {
-                path = path.join(name.to_str().unwrap())?;
-            } else {
-                bail!("invalid path: {:?}", relative);
-            }
-        }
-        path
-    };
+    let archive_path = archive_subpath(archive_mount_path, source_dir, &local_path)?;
     info(format!(
         "Checking download: {}, {:?}",
         archive_path, version
@@ -242,11 +307,7 @@ async fn check_download(
         )
         .await?;
     diff(&local_path, &destination)?;
-    if destination.is_dir() {
-        remove_dir_all(&destination)?;
-    } else {
-        remove_file(&destination)?;
-    }
+    remove_dir_or_file(&destination)?;
 
     Ok(())
 }
@@ -254,4 +315,13 @@ async fn check_download(
 fn is_ignored(path: &Path) -> bool {
     let name = path.file_name().unwrap().to_str().unwrap();
     name == "target" || name.starts_with("build_")
+}
+
+fn remove_dir_or_file(path: &Path) -> Result<()> {
+    if path.is_dir() {
+        remove_dir_all(path)?;
+    } else {
+        remove_file(path)?;
+    }
+    Ok(())
 }

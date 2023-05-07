@@ -189,8 +189,9 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
             .ok_or_else(|| anyhow!("missing row in response"))?;
             if child_count > 0 {
                 bail!(
-                    "cannot mark {} as deleted because it has existing children",
-                    request.path.0
+                    "cannot mark {} as deleted because it has existing children (request: {:?})",
+                    request.path.0,
+                    request
                 );
             }
         }

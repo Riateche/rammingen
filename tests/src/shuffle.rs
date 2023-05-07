@@ -47,11 +47,11 @@ fn find_paths_inner(
     Ok(())
 }
 
-fn random_name() -> String {
-    if thread_rng().gen_bool(0.1) {
+pub fn random_name(allow_ignored: bool) -> String {
+    if allow_ignored && thread_rng().gen_bool(0.1) {
         // ignored name
         "target".into()
-    } else if thread_rng().gen_bool(0.1) {
+    } else if allow_ignored && thread_rng().gen_bool(0.1) {
         // ignored name
         format!("build_{}", thread_rng().gen_range(0..1000))
     } else {
@@ -60,7 +60,7 @@ fn random_name() -> String {
     }
 }
 
-fn random_content() -> String {
+pub fn random_content() -> String {
     let content_len = thread_rng().gen_range(0..=30_000);
     Alphanumeric.sample_string(&mut thread_rng(), content_len)
 }
@@ -86,7 +86,7 @@ pub fn choose_path(
 
 fn create(dir: &Path) -> Result<()> {
     let parent = choose_path(dir, false, true, true, true)?.unwrap();
-    let path = parent.join(random_name());
+    let path = parent.join(random_name(true));
     if path.exists() {
         return Ok(());
     }
@@ -129,9 +129,9 @@ fn random_rename(dir: &Path) -> Result<()> {
     let to = if thread_rng().gen_bool(0.2) {
         choose_path(dir, false, true, true, true)?
             .unwrap()
-            .join(random_name())
+            .join(random_name(true))
     } else {
-        from.parent().unwrap().join(random_name())
+        from.parent().unwrap().join(random_name(true))
     };
     if !to.exists() && !to.starts_with(&from) {
         rename(&from, &to)?;
