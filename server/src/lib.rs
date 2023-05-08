@@ -140,6 +140,8 @@ async fn try_handle_request(
         wrap_request(ctx, request, handler::add_version).await
     } else if path == "/MovePath" {
         wrap_request(ctx, request, handler::move_path).await
+    } else if path == "/RemovePath" {
+        wrap_request(ctx, request, handler::remove_path).await
     } else if path == "/ContentHashExists" {
         wrap_request(ctx, request, handler::content_hash_exists).await
     } else {

@@ -26,7 +26,7 @@ use derivative::Derivative;
 use download::{download_latest, download_version};
 use encryption::encrypt_path;
 use path::SanitizedLocalPath;
-use rammingen_protocol::MovePath;
+use rammingen_protocol::{MovePath, RemovePath};
 use rules::Rules;
 use std::{collections::HashSet, sync::Arc};
 use sync::sync;
@@ -120,7 +120,15 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                 .await?;
             info(format!("{:?}", stats));
         }
-        cli::Command::Remove { archive_path } => todo!(),
+        cli::Command::Remove { archive_path } => {
+            let stats = ctx
+                .client
+                .request(&RemovePath {
+                    path: encrypt_path(&archive_path, &ctx.cipher)?,
+                })
+                .await?;
+            info(format!("{:?}", stats));
+        }
     }
 
     #[allow(unreachable_code)]

@@ -7,7 +7,7 @@ use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, AddVersion, AddVersionResponse, ArchivePath,
     BulkActionStats, ContentHashExists, DateTime, EncryptedArchivePath, Entry, EntryKind,
     EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions, MovePath, RecordTrigger,
-    Response, SourceId, StreamingResponseItem,
+    RemovePath, Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -351,6 +351,35 @@ fn starts_with(path: &EncryptedArchivePath) -> String {
     )
 }
 
+async fn remove_entries_in_dir<'a>(
+    ctx: &'a Context,
+    path: &'a EncryptedArchivePath,
+    trigger: RecordTrigger,
+    tx: &'a mut Transaction<'_, Postgres>,
+) -> Result<u64> {
+    let r = query!(
+        "UPDATE entries
+        SET update_number = nextval('entry_update_numbers'),
+            recorded_at = now(),
+            source_id = $1,
+            record_trigger = $2,
+            kind = $3,
+            size = NULL,
+            modified_at = NULL,
+            content_hash = NULL,
+            unix_mode = NULL
+        WHERE (path = $4 OR path LIKE $5) AND kind > 0",
+        ctx.source_id.0,
+        trigger as i32,
+        EntryKind::NOT_EXISTS,
+        path.0 .0,
+        starts_with(path),
+    )
+    .execute(&mut *tx)
+    .await?;
+    Ok(r.rows_affected())
+}
+
 pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MovePath>> {
     let mut tx = ctx.db_pool.begin().await?;
     let mut old_entries = Vec::new();
@@ -379,26 +408,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
         }
     }
 
-    query!(
-        "UPDATE entries
-        SET update_number = nextval('entry_update_numbers'),
-            recorded_at = now(),
-            source_id = $1,
-            record_trigger = $2,
-            kind = $3,
-            size = NULL,
-            modified_at = NULL,
-            content_hash = NULL,
-            unix_mode = NULL
-        WHERE (path = $4 OR path LIKE $5) AND kind > 0",
-        ctx.source_id.0,
-        RecordTrigger::Move as i32,
-        EntryKind::NOT_EXISTS,
-        request.old_path.0 .0,
-        starts_with(&request.old_path),
-    )
-    .execute(&mut *tx)
-    .await?;
+    remove_entries_in_dir(&ctx, &request.old_path, RecordTrigger::Move, &mut tx).await?;
 
     let affected_paths = old_entries.len().try_into()?;
     for entry in old_entries {
@@ -421,6 +431,14 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
         }
     }
 
+    tx.commit().await?;
+    Ok(BulkActionStats { affected_paths })
+}
+
+pub async fn remove_path(ctx: Context, request: RemovePath) -> Result<Response<RemovePath>> {
+    let mut tx = ctx.db_pool.begin().await?;
+    let affected_paths =
+        remove_entries_in_dir(&ctx, &request.path, RecordTrigger::Remove, &mut tx).await?;
     tx.commit().await?;
     Ok(BulkActionStats { affected_paths })
 }

@@ -114,7 +114,7 @@ async fn try_main() -> Result<()> {
     let snapshot_for_download_version_path = dir.join("snapshot_for_download_version");
     let mut snapshot_time: Option<DateTime<Utc>> = None;
     for _ in 0..1000 {
-        if thread_rng().gen_bool(0.3) {
+        if thread_rng().gen_bool(0.2) {
             // mutate through server command
             let expected = dir.join("expected");
             if expected.exists() {
@@ -150,7 +150,7 @@ async fn try_main() -> Result<()> {
                 client1
                     .upload(SanitizedLocalPath::new(&path_for_upload)?, archive_path)
                     .await?;
-            } else {
+            } else if thread_rng().gen_bool(0.5) {
                 // move path
                 let Some(path1) = choose_path(&expected, true, true, false, false)? else {
                     continue;
@@ -167,6 +167,15 @@ async fn try_main() -> Result<()> {
                     "Checking mv ({archive_path} -> {new_archive_path})"
                 ));
                 client1.move_path(archive_path, new_archive_path).await?;
+            } else {
+                // remove path
+                let Some(path1) = choose_path(&expected, true, true, false, false)? else {
+                    continue;
+                };
+                remove_dir_or_file(&path1)?;
+                let archive_path = archive_subpath(&archive_mount_path, &expected, &path1)?;
+                debug(format!("Checking rm {archive_path}"));
+                client1.remove_path(archive_path).await?;
             }
             for client in &clients {
                 client.sync().await?;
@@ -296,6 +305,16 @@ impl ClientData {
                     old_path: archive_path,
                     new_path: new_archive_path,
                 },
+            },
+            self.config.clone(),
+        )
+        .await
+    }
+    async fn remove_path(&self, archive_path: ArchivePath) -> Result<()> {
+        rammingen::run(
+            Cli {
+                config: None,
+                command: Command::Remove { archive_path },
             },
             self.config.clone(),
         )
