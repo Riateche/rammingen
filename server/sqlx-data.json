@@ -208,7 +208,7 @@
     },
     "query": "SELECT * FROM entries WHERE update_number > $1 ORDER BY update_number"
   },
-  "6323a5459e04d4b858eedc033932c75f84f47a28eeaa078316094e10943b5aa3": {
+  "6335af1ee12d60434bc78aab6055611f8021df1cf7255b350dc40f8393ec27dd": {
     "describe": {
       "columns": [
         {
@@ -295,11 +295,12 @@
       "parameters": {
         "Left": [
           "Text",
+          "Text",
           "Timestamptz"
         ]
       }
     },
-    "query": "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1"
+    "query": "SELECT DISTINCT ON (path) *\n        FROM entry_versions\n        WHERE (path = $1 OR path LIKE $2) AND recorded_at <= $3\n        ORDER BY path, recorded_at DESC"
   },
   "89329a72e0b4e698d0477a64c203d7e95be740cb0f0242a073f7aaab134585b1": {
     "describe": {
@@ -500,99 +501,6 @@
       }
     },
     "query": "SELECT * FROM entries WHERE path = $1"
-  },
-  "c7cc0b8f420cb905b5d529b52fa5487a7e5013899c5fb5fe79fdf9059893f4f1": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Int8"
-        },
-        {
-          "name": "entry_id",
-          "ordinal": 1,
-          "type_info": "Int8"
-        },
-        {
-          "name": "update_number",
-          "ordinal": 2,
-          "type_info": "Int8"
-        },
-        {
-          "name": "snapshot_id",
-          "ordinal": 3,
-          "type_info": "Int4"
-        },
-        {
-          "name": "path",
-          "ordinal": 4,
-          "type_info": "Varchar"
-        },
-        {
-          "name": "recorded_at",
-          "ordinal": 5,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "source_id",
-          "ordinal": 6,
-          "type_info": "Int4"
-        },
-        {
-          "name": "record_trigger",
-          "ordinal": 7,
-          "type_info": "Int4"
-        },
-        {
-          "name": "kind",
-          "ordinal": 8,
-          "type_info": "Int4"
-        },
-        {
-          "name": "size",
-          "ordinal": 9,
-          "type_info": "Int8"
-        },
-        {
-          "name": "modified_at",
-          "ordinal": 10,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "content_hash",
-          "ordinal": 11,
-          "type_info": "Bytea"
-        },
-        {
-          "name": "unix_mode",
-          "ordinal": 12,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
-        true,
-        true,
-        true,
-        true
-      ],
-      "parameters": {
-        "Left": [
-          "Text",
-          "Timestamptz"
-        ]
-      }
-    },
-    "query": "SELECT DISTINCT ON (path) *\n        FROM entry_versions\n        WHERE path LIKE $1 AND recorded_at <= $2\n        ORDER BY path, recorded_at DESC"
   },
   "ccc9ced9afb4d73a28809e37e53d3220da17df524cad83fb0ffa9c7a56d7b540": {
     "describe": {

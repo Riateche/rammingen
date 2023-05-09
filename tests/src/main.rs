@@ -111,7 +111,7 @@ async fn try_main() -> Result<()> {
         }
     });
 
-    let snapshot_for_download_version_path = dir.join("snapshot_for_download_version");
+    let old_snapshot_path = dir.join("old_snapshot");
     let mut snapshot_time: Option<DateTime<Utc>> = None;
     for _ in 0..1000 {
         if thread_rng().gen_bool(0.2) {
@@ -122,7 +122,44 @@ async fn try_main() -> Result<()> {
             }
             copy_dir_all(&clients[0].mount_dir, &expected)?;
             let client1 = clients.choose(&mut thread_rng()).unwrap();
-            if thread_rng().gen_bool(0.3) {
+            if thread_rng().gen_bool(0.1) {
+                // reset
+                let Some(snapshot_time_value) = snapshot_time else {
+                    continue;
+                };
+                let local_path = choose_path(&old_snapshot_path, true, true, true, false)?.unwrap();
+                if is_leftover_dir_with_ignored_files(&local_path)? {
+                    return Ok(());
+                }
+                let archive_path =
+                    archive_subpath(&archive_mount_path, &old_snapshot_path, &local_path)?;
+                let path_in_expected = if local_path == old_snapshot_path {
+                    expected.clone()
+                } else {
+                    expected.join(local_path.strip_prefix(&old_snapshot_path)?)
+                };
+                if path_in_expected.exists() {
+                    remove_dir_or_file(&path_in_expected)?;
+                }
+                let parent_path_in_expected = path_in_expected.parent().unwrap();
+                if !parent_path_in_expected.exists() {
+                    create_dir_all(parent_path_in_expected)?;
+                }
+                if local_path.is_file() {
+                    copy(&local_path, &path_in_expected)?;
+                } else {
+                    copy_dir_all(&local_path, &path_in_expected)?;
+                }
+                info(format!(
+                    "Checking reset: {}, {:?}",
+                    archive_path, snapshot_time_value
+                ));
+                let client2 = clients.choose(&mut thread_rng()).unwrap();
+                client2
+                    .reset(archive_path, snapshot_time_value.into())
+                    .await?;
+                snapshot_time = None;
+            } else if thread_rng().gen_bool(0.3) {
                 // upload new path
                 let path_for_upload = dir.join("for_upload");
                 if path_for_upload.exists() {
@@ -221,7 +258,7 @@ async fn try_main() -> Result<()> {
                     &archive_mount_path,
                     &clients,
                     Some(snapshot_time_value),
-                    &snapshot_for_download_version_path,
+                    &old_snapshot_path,
                 )
                 .await?;
                 snapshot_time = None;
@@ -229,10 +266,10 @@ async fn try_main() -> Result<()> {
                 info("Saving snapshot for download_version test");
                 sleep(Duration::from_millis(500)).await;
                 snapshot_time = Some(Utc::now());
-                if snapshot_for_download_version_path.exists() {
-                    remove_dir_or_file(&snapshot_for_download_version_path)?;
+                if old_snapshot_path.exists() {
+                    remove_dir_or_file(&old_snapshot_path)?;
                 }
-                copy_dir_all(&clients[0].mount_dir, &snapshot_for_download_version_path)?;
+                copy_dir_all(&clients[0].mount_dir, &old_snapshot_path)?;
                 sleep(Duration::from_millis(500)).await;
             }
         }
@@ -315,6 +352,19 @@ impl ClientData {
             Cli {
                 config: None,
                 command: Command::Remove { archive_path },
+            },
+            self.config.clone(),
+        )
+        .await
+    }
+    async fn reset(&self, archive_path: ArchivePath, version: DateTime<FixedOffset>) -> Result<()> {
+        rammingen::run(
+            Cli {
+                config: None,
+                command: Command::Reset {
+                    archive_path,
+                    version,
+                },
             },
             self.config.clone(),
         )

@@ -2,12 +2,12 @@ use std::{mem, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
-use futures_util::{future::BoxFuture, TryStreamExt};
+use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, AddVersion, AddVersionResponse, ArchivePath,
     BulkActionStats, ContentHashExists, DateTime, EncryptedArchivePath, Entry, EntryKind,
     EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions, MovePath, RecordTrigger,
-    RemovePath, Response, SourceId, StreamingResponseItem,
+    RemovePath, ResetVersion, Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -299,44 +299,46 @@ pub async fn get_entries(
     Ok(())
 }
 
+async fn get_versions_inner<'a>(
+    recorded_at: DateTime,
+    path: &'a EncryptedArchivePath,
+    tx: &'a mut Transaction<'_, Postgres>,
+) -> Result<impl Stream<Item = Result<EntryVersion>> + 'a> {
+    let stream = query!(
+        "SELECT DISTINCT ON (path) *
+        FROM entry_versions
+        WHERE (path = $1 OR path LIKE $2) AND recorded_at <= $3
+        ORDER BY path, recorded_at DESC",
+        path.0 .0,
+        starts_with(&path),
+        recorded_at.to_db()?,
+    )
+    .fetch(tx)
+    .map_err(anyhow::Error::from)
+    .and_then(|row| async move { Ok(convert_entry_version!(row)) });
+    Ok(stream)
+}
+
 pub async fn get_versions(
     ctx: Context,
     request: GetVersions,
-    tx: Sender<Result<Option<StreamingResponseItem<GetVersions>>>>,
+    sender: Sender<Result<Option<StreamingResponseItem<GetVersions>>>>,
 ) -> Result<()> {
     let mut output = Vec::new();
-    let mut rows =
-        query!(
-            "SELECT * FROM entry_versions WHERE path = $1 AND recorded_at <= $2 ORDER BY recorded_at DESC LIMIT 1",
-            request.path.0 .0,
-            request.recorded_at.to_db()?,
-        ).fetch(&ctx.db_pool);
+    let mut tx = ctx.db_pool.begin().await?;
+    let entries = get_versions_inner(request.recorded_at, &request.path, &mut tx).await?;
+    tokio::pin!(entries);
 
-    while let Some(row) = rows.try_next().await? {
-        output.push(convert_entry_version!(row));
-        if output.len() >= ITEMS_PER_CHUNK {
-            tx.send(Ok(Some(mem::take(&mut output)))).await?;
+    while let Some(entry) = entries.try_next().await? {
+        if entry.data.kind.is_some() {
+            output.push(entry);
+            if output.len() >= ITEMS_PER_CHUNK {
+                sender.send(Ok(Some(mem::take(&mut output)))).await?;
+            }
         }
     }
 
-    let mut rows2 = query!(
-        "SELECT DISTINCT ON (path) *
-        FROM entry_versions
-        WHERE path LIKE $1 AND recorded_at <= $2
-        ORDER BY path, recorded_at DESC",
-        starts_with(&request.path),
-        request.recorded_at.to_db()?,
-    )
-    .fetch(&ctx.db_pool);
-
-    while let Some(row) = rows2.try_next().await? {
-        output.push(convert_entry_version!(row));
-        if output.len() >= ITEMS_PER_CHUNK {
-            tx.send(Ok(Some(mem::take(&mut output)))).await?;
-        }
-    }
-
-    tx.send(Ok(Some(output))).await?;
+    sender.send(Ok(Some(output))).await?;
     Ok(())
 }
 
@@ -439,6 +441,54 @@ pub async fn remove_path(ctx: Context, request: RemovePath) -> Result<Response<R
     let mut tx = ctx.db_pool.begin().await?;
     let affected_paths =
         remove_entries_in_dir(&ctx, &request.path, RecordTrigger::Remove, &mut tx).await?;
+    tx.commit().await?;
+    Ok(BulkActionStats { affected_paths })
+}
+
+pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Response<ResetVersion>> {
+    let mut tx = ctx.db_pool.begin().await?;
+    let entries: Vec<_> = get_versions_inner(request.recorded_at, &request.path, &mut tx)
+        .await?
+        .try_collect()
+        .await?;
+    let mut affected_paths = 0;
+    for entry in entries.iter().rev() {
+        if entry.data.kind.is_none() {
+            let r = add_version_inner(
+                &ctx,
+                AddVersion {
+                    path: entry.data.path.clone(),
+                    record_trigger: RecordTrigger::Reset,
+                    kind: entry.data.kind,
+                    content: entry.data.content.clone(),
+                },
+                &mut tx,
+            )
+            .await?;
+            if r.added {
+                affected_paths += 1;
+            }
+        }
+    }
+
+    for entry in entries {
+        if entry.data.kind.is_some() {
+            let r = add_version_inner(
+                &ctx,
+                AddVersion {
+                    path: entry.data.path,
+                    record_trigger: RecordTrigger::Reset,
+                    kind: entry.data.kind,
+                    content: entry.data.content,
+                },
+                &mut tx,
+            )
+            .await?;
+            if r.added {
+                affected_paths += 1;
+            }
+        }
+    }
     tx.commit().await?;
     Ok(BulkActionStats { affected_paths })
 }

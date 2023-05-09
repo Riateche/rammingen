@@ -56,7 +56,8 @@ impl Client {
             .error_for_status()?
             .bytes()
             .await?;
-        bincode::deserialize::<Result<R::Response, String>>(&response)?.map_err(anyhow::Error::msg)
+        bincode::deserialize::<Result<R::Response, String>>(&response)?
+            .map_err(|msg| anyhow!("server error: {msg}"))
     }
 
     pub fn stream<R>(&self, request: &R) -> impl Stream<Item = Result<R::ResponseItem>>
@@ -82,7 +83,7 @@ impl Client {
                     //crate::term::debug(format!("chunk from server: {:?}", chunk));
                     let data =
                         bincode::deserialize::<Result<Option<R::ResponseItem>, String>>(chunk)?
-                            .map_err(anyhow::Error::msg)?;
+                            .map_err(|msg| anyhow!("server error: {msg}"))?;
                     buf.drain(..index);
                     if let Some(data) = data {
                         y.send(Ok(data)).await;

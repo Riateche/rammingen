@@ -264,7 +264,7 @@ pub struct BulkActionStats {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResetVersion {
     pub path: EncryptedArchivePath,
-    pub recorded_at: Option<DateTime>,
+    pub recorded_at: DateTime,
 }
 response_type!(ResetVersion, BulkActionStats);
 
