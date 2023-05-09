@@ -1,6 +1,6 @@
 use anyhow::Result;
 use regex::Regex;
-use serde::{de::Error, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::path::SanitizedLocalPath;
@@ -56,12 +56,13 @@ impl Rules {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Rule {
     NameEquals(String),
-    NameMatches(Regex),
+    NameMatches(#[serde(with = "serde_regex")] Regex),
     PathEquals(SanitizedLocalPath),
-    PathMatches(Regex),
+    PathMatches(#[serde(with = "serde_regex")] Regex),
     SubdirsOf {
         path: SanitizedLocalPath,
         except: Vec<String>,
@@ -88,75 +89,6 @@ impl Rule {
             }
         };
         Ok(r)
-    }
-}
-
-impl<'de> Deserialize<'de> for Rule {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let rule: repr::Rule = Deserialize::deserialize(deserializer)?;
-        rule.try_into().map_err(D::Error::custom)
-    }
-}
-
-mod repr {
-    use anyhow::{anyhow, bail, Result};
-    use regex::Regex;
-    use serde::{Deserialize, Serialize};
-
-    use crate::path::SanitizedLocalPath;
-
-    #[derive(Debug, Serialize, Deserialize)]
-    pub struct Rule {
-        #[serde(default)]
-        name_equals: Option<String>,
-        #[serde(default, with = "serde_regex")]
-        name_matches: Option<Regex>,
-        #[serde(default)]
-        path_equals: Option<SanitizedLocalPath>,
-        #[serde(default, with = "serde_regex")]
-        path_matches: Option<Regex>,
-        #[serde(default)]
-        subdirs_of: Option<SanitizedLocalPath>,
-        #[serde(default)]
-        except: Option<Vec<String>>,
-    }
-
-    impl TryFrom<Rule> for super::Rule {
-        type Error = anyhow::Error;
-        fn try_from(mut value: Rule) -> Result<Self> {
-            let rule = if let Some(v) = value.name_equals.take() {
-                super::Rule::NameEquals(v)
-            } else if let Some(v) = value.name_matches.take() {
-                super::Rule::NameMatches(v)
-            } else if let Some(v) = value.path_equals.take() {
-                super::Rule::PathEquals(v)
-            } else if let Some(v) = value.path_matches.take() {
-                super::Rule::PathMatches(v)
-            } else if let Some(v) = value.subdirs_of.take() {
-                super::Rule::SubdirsOf {
-                    path: v,
-                    except: value
-                        .except
-                        .take()
-                        .ok_or_else(|| anyhow!("missing 'expect' field near 'subdirs_of' field"))?,
-                }
-            } else {
-                bail!("expected one of 'name_equals', 'name_matches', 'path_equals', 'path_matches', 'subdirs_of'");
-            };
-
-            if value.name_equals.is_some()
-                || value.name_matches.is_some()
-                || value.path_equals.is_some()
-                || value.path_matches.is_some()
-                || value.subdirs_of.is_some()
-            {
-                bail!("cannot specify multiple conditions in the same object");
-            }
-            Ok(rule)
-        }
     }
 }
 

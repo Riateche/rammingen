@@ -80,6 +80,10 @@ async fn try_main() -> Result<()> {
         log_file: None,
         log_filter: String::new(),
     };
+    write(
+        &dir.join("server_config.json5"),
+        json5::to_string(&server_config)?,
+    )?;
 
     let encryption_key = EncryptionKey::generate();
     let db_pool = PgPool::connect(&database_url).await?;
@@ -106,6 +110,8 @@ async fn try_main() -> Result<()> {
             salt: "salt1".into(),
             local_db_path: Some(client_dir.join("db")),
         };
+        let config_path = client_dir.join("config.json5");
+        write(&config_path, json5::to_string(&config)?)?;
         clients.push(ClientData { config, mount_dir });
 
         query("INSERT INTO sources(name, secret) VALUES ($1, $2)")

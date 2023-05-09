@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LE};
 use fs_err as fs;
 use rammingen_protocol::{
-    ArchivePath, DateTime, EntryKind, EntryUpdateNumber, EntryVersionData, FileContent,
+    ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber, EntryVersionData, FileContent,
     RecordTrigger, SourceId,
 };
 use serde::{Deserialize, Serialize};
@@ -62,7 +62,7 @@ impl LocalEntryInfo {
                 .content
                 .as_ref()
                 .ok_or_else(|| anyhow!("missing content for file"))?;
-            if DateTime::from(metadata.modified()?) != content.modified_at {
+            if DateTimeUtc::from(metadata.modified()?) != content.modified_at {
                 return Ok(false);
             }
         }
@@ -73,7 +73,7 @@ impl LocalEntryInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DecryptedEntryVersionData {
     pub path: ArchivePath,
-    pub recorded_at: DateTime,
+    pub recorded_at: DateTimeUtc,
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
@@ -109,6 +109,19 @@ impl Db {
         self.archive_entries
             .iter()
             .map(|pair| Ok(bincode::deserialize::<DecryptedEntryVersionData>(&pair?.1)?))
+    }
+
+    pub fn get_archive_entry(
+        &self,
+        path: &ArchivePath,
+    ) -> Result<Option<DecryptedEntryVersionData>> {
+        if let Some(value) = self.archive_entries.get(path.0.as_bytes())? {
+            Ok(Some(bincode::deserialize::<DecryptedEntryVersionData>(
+                &value,
+            )?))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn get_archive_entries(

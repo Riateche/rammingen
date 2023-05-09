@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use futures::future::BoxFuture;
 use rammingen_protocol::{
-    util::native_to_archive_relative_path, AddVersion, ArchivePath, ContentHashExists, DateTime,
+    util::native_to_archive_relative_path, AddVersion, ArchivePath, ContentHashExists, DateTimeUtc,
     EntryKind, FileContent, RecordTrigger,
 };
 use std::{collections::HashSet, sync::atomic::Ordering, time::Duration};
@@ -25,6 +25,9 @@ pub fn to_archive_path<'a>(
     mount_points: &'a mut [(&MountPoint, Rules)],
 ) -> Result<Option<(ArchivePath, &'a mut Rules)>> {
     for (mount_point, rules) in mount_points {
+        if local_path == &mount_point.local_path {
+            return Ok(Some((mount_point.archive_path.clone(), rules)));
+        }
         if let Ok(relative) = local_path.as_path().strip_prefix(&mount_point.local_path) {
             let archive = mount_point
                 .archive_path
@@ -159,7 +162,7 @@ pub fn upload<'a>(
             }
             let modified =
                 modified.ok_or_else(|| anyhow!("file {:?} keeps updating", local_path))?;
-            let modified_datetime = DateTime::from(modified);
+            let modified_datetime = DateTimeUtc::from(modified);
             let unix_mode = unix_mode(&metadata);
 
             let maybe_changed = db_data.as_ref().map_or(true, |db_data| {

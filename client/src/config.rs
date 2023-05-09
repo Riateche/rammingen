@@ -6,14 +6,14 @@ use derivative::Derivative;
 use generic_array::GenericArray;
 use rammingen_protocol::ArchivePath;
 use serde::de::Error;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use typenum::U64;
 
 use crate::path::SanitizedLocalPath;
 use crate::rules::Rule;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountPoint {
     pub local_path: SanitizedLocalPath,
     pub archive_path: ArchivePath,
@@ -54,7 +54,16 @@ impl<'de> Deserialize<'de> for EncryptionKey {
     }
 }
 
-#[derive(Derivative, Clone, Deserialize)]
+impl Serialize for EncryptionKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        BASE64_URL_SAFE_NO_PAD.encode(self.0).serialize(serializer)
+    }
+}
+
+#[derive(Derivative, Clone, Serialize, Deserialize)]
 #[derivative(Debug)]
 pub struct Config {
     pub always_exclude: Vec<Rule>,

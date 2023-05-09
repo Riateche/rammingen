@@ -254,7 +254,6 @@ pub fn encrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<Encry
         })
         .collect::<Result<Vec<String>>>()?;
     let path = ArchivePath::from_str_without_prefix(&parts.join("/"))?;
-    crate::term::debug(format!("{} -> {}", value, path));
     Ok(EncryptedArchivePath(path))
 }
 

@@ -15,7 +15,11 @@ pub mod sync;
 pub mod term;
 pub mod upload;
 
-use crate::{pull_updates::pull_updates, upload::upload};
+use crate::{
+    ls::{local_status, ls},
+    pull_updates::pull_updates,
+    upload::upload,
+};
 use aes_siv::{Aes256SivAead, KeyInit};
 use anyhow::{anyhow, Result};
 use cli::Cli;
@@ -101,7 +105,8 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                 .await?;
             }
         }
-        cli::Command::Ls { path } => todo!(),
+        cli::Command::LocalStatus { path } => local_status(&ctx, &path).await?,
+        cli::Command::Ls { path } => ls(&ctx, &path).await?,
         cli::Command::History {
             archive_path,
             time_spec,

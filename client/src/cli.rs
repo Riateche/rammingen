@@ -29,11 +29,12 @@ pub enum Command {
         archive_path: ArchivePath,
         local_path: SanitizedLocalPath,
         version: Option<DateTime<FixedOffset>>,
-        // #[clap(short, long)]
-        // replace: bool,
+    },
+    LocalStatus {
+        path: SanitizedLocalPath,
     },
     Ls {
-        path: String,
+        path: ArchivePath,
     },
     History {
         archive_path: ArchivePath,

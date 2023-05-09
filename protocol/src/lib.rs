@@ -13,7 +13,7 @@ use std::{fmt, str::FromStr};
 
 pub mod util;
 
-pub type DateTime = chrono::DateTime<Utc>;
+pub type DateTimeUtc = chrono::DateTime<Utc>;
 
 pub const VERSION: u32 = 1;
 
@@ -161,10 +161,16 @@ pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EncryptedArchivePath(pub ArchivePath);
 
+impl fmt::Display for EncryptedArchivePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "enar:{}", self.0 .0)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntryVersionData {
     pub path: EncryptedArchivePath,
-    pub recorded_at: DateTime,
+    pub recorded_at: DateTimeUtc,
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
@@ -210,7 +216,7 @@ pub struct EntryVersion {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileContent {
-    pub modified_at: DateTime,
+    pub modified_at: DateTimeUtc,
     pub size: u64,
     pub hash: ContentHash,
     pub unix_mode: Option<u32>,
@@ -226,7 +232,7 @@ streaming_response_type!(GetEntries, Vec<Entry>);
 // Returns the closest version to the specified date
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetVersions {
-    pub recorded_at: DateTime,
+    pub recorded_at: DateTimeUtc,
     // if it's a dir, return a version for each nested path
     pub path: EncryptedArchivePath,
 }
@@ -264,7 +270,7 @@ pub struct BulkActionStats {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResetVersion {
     pub path: EncryptedArchivePath,
-    pub recorded_at: DateTime,
+    pub recorded_at: DateTimeUtc,
 }
 response_type!(ResetVersion, BulkActionStats);
 
@@ -285,7 +291,7 @@ response_type!(RemovePath, BulkActionStats);
 pub struct RemoveVersion {
     // if dir, remove this version for all nested paths (where it's present)
     pub path: EncryptedArchivePath,
-    pub recorded_at: Option<DateTime>,
+    pub recorded_at: Option<DateTimeUtc>,
 }
 response_type!(RemoveVersion, BulkActionStats);
 

@@ -5,7 +5,7 @@ use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, AddVersion, AddVersionResponse, ArchivePath,
-    BulkActionStats, ContentHashExists, DateTime, EncryptedArchivePath, Entry, EntryKind,
+    BulkActionStats, ContentHashExists, DateTimeUtc, EncryptedArchivePath, Entry, EntryKind,
     EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions, MovePath, RecordTrigger,
     RemovePath, ResetVersion, Response, SourceId, StreamingResponseItem,
 };
@@ -300,7 +300,7 @@ pub async fn get_entries(
 }
 
 async fn get_versions_inner<'a>(
-    recorded_at: DateTime,
+    recorded_at: DateTimeUtc,
     path: &'a EncryptedArchivePath,
     tx: &'a mut Transaction<'_, Postgres>,
 ) -> Result<impl Stream<Item = Result<EntryVersion>> + 'a> {
@@ -523,7 +523,7 @@ trait ToDb {
     fn to_db(&self) -> Self::Output;
 }
 
-impl ToDb for DateTime {
+impl ToDb for DateTimeUtc {
     type Output = Result<OffsetDateTime>;
 
     fn to_db(&self) -> Self::Output {
@@ -540,7 +540,7 @@ trait FromDb {
 }
 
 impl FromDb for OffsetDateTime {
-    type Output = DateTime;
+    type Output = DateTimeUtc;
 
     fn from_db(&self) -> Self::Output {
         Utc.timestamp_nanos(self.unix_timestamp_nanos() as i64)

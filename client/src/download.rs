@@ -5,7 +5,7 @@ use fs_err::{create_dir, remove_dir, remove_file, rename};
 use futures::{stream, Stream, TryStreamExt};
 use rammingen_protocol::{
     util::{archive_to_native_relative_path, try_exists},
-    ArchivePath, DateTime, EntryKind, GetVersions,
+    ArchivePath, DateTimeUtc, EntryKind, GetVersions,
 };
 use stream_generator::generate_try_stream;
 
@@ -54,7 +54,7 @@ pub async fn download_version(
     ctx: &Ctx,
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
-    version: DateTime,
+    version: DateTimeUtc,
 ) -> Result<()> {
     crate::term::debug("download_version");
     let stream = generate_try_stream(move |mut y| async move {
@@ -62,11 +62,16 @@ pub async fn download_version(
             path: encrypt_path(root_archive_path, &ctx.cipher)?,
             recorded_at: version,
         });
+        let mut any = false;
         while let Some(batch) = response_stream.try_next().await? {
             for entry in batch {
                 let entry = DecryptedEntryVersionData::new(ctx, entry.data)?;
+                any = true;
                 y.send(Ok(entry)).await;
             }
+        }
+        if !any {
+            bail!("no such path: {}", root_archive_path);
         }
         Ok(())
     });
