@@ -454,6 +454,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
     let mut affected_paths = 0;
     for entry in entries.iter().rev() {
         if entry.data.kind.is_none() {
+            tracing::debug!("reset_version: deleting {:?}", entry);
             let r = add_version_inner(
                 &ctx,
                 AddVersion {
@@ -473,6 +474,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
 
     for entry in entries {
         if entry.data.kind.is_some() {
+            tracing::debug!("reset_version: updating {:?}", entry);
             let r = add_version_inner(
                 &ctx,
                 AddVersion {

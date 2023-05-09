@@ -38,6 +38,13 @@ pub struct Config {
     pub database_url: String,
     pub storage_path: PathBuf,
     pub bind_addr: SocketAddr,
+    pub log_file: Option<PathBuf>,
+    #[serde(default = "default_log_filter")]
+    pub log_filter: String,
+}
+
+fn default_log_filter() -> String {
+    "info,sqlx::query=warn,rammingen_server=debug".into()
 }
 
 #[derive(Debug, Clone)]

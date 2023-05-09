@@ -14,7 +14,7 @@ use rand::{
     thread_rng, Rng,
 };
 
-use crate::is_ignored;
+use crate::{diff::is_leftover_dir_with_ignored_files, is_ignored};
 
 fn find_paths_inner(
     dir: &Path,
@@ -86,6 +86,9 @@ pub fn choose_path(
 
 fn create(dir: &Path) -> Result<()> {
     let parent = choose_path(dir, false, true, true, true)?.unwrap();
+    if is_leftover_dir_with_ignored_files(&parent)? {
+        return Ok(());
+    }
     let path = parent.join(random_name(true));
     if path.exists() {
         return Ok(());

@@ -4,6 +4,7 @@ mod shuffle;
 use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
+    sync::Mutex,
     time::Duration,
 };
 
@@ -21,12 +22,16 @@ use rammingen::{
     rules::Rule,
     term::{clear_status, debug, error, info},
 };
-use rammingen_protocol::{util::native_to_archive_relative_path, ArchivePath};
+use rammingen_protocol::{
+    util::{log_writer, native_to_archive_relative_path},
+    ArchivePath,
+};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use shuffle::{choose_path, random_content, random_name, shuffle};
 use sqlx::{query, PgPool};
 use tempfile::TempDir;
 use tokio::time::sleep;
+use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
     create_dir_all(&dst)?;
@@ -51,13 +56,18 @@ async fn main() {
 }
 
 async fn try_main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // TODO: remove into_path
+    let dir = TempDir::new()?.into_path();
+
+    tracing_subscriber::fmt()
+        .with_writer(Mutex::new(log_writer(Some(&dir.join("1.log")))?))
+        .with_env_filter(EnvFilter::try_new("info,sqlx=warn,rammingen_server=debug")?)
+        .finish()
+        .init();
 
     let database_url = std::env::args().nth(1).expect("missing arg");
     rammingen_server::migrate(&database_url).await?;
 
-    // TODO: remove into_path
-    let dir = TempDir::new()?.into_path();
     debug(format!("dir: {}", dir.display()));
     let storage_path = dir.join("storage");
     create_dir_all(&storage_path)?;
@@ -67,6 +77,8 @@ async fn try_main() -> Result<()> {
         bind_addr: SocketAddr::new("127.0.0.1".parse()?, port),
         database_url: database_url.clone(),
         storage_path,
+        log_file: None,
+        log_filter: String::new(),
     };
 
     let encryption_key = EncryptionKey::generate();
@@ -113,7 +125,7 @@ async fn try_main() -> Result<()> {
 
     let old_snapshot_path = dir.join("old_snapshot");
     let mut snapshot_time: Option<DateTime<Utc>> = None;
-    for _ in 0..1000 {
+    'outer: for _ in 0..1000 {
         if thread_rng().gen_bool(0.2) {
             // mutate through server command
             let expected = dir.join("expected");
@@ -122,97 +134,152 @@ async fn try_main() -> Result<()> {
             }
             copy_dir_all(&clients[0].mount_dir, &expected)?;
             let client1 = clients.choose(&mut thread_rng()).unwrap();
-            if thread_rng().gen_bool(0.1) {
-                // reset
-                let Some(snapshot_time_value) = snapshot_time else {
-                    continue;
-                };
-                let local_path = choose_path(&old_snapshot_path, true, true, true, false)?.unwrap();
-                if is_leftover_dir_with_ignored_files(&local_path)? {
-                    return Ok(());
+            match thread_rng().gen_range(0..=4) {
+                0 => {
+                    // reset
+                    let Some(snapshot_time_value) = snapshot_time else {
+                        continue;
+                    };
+                    let local_path =
+                        choose_path(&old_snapshot_path, true, true, true, false)?.unwrap();
+                    if is_leftover_dir_with_ignored_files(&local_path)? {
+                        continue;
+                    }
+                    let archive_path =
+                        archive_subpath(&archive_mount_path, &old_snapshot_path, &local_path)?;
+                    let path_in_expected = if local_path == old_snapshot_path {
+                        expected.clone()
+                    } else {
+                        expected.join(local_path.strip_prefix(&old_snapshot_path)?)
+                    };
+                    if path_in_expected.exists() {
+                        remove_dir_or_file(&path_in_expected)?;
+                    }
+                    let parent_path_in_expected = path_in_expected.parent().unwrap();
+                    if !parent_path_in_expected.exists() {
+                        create_dir_all(parent_path_in_expected)?;
+                    }
+                    if local_path.is_file() {
+                        copy(&local_path, &path_in_expected)?;
+                    } else {
+                        copy_dir_all(&local_path, &path_in_expected)?;
+                    }
+                    info(format!(
+                        "Checking reset: {}, {:?}",
+                        archive_path, snapshot_time_value
+                    ));
+                    client1
+                        .reset(archive_path, snapshot_time_value.into())
+                        .await?;
+                    snapshot_time = None;
                 }
-                let archive_path =
-                    archive_subpath(&archive_mount_path, &old_snapshot_path, &local_path)?;
-                let path_in_expected = if local_path == old_snapshot_path {
-                    expected.clone()
-                } else {
-                    expected.join(local_path.strip_prefix(&old_snapshot_path)?)
-                };
-                if path_in_expected.exists() {
-                    remove_dir_or_file(&path_in_expected)?;
+                1 => {
+                    // upload new path
+                    let path_for_upload = dir.join("for_upload");
+                    if path_for_upload.exists() {
+                        remove_dir_or_file(&path_for_upload)?;
+                    }
+                    if thread_rng().gen_bool(0.3) {
+                        write(&path_for_upload, random_content())?;
+                    } else {
+                        create_dir(&path_for_upload)?;
+                        shuffle(&path_for_upload)?;
+                    }
+                    let parent_path = choose_path(&expected, false, true, true, false)?.unwrap();
+                    let path_in_expected = parent_path.join(random_name(false));
+                    if path_in_expected.exists() {
+                        continue;
+                    }
+                    if path_for_upload.is_dir() {
+                        copy_dir_all(&path_for_upload, &path_in_expected)?;
+                    } else {
+                        copy(&path_for_upload, &path_in_expected)?;
+                    }
+                    let archive_path =
+                        archive_subpath(&archive_mount_path, &expected, &path_in_expected)?;
+                    debug(format!("Checking upload ({archive_path})"));
+                    client1
+                        .upload(SanitizedLocalPath::new(&path_for_upload)?, archive_path)
+                        .await?;
                 }
-                let parent_path_in_expected = path_in_expected.parent().unwrap();
-                if !parent_path_in_expected.exists() {
-                    create_dir_all(parent_path_in_expected)?;
+                2 => {
+                    // move path
+                    let Some(path1) = choose_path(&expected, true, true, false, false)? else {
+                        continue;
+                    };
+                    let path2_parent = choose_path(&expected, false, true, true, false)?.unwrap();
+                    let path2 = path2_parent.join(random_name(false));
+                    if path2.exists() || path2.starts_with(&path1) {
+                        continue;
+                    }
+                    rename(&path1, &path2)?;
+                    let archive_path = archive_subpath(&archive_mount_path, &expected, &path1)?;
+                    let new_archive_path = archive_subpath(&archive_mount_path, &expected, &path2)?;
+                    debug(format!(
+                        "Checking mv ({archive_path} -> {new_archive_path})"
+                    ));
+                    client1.move_path(archive_path, new_archive_path).await?;
                 }
-                if local_path.is_file() {
-                    copy(&local_path, &path_in_expected)?;
-                } else {
-                    copy_dir_all(&local_path, &path_in_expected)?;
+                3 => {
+                    // remove path
+                    let Some(path1) = choose_path(&expected, true, true, false, false)? else {
+                        continue;
+                    };
+                    remove_dir_or_file(&path1)?;
+                    let archive_path = archive_subpath(&archive_mount_path, &expected, &path1)?;
+                    debug(format!("Checking rm {archive_path}"));
+                    client1.remove_path(archive_path).await?;
                 }
-                info(format!(
-                    "Checking reset: {}, {:?}",
-                    archive_path, snapshot_time_value
-                ));
-                let client2 = clients.choose(&mut thread_rng()).unwrap();
-                client2
-                    .reset(archive_path, snapshot_time_value.into())
-                    .await?;
-                snapshot_time = None;
-            } else if thread_rng().gen_bool(0.3) {
-                // upload new path
-                let path_for_upload = dir.join("for_upload");
-                if path_for_upload.exists() {
-                    remove_dir_or_file(&path_for_upload)?;
+                4 => {
+                    // simultaneous edit of two mounts
+                    let two_clients: Vec<_> =
+                        clients.choose_multiple(&mut thread_rng(), 2).collect();
+                    let mut chosen_paths = Vec::<(PathBuf, PathBuf)>::new();
+                    info("Checking simultaneous edit");
+                    for client in &two_clients {
+                        let Some(path1) = choose_path(&client.mount_dir, true, true, false, false)? else {
+                            continue;
+                        };
+                        if is_leftover_dir_with_ignored_files(&path1)? {
+                            continue;
+                        }
+                        let path_in_expected =
+                            expected.join(path1.strip_prefix(&client.mount_dir)?);
+                        if path_in_expected.exists() {
+                            remove_dir_or_file(&path_in_expected)?;
+                        }
+                        let parent_path_in_expected = path_in_expected.parent().unwrap();
+                        if !parent_path_in_expected.exists() {
+                            create_dir_all(parent_path_in_expected)?;
+                        }
+                        for (_, prev) in &chosen_paths {
+                            if prev == &path_in_expected
+                                || prev.starts_with(&path_in_expected)
+                                || path_in_expected.starts_with(prev)
+                            {
+                                continue 'outer;
+                            }
+                        }
+                        chosen_paths.push((path1, path_in_expected));
+                    }
+                    for (path1, path_in_expected) in &chosen_paths {
+                        info(format!("Shuffling {}", path1.display()));
+                        if path1.is_dir() {
+                            shuffle(path1)?;
+                        } else {
+                            write(path1, random_content())?;
+                        }
+                        if path1.is_file() {
+                            copy(path1, path_in_expected)?;
+                        } else {
+                            copy_dir_all(path1, path_in_expected)?;
+                        }
+                    }
+                    for client in &two_clients {
+                        client.sync().await?;
+                    }
                 }
-                if thread_rng().gen_bool(0.3) {
-                    write(&path_for_upload, random_content())?;
-                } else {
-                    create_dir(&path_for_upload)?;
-                    shuffle(&path_for_upload)?;
-                }
-                let parent_path = choose_path(&expected, false, true, true, false)?.unwrap();
-                let path_in_expected = parent_path.join(random_name(false));
-                if path_in_expected.exists() {
-                    continue;
-                }
-                if path_for_upload.is_dir() {
-                    copy_dir_all(&path_for_upload, &path_in_expected)?;
-                } else {
-                    copy(&path_for_upload, &path_in_expected)?;
-                }
-                let archive_path =
-                    archive_subpath(&archive_mount_path, &expected, &path_in_expected)?;
-                debug(format!("Checking upload ({archive_path})"));
-                client1
-                    .upload(SanitizedLocalPath::new(&path_for_upload)?, archive_path)
-                    .await?;
-            } else if thread_rng().gen_bool(0.5) {
-                // move path
-                let Some(path1) = choose_path(&expected, true, true, false, false)? else {
-                    continue;
-                };
-                let path2_parent = choose_path(&expected, false, true, true, false)?.unwrap();
-                let path2 = path2_parent.join(random_name(false));
-                if path2.exists() || path2.starts_with(&path1) {
-                    continue;
-                }
-                rename(&path1, &path2)?;
-                let archive_path = archive_subpath(&archive_mount_path, &expected, &path1)?;
-                let new_archive_path = archive_subpath(&archive_mount_path, &expected, &path2)?;
-                debug(format!(
-                    "Checking mv ({archive_path} -> {new_archive_path})"
-                ));
-                client1.move_path(archive_path, new_archive_path).await?;
-            } else {
-                // remove path
-                let Some(path1) = choose_path(&expected, true, true, false, false)? else {
-                    continue;
-                };
-                remove_dir_or_file(&path1)?;
-                let archive_path = archive_subpath(&archive_mount_path, &expected, &path1)?;
-                debug(format!("Checking rm {archive_path}"));
-                client1.remove_path(archive_path).await?;
+                _ => unreachable!(),
             }
             for client in &clients {
                 client.sync().await?;
@@ -263,9 +330,9 @@ async fn try_main() -> Result<()> {
                 .await?;
                 snapshot_time = None;
             } else {
-                info("Saving snapshot for download_version test");
                 sleep(Duration::from_millis(500)).await;
                 snapshot_time = Some(Utc::now());
+                info(format!("Saving snapshot for later ({snapshot_time:?})"));
                 if old_snapshot_path.exists() {
                     remove_dir_or_file(&old_snapshot_path)?;
                 }

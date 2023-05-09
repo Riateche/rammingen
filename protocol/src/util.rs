@@ -1,11 +1,12 @@
 use std::{
     borrow::Cow,
-    io::{ErrorKind, Read},
+    io::{stdout, ErrorKind, Read, Write},
     path::{self, Path, MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
 };
 
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use bytes::Bytes;
+use fs_err::OpenOptions;
 use itertools::Itertools;
 use tokio::{sync::mpsc, task::block_in_place};
 use tokio_stream::{wrappers::ReceiverStream, Stream};
@@ -38,7 +39,7 @@ pub fn stream_file(mut file: impl Read + Send + 'static) -> impl Stream<Item = B
     ReceiverStream::new(rx)
 }
 
-pub fn try_exists(path: impl AsRef<Path>) -> anyhow::Result<bool> {
+pub fn try_exists(path: impl AsRef<Path>) -> Result<bool> {
     match fs_err::metadata(path) {
         Ok(_) => Ok(true),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
@@ -54,7 +55,7 @@ pub fn archive_to_native_relative_path(relative_archive_path: &str) -> Cow<'_, s
     }
 }
 
-pub fn native_to_archive_relative_path(relative_path: &Path) -> anyhow::Result<String> {
+pub fn native_to_archive_relative_path(relative_path: &Path) -> Result<String> {
     let mut result = Vec::new();
     for component in relative_path.components() {
         if let path::Component::Normal(component) = component {
@@ -68,4 +69,18 @@ pub fn native_to_archive_relative_path(relative_path: &Path) -> anyhow::Result<S
         }
     }
     Ok(result.join("/"))
+}
+
+pub fn log_writer(log_file: Option<&Path>) -> Result<Box<dyn Write + Send + Sync>> {
+    if let Some(log_file) = log_file {
+        Ok(Box::new(
+            OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open(log_file)?,
+        ))
+    } else {
+        Ok(Box::new(stdout()))
+    }
 }
