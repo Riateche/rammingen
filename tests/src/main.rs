@@ -225,6 +225,9 @@ async fn try_main() -> Result<()> {
                     let Some(path1) = choose_path(&expected, true, true, false, false)? else {
                         continue;
                     };
+                    if is_leftover_dir_with_ignored_files(&path1)? {
+                        continue;
+                    }
                     remove_dir_or_file(&path1)?;
                     let archive_path = archive_subpath(&archive_mount_path, &expected, &path1)?;
                     debug(format!("Checking rm {archive_path}"));

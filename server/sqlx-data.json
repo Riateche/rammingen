@@ -302,6 +302,21 @@
     },
     "query": "SELECT DISTINCT ON (path) *\n        FROM entry_versions\n        WHERE (path = $1 OR path LIKE $2) AND recorded_at <= $3\n        ORDER BY path, recorded_at DESC"
   },
+  "6ef0c305759c4636151419f4dcb4899dcaedffda89af631b71568d109ec325f2": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Int4",
+          "Int4",
+          "Int8"
+        ]
+      }
+    },
+    "query": "UPDATE entries\n                SET update_number = nextval('entry_update_numbers'),\n                    recorded_at = now(),\n                    source_id = $1,\n                    record_trigger = $2,\n                    kind = $3,\n                    size = NULL,\n                    modified_at = NULL,\n                    content_hash = NULL,\n                    unix_mode = NULL\n                WHERE id = $4"
+  },
   "89329a72e0b4e698d0477a64c203d7e95be740cb0f0242a073f7aaab134585b1": {
     "describe": {
       "columns": [
@@ -545,5 +560,26 @@
       }
     },
     "query": "INSERT INTO entries (\n                    update_number,\n                    recorded_at,\n\n                    kind,\n                    parent_dir,\n                    path,\n                    source_id,\n                    record_trigger,\n\n                    size,\n                    modified_at,\n                    content_hash,\n                    unix_mode\n                ) VALUES (\n                    nextval('entry_update_numbers'),\n                    now(),\n                    $1, $2, $3, $4, $5,\n                    NULL, NULL, NULL, NULL\n                ) RETURNING id"
+  },
+  "f9ef8cffaf34bccc887781a9cb68d23bc9b066c613d381818630932d6f3acdd1": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT id FROM entries\n        WHERE (path = $1 OR path LIKE $2) AND kind > 0\n        ORDER BY path DESC"
   }
 }

@@ -1,4 +1,4 @@
-use std::{mem, sync::Arc};
+use std::{collections::HashSet, mem, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
@@ -447,28 +447,51 @@ pub async fn remove_path(ctx: Context, request: RemovePath) -> Result<Response<R
 
 pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Response<ResetVersion>> {
     let mut tx = ctx.db_pool.begin().await?;
+
+    let old_existing_ids = query_scalar!(
+        "SELECT id FROM entries
+        WHERE (path = $1 OR path LIKE $2) AND kind > 0
+        ORDER BY path DESC",
+        request.path.0 .0,
+        starts_with(&request.path),
+    )
+    .fetch_all(&mut tx)
+    .await?;
+
     let entries: Vec<_> = get_versions_inner(request.recorded_at, &request.path, &mut tx)
         .await?
         .try_collect()
         .await?;
+    let new_existing_ids: HashSet<_> = entries
+        .iter()
+        .filter(|entry| entry.data.kind.is_some())
+        .map(|entry| entry.entry_id.0)
+        .collect();
     let mut affected_paths = 0;
-    for entry in entries.iter().rev() {
-        if entry.data.kind.is_none() {
-            tracing::debug!("reset_version: deleting {:?}", entry);
-            let r = add_version_inner(
-                &ctx,
-                AddVersion {
-                    path: entry.data.path.clone(),
-                    record_trigger: RecordTrigger::Reset,
-                    kind: entry.data.kind,
-                    content: entry.data.content.clone(),
-                },
-                &mut tx,
+
+    for id in old_existing_ids {
+        if !new_existing_ids.contains(&id) {
+            tracing::debug!("reset_version: deleting {:?}", id);
+            query!(
+                "UPDATE entries
+                SET update_number = nextval('entry_update_numbers'),
+                    recorded_at = now(),
+                    source_id = $1,
+                    record_trigger = $2,
+                    kind = $3,
+                    size = NULL,
+                    modified_at = NULL,
+                    content_hash = NULL,
+                    unix_mode = NULL
+                WHERE id = $4",
+                ctx.source_id.0,
+                RecordTrigger::Reset as i32,
+                EntryKind::NOT_EXISTS,
+                id,
             )
+            .execute(&mut *tx)
             .await?;
-            if r.added {
-                affected_paths += 1;
-            }
+            affected_paths += 1;
         }
     }
 
