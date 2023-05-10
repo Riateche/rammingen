@@ -207,16 +207,18 @@ pub struct FileContent {
     pub unix_mode: Option<u32>,
 }
 
+// Returns all entries added or updated since the specified update number.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct GetEntries {
+pub struct GetNewEntries {
     // for incremental updates
     pub last_update_number: EntryUpdateNumber,
 }
-streaming_response_type!(GetEntries, Vec<Entry>);
+streaming_response_type!(GetNewEntries, Vec<Entry>);
 
+// Returns all entries that are direct children of the specified path.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ListEntries(pub EncryptedArchivePath);
-streaming_response_type!(ListEntries, Vec<Entry>);
+pub struct GetDirectChildEntries(pub EncryptedArchivePath);
+streaming_response_type!(GetDirectChildEntries, Vec<Entry>);
 
 // Returns the closest version to the specified date
 #[derive(Debug, Serialize, Deserialize)]

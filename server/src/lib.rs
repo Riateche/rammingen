@@ -139,10 +139,10 @@ async fn try_handle_request(
         }
     } else if request.method() != Method::POST {
         Err(StatusCode::NOT_FOUND)
-    } else if path == "/GetEntries" {
-        wrap_stream(ctx, request, handler::get_entries).await
-    } else if path == "/ListEntries" {
-        wrap_stream(ctx, request, handler::list_entries).await
+    } else if path == "/GetNewEntries" {
+        wrap_stream(ctx, request, handler::get_new_entries).await
+    } else if path == "/GetDirectChildEntries" {
+        wrap_stream(ctx, request, handler::get_direct_child_entries).await
     } else if path == "/GetVersions" {
         wrap_stream(ctx, request, handler::get_versions).await
     } else if path == "/AddVersion" {

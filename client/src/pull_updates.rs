@@ -2,14 +2,14 @@ use std::cmp::max;
 
 use anyhow::Result;
 use futures::TryStreamExt;
-use rammingen_protocol::GetEntries;
+use rammingen_protocol::GetNewEntries;
 
 use crate::{db::DecryptedEntryVersionData, term::set_status, Ctx};
 
 pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     set_status("Pulling updates from server");
     let mut last_update_number = ctx.db.last_entry_update_number()?;
-    let mut stream = ctx.client.stream(&GetEntries { last_update_number });
+    let mut stream = ctx.client.stream(&GetNewEntries { last_update_number });
     let mut decrypted = Vec::new();
     while let Some(batch) = stream.try_next().await? {
         for update in batch {

@@ -1,15 +1,21 @@
 use std::fmt::Display;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use byte_unit::Byte;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use prettytable::{format::FormatBuilder, row, Table};
-use rammingen_protocol::{util::local_time, ArchivePath, EntryKind, ListEntries};
+use rammingen_protocol::{util::local_time, ArchivePath, EntryKind, GetDirectChildEntries};
 
 use crate::{
-    db::DecryptedEntryVersionData, encryption::encrypt_path, path::SanitizedLocalPath,
-    pull_updates::pull_updates, rules::Rules, term::info, upload::to_archive_path, Ctx,
+    db::DecryptedEntryVersionData,
+    encryption::encrypt_path,
+    path::SanitizedLocalPath,
+    pull_updates::pull_updates,
+    rules::Rules,
+    term::{error, info},
+    upload::to_archive_path,
+    Ctx,
 };
 
 pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
@@ -53,36 +59,24 @@ pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
 }
 
 pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()> {
-    let mut entries = Vec::new();
-    let mut stream = ctx
-        .client
-        .stream(&ListEntries(encrypt_path(path, &ctx.cipher)?));
+    pull_updates(ctx).await?;
+    let Some(main_entry) = ctx.db.get_archive_entry(path)? else {
+        error("no such path");
+        return Ok(());
+    };
 
-    while let Some(batch) = stream.try_next().await? {
-        for entry in batch {
-            entries.push(DecryptedEntryVersionData::new(ctx, entry.data)?);
-        }
-    }
-    if entries.is_empty() {
-        bail!("empty server response");
-    }
-    let first_entry = entries.remove(0);
-    if &first_entry.path != path {
-        bail!("unexpected first entry in response: {:?}", first_entry);
-    }
-
-    info(format!("path: {}", first_entry.path));
+    info(format!("path: {}", main_entry.path));
     info(format!(
         "recorded at: {}",
-        local_time(first_entry.recorded_at)
+        local_time(main_entry.recorded_at)
     ));
-    info(format!("source id: {}", first_entry.source_id.0));
-    info(format!("record trigger: {:?}", first_entry.record_trigger));
-    if let Some(kind) = first_entry.kind {
+    info(format!("source id: {}", main_entry.source_id.0));
+    info(format!("record trigger: {:?}", main_entry.record_trigger));
+    if let Some(kind) = main_entry.kind {
         match kind {
             EntryKind::File => {
                 info("current status: existing file");
-                let content = first_entry
+                let content = main_entry
                     .content
                     .ok_or_else(|| anyhow!("missing content for file entry"))?;
                 info(format!(
@@ -110,6 +104,16 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
         info("current status: deleted");
     }
 
+    let mut entries = Vec::new();
+    let mut stream = ctx
+        .client
+        .stream(&GetDirectChildEntries(encrypt_path(path, &ctx.cipher)?));
+
+    while let Some(batch) = stream.try_next().await? {
+        for entry in batch {
+            entries.push(DecryptedEntryVersionData::new(ctx, entry.data)?);
+        }
+    }
     // already sorted by path, so we use stable sort
     entries.sort_by_key(|entry| match &entry.kind {
         Some(EntryKind::Directory) => 0,

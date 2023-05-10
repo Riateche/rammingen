@@ -6,8 +6,8 @@ use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, AddVersion, AddVersionResponse, ArchivePath,
     BulkActionStats, ContentHashExists, DateTimeUtc, EncryptedArchivePath, Entry, EntryKind,
-    EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions, ListEntries, MovePath,
-    RecordTrigger, RemovePath, ResetVersion, Response, SourceId, StreamingResponseItem,
+    EntryVersion, EntryVersionData, FileContent, GetDirectChildEntries, GetNewEntries, GetVersions,
+    MovePath, RecordTrigger, RemovePath, ResetVersion, Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -278,10 +278,10 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
     Ok(r)
 }
 
-pub async fn get_entries(
+pub async fn get_new_entries(
     ctx: Context,
-    request: GetEntries,
-    tx: Sender<Result<Option<StreamingResponseItem<GetEntries>>>>,
+    request: GetNewEntries,
+    tx: Sender<Result<Option<StreamingResponseItem<GetNewEntries>>>>,
 ) -> Result<()> {
     let mut output = Vec::new();
     let mut rows = query!(
@@ -299,22 +299,19 @@ pub async fn get_entries(
     Ok(())
 }
 
-pub async fn list_entries(
+pub async fn get_direct_child_entries(
     ctx: Context,
-    request: ListEntries,
-    tx: Sender<Result<Option<StreamingResponseItem<ListEntries>>>>,
+    request: GetDirectChildEntries,
+    tx: Sender<Result<Option<StreamingResponseItem<GetDirectChildEntries>>>>,
 ) -> Result<()> {
     let mut output = Vec::new();
 
-    let main_entry = query!("SELECT * FROM entries WHERE path = $1", request.0 .0 .0)
+    let main_entry_id = query_scalar!("SELECT id FROM entries WHERE path = $1", request.0 .0 .0)
         .fetch_one(&ctx.db_pool)
         .await?;
-    let main_entry = convert_entry!(main_entry);
-    let main_id = main_entry.id;
-    output.push(main_entry);
 
     let mut rows =
-        query!("SELECT * FROM entries WHERE parent_dir = $1", main_id.0).fetch(&ctx.db_pool);
+        query!("SELECT * FROM entries WHERE parent_dir = $1", main_entry_id).fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
         output.push(convert_entry!(row));
         if output.len() >= ITEMS_PER_CHUNK {

@@ -208,6 +208,26 @@
     },
     "query": "SELECT * FROM entries WHERE update_number > $1 ORDER BY update_number"
   },
+  "6253be3872bcad8653e2d1572ab5c4e19197c236ab5960d419649d9c0fbf06ff": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT id FROM entries WHERE path = $1"
+  },
   "6335af1ee12d60434bc78aab6055611f8021df1cf7255b350dc40f8393ec27dd": {
     "describe": {
       "columns": [
