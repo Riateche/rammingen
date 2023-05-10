@@ -106,7 +106,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             }
         }
         cli::Command::LocalStatus { path } => local_status(&ctx, &path).await?,
-        cli::Command::Ls { path } => ls(&ctx, &path).await?,
+        cli::Command::Ls { path, deleted } => ls(&ctx, &path, deleted).await?,
         cli::Command::History {
             archive_path,
             time_spec,

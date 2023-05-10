@@ -35,6 +35,8 @@ pub enum Command {
     },
     Ls {
         path: ArchivePath,
+        #[arg(short, long)]
+        deleted: bool,
     },
     History {
         archive_path: ArchivePath,

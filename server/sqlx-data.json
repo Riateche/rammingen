@@ -317,6 +317,92 @@
     },
     "query": "UPDATE entries\n                SET update_number = nextval('entry_update_numbers'),\n                    recorded_at = now(),\n                    source_id = $1,\n                    record_trigger = $2,\n                    kind = $3,\n                    size = NULL,\n                    modified_at = NULL,\n                    content_hash = NULL,\n                    unix_mode = NULL\n                WHERE id = $4"
   },
+  "7a0212afe06f8e6d3d74392a51e79f4877fbc1f5a10a2a963a821c3f1b6bc729": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "update_number",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "parent_dir",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "path",
+          "ordinal": 3,
+          "type_info": "Varchar"
+        },
+        {
+          "name": "recorded_at",
+          "ordinal": 4,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "source_id",
+          "ordinal": 5,
+          "type_info": "Int4"
+        },
+        {
+          "name": "record_trigger",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "kind",
+          "ordinal": 7,
+          "type_info": "Int4"
+        },
+        {
+          "name": "size",
+          "ordinal": 8,
+          "type_info": "Int8"
+        },
+        {
+          "name": "modified_at",
+          "ordinal": 9,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 10,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "unix_mode",
+          "ordinal": 11,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT * FROM entries WHERE parent_dir = $1"
+  },
   "89329a72e0b4e698d0477a64c203d7e95be740cb0f0242a073f7aaab134585b1": {
     "describe": {
       "columns": [

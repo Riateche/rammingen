@@ -46,21 +46,6 @@ macro_rules! streaming_response_type {
 pub type Response<Request> = <Request as RequestToResponse>::Response;
 pub type StreamingResponseItem<Request> = <Request as RequestToStreamingResponse>::ResponseItem;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Request {
-    GetEntries(GetEntries),
-    GetVersions(GetVersions),
-    GetAllVersions(GetAllVersions),
-    AddVersion(AddVersion),
-    ResetVersion(ResetVersion),
-    MovePath(MovePath),
-    RemovePath(RemovePath),
-    GetContentHead(ContentHashExists),
-    GetContent(GetContent),
-    StartContentUpload(StartContentUpload),
-    UploadContentChunk(UploadContentChunk),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct SourceId(pub i32);
 
@@ -228,6 +213,10 @@ pub struct GetEntries {
     pub last_update_number: EntryUpdateNumber,
 }
 streaming_response_type!(GetEntries, Vec<Entry>);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListEntries(pub EncryptedArchivePath);
+streaming_response_type!(ListEntries, Vec<Entry>);
 
 // Returns the closest version to the specified date
 #[derive(Debug, Serialize, Deserialize)]

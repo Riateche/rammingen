@@ -1,10 +1,15 @@
-use anyhow::Result;
+use std::fmt::Display;
+
+use anyhow::{anyhow, bail, Result};
+use byte_unit::Byte;
+use futures::TryStreamExt;
 use itertools::Itertools;
-use rammingen_protocol::ArchivePath;
+use prettytable::{format::FormatBuilder, row, Table};
+use rammingen_protocol::{util::local_time, ArchivePath, EntryKind, ListEntries};
 
 use crate::{
-    encryption::encrypt_path, path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules,
-    term::info, upload::to_archive_path, Ctx,
+    db::DecryptedEntryVersionData, encryption::encrypt_path, path::SanitizedLocalPath,
+    pull_updates::pull_updates, rules::Rules, term::info, upload::to_archive_path, Ctx,
 };
 
 pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
@@ -47,6 +52,121 @@ pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
     Ok(())
 }
 
-pub async fn ls(_ctx: &Ctx, _path: &ArchivePath) -> Result<()> {
+pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()> {
+    let mut entries = Vec::new();
+    let mut stream = ctx
+        .client
+        .stream(&ListEntries(encrypt_path(path, &ctx.cipher)?));
+
+    while let Some(batch) = stream.try_next().await? {
+        for entry in batch {
+            entries.push(DecryptedEntryVersionData::new(ctx, entry.data)?);
+        }
+    }
+    if entries.is_empty() {
+        bail!("empty server response");
+    }
+    let first_entry = entries.remove(0);
+    if &first_entry.path != path {
+        bail!("unexpected first entry in response: {:?}", first_entry);
+    }
+
+    info(format!("path: {}", first_entry.path));
+    info(format!(
+        "recorded at: {}",
+        local_time(first_entry.recorded_at)
+    ));
+    info(format!("source id: {}", first_entry.source_id.0));
+    info(format!("record trigger: {:?}", first_entry.record_trigger));
+    if let Some(kind) = first_entry.kind {
+        match kind {
+            EntryKind::File => {
+                info("current status: existing file");
+                let content = first_entry
+                    .content
+                    .ok_or_else(|| anyhow!("missing content for file entry"))?;
+                info(format!(
+                    "FS modified at: {}",
+                    local_time(content.modified_at)
+                ));
+                info(format!(
+                    "size: {} ({} bytes)",
+                    pretty_size(content.size),
+                    content.size
+                ));
+                // TODO: compressed size
+                if let Some(unix_mode) = content.unix_mode {
+                    info(format!("unix mode: {:#o}", unix_mode));
+                } else {
+                    info("unix mode: n/a");
+                }
+                info(format!("content hash: {}", content.hash));
+            }
+            EntryKind::Directory => {
+                info("current status: existing directory");
+            }
+        }
+    } else {
+        info("current status: deleted");
+    }
+
+    // already sorted by path, so we use stable sort
+    entries.sort_by_key(|entry| match &entry.kind {
+        Some(EntryKind::Directory) => 0,
+        Some(EntryKind::File) => 1,
+        None => 2,
+    });
+
+    if !entries.is_empty() {
+        info("");
+    }
+    let mut table = Table::new();
+    table.set_format(FormatBuilder::new().column_separator(' ').build());
+    let mut num_hidden_deleted = 0;
+    for entry in entries {
+        let name = entry
+            .path
+            .last_name()
+            .ok_or_else(|| anyhow!("any child entry must have last name (path: {}", entry.path))?;
+        let recorded_at = local_time(entry.recorded_at).format("%Y/%m/%d %H:%M:%S");
+        let status = if let Some(kind) = entry.kind {
+            match kind {
+                EntryKind::File => {
+                    let content = entry
+                        .content
+                        .ok_or_else(|| anyhow!("missing content for file entry"))?;
+                    let mode = if let Some(unix_mode) = content.unix_mode {
+                        format!("{:o}", unix_mode & 0o777)
+                    } else {
+                        "FILE".into()
+                    };
+                    format!("{} {}", mode, pretty_size(content.size))
+                }
+                EntryKind::Directory => "DIR".to_string(),
+            }
+        } else {
+            if !show_deleted {
+                num_hidden_deleted += 1;
+                continue;
+            }
+            "DEL".to_string()
+        };
+        table.add_row(row![recorded_at, status, name]);
+    }
+    info(table);
+
+    if num_hidden_deleted > 0 {
+        info(format!(
+            "{} deleted entries (use --deleted to view)",
+            num_hidden_deleted
+        ));
+    }
+
     Ok(())
+}
+
+fn pretty_size(size: u64) -> impl Display {
+    Byte::from_bytes(size.into())
+        .get_appropriate_unit(false)
+        .to_string()
 }

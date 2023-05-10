@@ -62,6 +62,15 @@ impl ArchivePath {
             .strip_prefix(&base.0)
             .and_then(|prefix| prefix.strip_prefix('/'))
     }
+
+    pub fn last_name(&self) -> Option<&str> {
+        if self.0 == "/" {
+            None
+        } else {
+            let pos = self.0.rfind('/').expect("any path must contain '/'");
+            Some(&self.0[pos + 1..])
+        }
+    }
 }
 
 #[test]

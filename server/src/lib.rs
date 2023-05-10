@@ -30,7 +30,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{info, warn};
 
 mod content_streaming;
-pub mod handler;
+mod handler;
 pub mod storage;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -141,6 +141,8 @@ async fn try_handle_request(
         Err(StatusCode::NOT_FOUND)
     } else if path == "/GetEntries" {
         wrap_stream(ctx, request, handler::get_entries).await
+    } else if path == "/ListEntries" {
+        wrap_stream(ctx, request, handler::list_entries).await
     } else if path == "/GetVersions" {
         wrap_stream(ctx, request, handler::get_versions).await
     } else if path == "/AddVersion" {

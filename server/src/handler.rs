@@ -6,8 +6,8 @@ use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, AddVersion, AddVersionResponse, ArchivePath,
     BulkActionStats, ContentHashExists, DateTimeUtc, EncryptedArchivePath, Entry, EntryKind,
-    EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions, MovePath, RecordTrigger,
-    RemovePath, ResetVersion, Response, SourceId, StreamingResponseItem,
+    EntryVersion, EntryVersionData, FileContent, GetEntries, GetVersions, ListEntries, MovePath,
+    RecordTrigger, RemovePath, ResetVersion, Response, SourceId, StreamingResponseItem,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -289,6 +289,32 @@ pub async fn get_entries(
         request.last_update_number.0
     )
     .fetch(&ctx.db_pool);
+    while let Some(row) = rows.try_next().await? {
+        output.push(convert_entry!(row));
+        if output.len() >= ITEMS_PER_CHUNK {
+            tx.send(Ok(Some(mem::take(&mut output)))).await?;
+        }
+    }
+    tx.send(Ok(Some(output))).await?;
+    Ok(())
+}
+
+pub async fn list_entries(
+    ctx: Context,
+    request: ListEntries,
+    tx: Sender<Result<Option<StreamingResponseItem<ListEntries>>>>,
+) -> Result<()> {
+    let mut output = Vec::new();
+
+    let main_entry = query!("SELECT * FROM entries WHERE path = $1", request.0 .0 .0)
+        .fetch_one(&ctx.db_pool)
+        .await?;
+    let main_entry = convert_entry!(main_entry);
+    let main_id = main_entry.id;
+    output.push(main_entry);
+
+    let mut rows =
+        query!("SELECT * FROM entries WHERE parent_dir = $1", main_id.0).fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
         output.push(convert_entry!(row));
         if output.len() >= ITEMS_PER_CHUNK {

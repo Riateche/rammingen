@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Result};
 use bytes::Bytes;
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, Local, Utc};
 use fs_err::OpenOptions;
 use itertools::Itertools;
 use tokio::{sync::mpsc, task::block_in_place};
@@ -86,6 +86,6 @@ pub fn log_writer(log_file: Option<&Path>) -> Result<Box<dyn Write + Send + Sync
     }
 }
 
-pub fn local_time(time: DateTime<Utc>) -> DateTime<FixedOffset> {
+pub fn local_time(time: DateTime<Utc>) -> DateTime<Local> {
     time.into()
 }
