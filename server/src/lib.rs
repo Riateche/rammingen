@@ -22,11 +22,11 @@ use rammingen_protocol::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sqlx::{query, PgPool};
 use storage::Storage;
+use stream_generator::{generate_stream, Yielder};
 use tokio::{
     net::TcpListener,
     sync::mpsc::{self, Sender},
 };
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::{info, warn};
 
 mod content_streaming;
@@ -178,6 +178,8 @@ where
     ))))
 }
 
+const ITEMS_PER_CHUNK: usize = 1024;
+
 async fn wrap_stream<F, Fut, T>(
     ctx: handler::Context,
     request: Request<body::Incoming>,
@@ -185,29 +187,57 @@ async fn wrap_stream<F, Fut, T>(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode>
 where
     T: RequestToStreamingResponse + DeserializeOwned + Send + 'static,
-    StreamingResponseItem<T>: Serialize + Send,
-    F: FnOnce(handler::Context, T, Sender<anyhow::Result<Option<StreamingResponseItem<T>>>>) -> Fut
+    StreamingResponseItem<T>: Serialize + Send + Sync,
+    F: FnOnce(handler::Context, T, Sender<anyhow::Result<StreamingResponseItem<T>>>) -> Fut
         + Send
         + 'static,
     Fut: Future<Output = anyhow::Result<()>> + Send,
 {
-    let (tx, rx) = mpsc::channel(5);
+    type ChunkData<'a, T> = Option<&'a [StreamingResponseItem<T>]>;
+
+    let (tx, mut rx) = mpsc::channel(5);
     let request = parse_request::<T>(request).await?;
     tokio::spawn(async move {
-        match f(ctx, request, tx.clone()).await {
-            Ok(()) => {
-                let _ = tx.send(Ok(None)).await;
-            }
-            Err(err) => {
-                let _ = tx.send(Err(err)).await;
-            }
+        if let Err(err) = f(ctx, request, tx.clone()).await {
+            let _ = tx.send(Err(err)).await;
         }
     });
 
+    let body_stream = generate_stream(move |mut y| async move {
+        async fn send<T>(
+            y: &mut Yielder<Bytes>,
+            data: anyhow::Result<Option<&[StreamingResponseItem<T>]>>,
+        ) where
+            T: RequestToStreamingResponse,
+            StreamingResponseItem<T>: Serialize,
+        {
+            y.send(serialize_response_with_length(data)).await;
+        }
+
+        let mut buf = Vec::new();
+        while let Some(item) = rx.recv().await {
+            match item {
+                Ok(item) => {
+                    buf.push(item);
+                    if buf.len() >= ITEMS_PER_CHUNK {
+                        send::<T>(&mut y, Ok(Some(&buf))).await;
+                        buf.clear();
+                    }
+                }
+                Err(err) => {
+                    send::<T>(&mut y, Err(err)).await;
+                    return;
+                }
+            }
+        }
+        if !buf.is_empty() {
+            send::<T>(&mut y, Ok(Some(&buf))).await;
+        }
+        send::<T>(&mut y, Ok(None)).await;
+    });
+
     Ok(Response::new(BodyExt::boxed(StreamBody::new(
-        ReceiverStream::new(rx)
-            .map(serialize_response_with_length)
-            .map(|bytes| Ok(Frame::data(bytes))),
+        body_stream.map(|bytes| Ok(Frame::data(bytes))),
     ))))
 }
 

@@ -82,11 +82,15 @@ impl Client {
                 while let Some((chunk, index)) = take_chunk(&buf) {
                     //crate::term::debug(format!("chunk from server: {:?}", chunk));
                     let data =
-                        bincode::deserialize::<Result<Option<R::ResponseItem>, String>>(chunk)?
-                            .map_err(|msg| anyhow!("server error: {msg}"))?;
+                        bincode::deserialize::<Result<Option<Vec<R::ResponseItem>>, String>>(
+                            chunk,
+                        )?
+                        .map_err(|msg| anyhow!("server error: {msg}"))?;
                     buf.drain(..index);
                     if let Some(data) = data {
-                        y.send(Ok(data)).await;
+                        for item in data {
+                            y.send(Ok(item)).await;
+                        }
                     } else {
                         return Ok(());
                     }

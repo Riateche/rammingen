@@ -213,12 +213,12 @@ pub struct GetNewEntries {
     // for incremental updates
     pub last_update_number: EntryUpdateNumber,
 }
-streaming_response_type!(GetNewEntries, Vec<Entry>);
+streaming_response_type!(GetNewEntries, Entry);
 
 // Returns all entries that are direct children of the specified path.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetDirectChildEntries(pub EncryptedArchivePath);
-streaming_response_type!(GetDirectChildEntries, Vec<Entry>);
+streaming_response_type!(GetDirectChildEntries, Entry);
 
 // Returns the closest version to the specified date
 #[derive(Debug, Serialize, Deserialize)]
@@ -227,7 +227,7 @@ pub struct GetVersions {
     // if it's a dir, return a version for each nested path
     pub path: EncryptedArchivePath,
 }
-streaming_response_type!(GetVersions, Vec<EntryVersion>);
+streaming_response_type!(GetVersions, EntryVersion);
 
 // Returns all versions
 #[derive(Debug, Serialize, Deserialize)]
@@ -235,7 +235,7 @@ pub struct GetAllVersions {
     // if it's a dir, return all versions for each nested path
     pub path: EncryptedArchivePath,
 }
-streaming_response_type!(GetAllVersions, Vec<EntryVersion>);
+streaming_response_type!(GetAllVersions, EntryVersion);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersion {

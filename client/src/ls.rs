@@ -60,6 +60,7 @@ pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
 
 pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()> {
     pull_updates(ctx).await?;
+
     let Some(main_entry) = ctx.db.get_archive_entry(path)? else {
         error("no such path");
         return Ok(());
@@ -109,10 +110,8 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
         .client
         .stream(&GetDirectChildEntries(encrypt_path(path, &ctx.cipher)?));
 
-    while let Some(batch) = stream.try_next().await? {
-        for entry in batch {
-            entries.push(DecryptedEntryVersionData::new(ctx, entry.data)?);
-        }
+    while let Some(entry) = stream.try_next().await? {
+        entries.push(DecryptedEntryVersionData::new(ctx, entry.data)?);
     }
     // already sorted by path, so we use stable sort
     entries.sort_by_key(|entry| match &entry.kind {

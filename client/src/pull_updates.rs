@@ -11,13 +11,11 @@ pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     let mut last_update_number = ctx.db.last_entry_update_number()?;
     let mut stream = ctx.client.stream(&GetNewEntries { last_update_number });
     let mut decrypted = Vec::new();
-    while let Some(batch) = stream.try_next().await? {
-        for update in batch {
-            decrypted.push(DecryptedEntryVersionData::new(ctx, update.data)?);
-            last_update_number = max(last_update_number, update.update_number);
-        }
-        ctx.db
-            .update_archive_entries(&decrypted, last_update_number)?;
+    while let Some(update) = stream.try_next().await? {
+        decrypted.push(DecryptedEntryVersionData::new(ctx, update.data)?);
+        last_update_number = max(last_update_number, update.update_number);
     }
+    ctx.db
+        .update_archive_entries(&decrypted, last_update_number)?;
     Ok(())
 }

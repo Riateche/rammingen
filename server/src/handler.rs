@@ -1,4 +1,4 @@
-use std::{collections::HashSet, mem, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
@@ -13,8 +13,6 @@ use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, T
 use tokio::sync::mpsc::Sender;
 
 use crate::storage::Storage;
-
-const ITEMS_PER_CHUNK: usize = 1024;
 
 #[derive(Debug, Clone)]
 pub struct Context {
@@ -281,31 +279,24 @@ pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<A
 pub async fn get_new_entries(
     ctx: Context,
     request: GetNewEntries,
-    tx: Sender<Result<Option<StreamingResponseItem<GetNewEntries>>>>,
+    tx: Sender<Result<StreamingResponseItem<GetNewEntries>>>,
 ) -> Result<()> {
-    let mut output = Vec::new();
     let mut rows = query!(
         "SELECT * FROM entries WHERE update_number > $1 ORDER BY update_number",
         request.last_update_number.0
     )
     .fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
-        output.push(convert_entry!(row));
-        if output.len() >= ITEMS_PER_CHUNK {
-            tx.send(Ok(Some(mem::take(&mut output)))).await?;
-        }
+        tx.send(Ok(convert_entry!(row))).await?;
     }
-    tx.send(Ok(Some(output))).await?;
     Ok(())
 }
 
 pub async fn get_direct_child_entries(
     ctx: Context,
     request: GetDirectChildEntries,
-    tx: Sender<Result<Option<StreamingResponseItem<GetDirectChildEntries>>>>,
+    tx: Sender<Result<StreamingResponseItem<GetDirectChildEntries>>>,
 ) -> Result<()> {
-    let mut output = Vec::new();
-
     let main_entry_id = query_scalar!("SELECT id FROM entries WHERE path = $1", request.0 .0 .0)
         .fetch_one(&ctx.db_pool)
         .await?;
@@ -313,12 +304,8 @@ pub async fn get_direct_child_entries(
     let mut rows =
         query!("SELECT * FROM entries WHERE parent_dir = $1", main_entry_id).fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
-        output.push(convert_entry!(row));
-        if output.len() >= ITEMS_PER_CHUNK {
-            tx.send(Ok(Some(mem::take(&mut output)))).await?;
-        }
+        tx.send(Ok(convert_entry!(row))).await?;
     }
-    tx.send(Ok(Some(output))).await?;
     Ok(())
 }
 
@@ -345,23 +332,17 @@ async fn get_versions_inner<'a>(
 pub async fn get_versions(
     ctx: Context,
     request: GetVersions,
-    sender: Sender<Result<Option<StreamingResponseItem<GetVersions>>>>,
+    sender: Sender<Result<StreamingResponseItem<GetVersions>>>,
 ) -> Result<()> {
-    let mut output = Vec::new();
     let mut tx = ctx.db_pool.begin().await?;
     let entries = get_versions_inner(request.recorded_at, &request.path, &mut tx).await?;
     tokio::pin!(entries);
 
     while let Some(entry) = entries.try_next().await? {
         if entry.data.kind.is_some() {
-            output.push(entry);
-            if output.len() >= ITEMS_PER_CHUNK {
-                sender.send(Ok(Some(mem::take(&mut output)))).await?;
-            }
+            sender.send(Ok(entry)).await?;
         }
     }
-
-    sender.send(Ok(Some(output))).await?;
     Ok(())
 }
 

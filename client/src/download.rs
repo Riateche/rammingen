@@ -63,12 +63,10 @@ pub async fn download_version(
             recorded_at: version,
         });
         let mut any = false;
-        while let Some(batch) = response_stream.try_next().await? {
-            for entry in batch {
-                let entry = DecryptedEntryVersionData::new(ctx, entry.data)?;
-                any = true;
-                y.send(Ok(entry)).await;
-            }
+        while let Some(entry) = response_stream.try_next().await? {
+            let entry = DecryptedEntryVersionData::new(ctx, entry.data)?;
+            any = true;
+            y.send(Ok(entry)).await;
         }
         if !any {
             bail!("no such path: {}", root_archive_path);
