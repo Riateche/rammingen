@@ -89,11 +89,15 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
                     local_time(content.modified_at)
                 ));
                 info(format!(
-                    "size: {} ({} bytes)",
-                    pretty_size(content.size),
-                    content.size
+                    "original size: {} ({} bytes)",
+                    pretty_size(content.original_size),
+                    content.original_size
                 ));
-                // TODO: compressed size
+                info(format!(
+                    "encrypted size: {} ({} bytes)",
+                    pretty_size(content.encrypted_size),
+                    content.encrypted_size
+                ));
                 if let Some(unix_mode) = content.unix_mode {
                     info(format!("unix mode: {:#o}", unix_mode));
                 } else {
@@ -168,7 +172,7 @@ fn pretty_status(data: &DecryptedEntryVersionData) -> Result<String> {
                 } else {
                     "FILE".into()
                 };
-                format!("{} {}", mode, pretty_size(content.size))
+                format!("{} {}", mode, pretty_size(content.original_size))
             }
             EntryKind::Directory => "DIR".to_string(),
         }

@@ -21,7 +21,7 @@ use crate::{
     upload::upload,
 };
 use aes_siv::{Aes256SivAead, KeyInit};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use cli::Cli;
 use client::Client;
 use config::Config;
@@ -92,8 +92,8 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             local_path,
             version,
         } => {
-            if let Some(version) = version {
-                download_version(&ctx, &archive_path, &local_path, version.into()).await?;
+            let found_any = if let Some(version) = version {
+                download_version(&ctx, &archive_path, &local_path, version.into()).await?
             } else {
                 pull_updates(&ctx).await?;
                 download_latest(
@@ -103,7 +103,10 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                     &mut Rules::new(&[&ctx.config.always_exclude], local_path.clone()),
                     false,
                 )
-                .await?;
+                .await?
+            };
+            if !found_any {
+                bail!("no matching entries found");
             }
         }
         cli::Command::LocalStatus { path } => local_status(&ctx, &path).await?,

@@ -9,8 +9,9 @@ use rammingen_protocol::endpoints::{
     RemovePath, ResetVersion, Response, ServerStatus, StreamingResponseItem,
 };
 use rammingen_protocol::{
-    entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath, Entry,
-    EntryKind, EntryVersion, EntryVersionData, FileContent, RecordTrigger, SourceId,
+    entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath,
+    EncryptedContentHash, EncryptedFileContent, EncryptedSize, Entry, EntryKind, EntryVersion,
+    EntryVersionData, RecordTrigger, SourceId,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -51,19 +52,32 @@ macro_rules! convert_entry_version {
 macro_rules! convert_version_data {
     ($row:expr) => {{
         let row = $row;
+        let kind = entry_kind_from_db(row.kind)?;
         EntryVersionData {
             path: EncryptedArchivePath(ArchivePath(row.path)),
             recorded_at: row.recorded_at.from_db(),
             source_id: row.source_id.into(),
             record_trigger: row.record_trigger.try_into()?,
-            kind: entry_kind_from_db(row.kind)?,
-            content: if let (Some(modified_at), Some(size), Some(content_hash)) =
-                (row.modified_at, row.size, row.content_hash)
-            {
-                Some(FileContent {
-                    modified_at: modified_at.from_db(),
-                    size: size.try_into()?,
-                    hash: content_hash.into(),
+            kind,
+            content: if kind == Some(EntryKind::File) {
+                Some(EncryptedFileContent {
+                    modified_at: row
+                        .modified_at
+                        .ok_or_else(|| anyhow!("missing modified_at for file"))?
+                        .from_db(),
+                    original_size: EncryptedSize(
+                        row.original_size
+                            .ok_or_else(|| anyhow!("missing original_size for file"))?,
+                    ),
+                    encrypted_size: row
+                        .encrypted_size
+                        .ok_or_else(|| anyhow!("missing encrypted_size for file"))?
+                        .try_into()?,
+                    hash: EncryptedContentHash(
+                        row.content_hash
+                            .ok_or_else(|| anyhow!("missing content_hash for file"))?
+                            .into(),
+                    ),
                     unix_mode: row.unix_mode.map(TryInto::try_into).transpose()?,
                 })
             } else {
@@ -134,7 +148,8 @@ fn get_parent_dir<'a>(
                     source_id,
                     record_trigger,
 
-                    size,
+                    original_size,
+                    encrypted_size,
                     modified_at,
                     content_hash,
                     unix_mode
@@ -142,7 +157,7 @@ fn get_parent_dir<'a>(
                     nextval('entry_update_numbers'),
                     now(),
                     $1, $2, $3, $4, $5,
-                    NULL, NULL, NULL, NULL
+                    NULL, NULL, NULL, NULL, NULL
                 ) RETURNING id",
                 kind,
                 parent_of_parent,
@@ -166,10 +181,11 @@ async fn add_version_inner<'a>(
     let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0 .0)
         .fetch_optional(&mut *tx)
         .await?;
-    let size_db = request
+    let original_size_db = request.content.as_ref().map(|c| &c.original_size.0[..]);
+    let encrypted_size_db = request
         .content
         .as_ref()
-        .map(|c| i64::try_from(c.size))
+        .map(|c| i64::try_from(c.encrypted_size))
         .transpose()?;
     let modified_at_db = request
         .content
@@ -216,15 +232,17 @@ async fn add_version_inner<'a>(
                 source_id = $1,
                 record_trigger = $2,
                 kind = $3,
-                size = $4,
-                modified_at = $5,
-                content_hash = $6,
-                unix_mode = $7
-            WHERE id = $8",
+                original_size = $4,
+                encrypted_size = $5,
+                modified_at = $6,
+                content_hash = $7,
+                unix_mode = $8
+            WHERE id = $9",
             ctx.source_id.0,
             request.record_trigger as i32,
             entry_kind_to_db(request.kind),
-            size_db,
+            original_size_db,
+            encrypted_size_db,
             modified_at_db,
             content_hash_db,
             unix_mode_db,
@@ -248,20 +266,22 @@ async fn add_version_inner<'a>(
                 source_id,
                 record_trigger,
                 kind,
-                size,
+                original_size,
+                encrypted_size,
                 modified_at,
                 content_hash,
                 unix_mode
             ) VALUES (
                 nextval('entry_update_numbers'), now(),
-                $1, $2, $3, $4, $5, $6, $7, $8, $9
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
             ) RETURNING id",
             parent,
             request.path.0 .0,
             ctx.source_id.0,
             request.record_trigger as i32,
             entry_kind_to_db(request.kind),
-            size_db,
+            original_size_db,
+            encrypted_size_db,
             modified_at_db,
             content_hash_db,
             unix_mode_db,
@@ -411,7 +431,8 @@ async fn remove_entries_in_dir<'a>(
             source_id = $1,
             record_trigger = $2,
             kind = $3,
-            size = NULL,
+            original_size = NULL,
+            encrypted_size = NULL,
             modified_at = NULL,
             content_hash = NULL,
             unix_mode = NULL
@@ -524,7 +545,8 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
                     source_id = $1,
                     record_trigger = $2,
                     kind = $3,
-                    size = NULL,
+                    original_size = NULL,
+                    encrypted_size = NULL,
                     modified_at = NULL,
                     content_hash = NULL,
                     unix_mode = NULL

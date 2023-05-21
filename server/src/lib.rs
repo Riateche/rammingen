@@ -1,9 +1,6 @@
 #![allow(clippy::collapsible_else_if)]
 
-use std::{
-    collections::HashMap, convert::Infallible, net::SocketAddr, path::PathBuf, str::FromStr,
-    sync::Arc,
-};
+use std::{collections::HashMap, convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use bytes::{BufMut, BytesMut};
@@ -22,7 +19,7 @@ use rammingen_protocol::{
         GetEntryVersionsAtTime, GetNewEntries, GetServerStatus, MovePath, RemovePath,
         RequestToResponse, RequestToStreamingResponse, ResetVersion, StreamingResponseItem,
     },
-    ContentHash, SourceId,
+    EncryptedContentHash, SourceId,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sqlx::{query, PgPool};
@@ -131,7 +128,7 @@ async fn try_handle_request(
 
     let path = request.uri().path();
     if let Some(hash) = path.strip_prefix("/content/") {
-        let hash = ContentHash::from_str(hash).map_err(|err| {
+        let hash = EncryptedContentHash::from_url_safe(hash).map_err(|err| {
             warn!(?err, "invalid hash");
             StatusCode::BAD_REQUEST
         })?;

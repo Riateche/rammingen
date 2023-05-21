@@ -21,7 +21,8 @@ CREATE TABLE entries (
     source_id INT NOT NULL REFERENCES sources(id) ON DELETE RESTRICT,
     record_trigger INT NOT NULL,
     kind INT NOT NULL,
-    size BIGINT,
+    original_size bytea,
+    encrypted_size BIGINT,
     modified_at TIMESTAMP WITH TIME ZONE,
     content_hash bytea,
     unix_mode BIGINT
@@ -41,7 +42,8 @@ CREATE TABLE entry_versions (
     source_id INT NOT NULL REFERENCES sources(id) ON DELETE RESTRICT,
     record_trigger INT NOT NULL,
     kind INT NOT NULL,
-    size BIGINT,
+    original_size bytea,
+    encrypted_size BIGINT,
     modified_at TIMESTAMP WITH TIME ZONE,
     content_hash bytea,
     unix_mode BIGINT
@@ -56,10 +58,11 @@ AS $$
 BEGIN
     INSERT INTO entry_versions (
         entry_id, update_number, snapshot_id, path, recorded_at, source_id,
-        record_trigger, kind, size, modified_at, content_hash, unix_mode
+        record_trigger, kind, original_size, encrypted_size, modified_at, content_hash, unix_mode
     ) VALUES (
         NEW.id, NEW.update_number, NULL, NEW.path, NEW.recorded_at, NEW.source_id,
-        NEW.record_trigger, NEW.kind, NEW.size, NEW.modified_at, NEW.content_hash, NEW.unix_mode
+        NEW.record_trigger, NEW.kind, NEW.original_size, NEW.encrypted_size,
+        NEW.modified_at, NEW.content_hash, NEW.unix_mode
     );
     RETURN NULL;
 END;

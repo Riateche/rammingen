@@ -12,7 +12,7 @@ use stream_generator::generate_try_stream;
 
 use crate::{
     db::{DecryptedEntryVersionData, LocalEntryInfo},
-    encryption::encrypt_path,
+    encryption::{encrypt_content_hash, encrypt_path},
     path::SanitizedLocalPath,
     rules::Rules,
     term::{info, set_status, warn},
@@ -56,7 +56,7 @@ pub async fn download_version(
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
     version: DateTimeUtc,
-) -> Result<()> {
+) -> Result<bool> {
     crate::term::debug("download_version");
     let stream = generate_try_stream(move |mut y| async move {
         let mut response_stream = ctx.client.stream(&GetEntryVersionsAtTime {
@@ -82,8 +82,7 @@ pub async fn download_version(
         false,
         stream,
     )
-    .await?;
-    Ok(())
+    .await
 }
 
 pub async fn download_latest(
@@ -92,7 +91,7 @@ pub async fn download_latest(
     root_local_path: &SanitizedLocalPath,
     rules: &mut Rules,
     is_mount: bool,
-) -> Result<()> {
+) -> Result<bool> {
     let data = stream::iter(ctx.db.get_archive_entries(root_archive_path));
     download(
         ctx,
@@ -102,8 +101,7 @@ pub async fn download_latest(
         is_mount,
         data,
     )
-    .await?;
-    Ok(())
+    .await
 }
 
 pub async fn download(
@@ -113,7 +111,7 @@ pub async fn download(
     rules: &mut Rules,
     is_mount: bool,
     versions: impl Stream<Item = Result<DecryptedEntryVersionData>>,
-) -> Result<()> {
+) -> Result<bool> {
     tokio::pin!(versions);
     // TODO: better way to select tmp path?
     let tmp_path = root_local_path
@@ -214,7 +212,11 @@ pub async fn download(
                     .content
                     .ok_or_else(|| anyhow!("missing content info for existing file"))?;
                 ctx.client
-                    .download(&content.hash, &tmp_path, &ctx.cipher)
+                    .download(
+                        &encrypt_content_hash(&content.hash, &ctx.cipher)?,
+                        &tmp_path,
+                        &ctx.cipher,
+                    )
                     .await?;
                 if let Some(db_data) = &db_data {
                     // Check again just in case.
@@ -255,8 +257,5 @@ pub async fn download(
         found_any = true;
         info(format!("Downloaded {}", entry_local_path));
     }
-    if !found_any {
-        bail!("no matching entries found");
-    }
-    Ok(())
+    Ok(found_any)
 }

@@ -12,7 +12,7 @@ use chrono::Utc;
 use derive_more::{From, Into};
 use endpoints::AddVersion;
 use serde::{Deserialize, Serialize};
-use std::{fmt, str::FromStr};
+use std::fmt;
 
 pub type DateTimeUtc = chrono::DateTime<Utc>;
 
@@ -38,21 +38,26 @@ pub struct ContentHash(pub Vec<u8>);
 
 impl fmt::Display for ContentHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", BASE64_URL_SAFE_NO_PAD.encode(&self.0))
+        write!(f, "{}", hex::encode(&self.0))
     }
 }
 
-impl FromStr for ContentHash {
-    type Err = anyhow::Error;
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EncryptedContentHash(pub Vec<u8>);
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+impl EncryptedContentHash {
+    pub fn to_url_safe(&self) -> String {
+        BASE64_URL_SAFE_NO_PAD.encode(&self.0)
+    }
+
+    pub fn from_url_safe(s: &str) -> Result<Self> {
         let bytes = BASE64_URL_SAFE_NO_PAD.decode(s)?;
-        if bytes.len() != 32 {
-            bail!("invalid hash length: expected 32, got {}", bytes.len());
-        }
         Ok(Self(bytes))
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EncryptedSize(pub Vec<u8>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RecordTrigger {
@@ -121,7 +126,7 @@ pub struct EntryVersionData {
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
-    pub content: Option<FileContent>,
+    pub content: Option<EncryptedFileContent>,
 }
 
 impl EntryVersionData {
@@ -129,8 +134,7 @@ impl EntryVersionData {
         self.path == update.path && self.kind == update.kind && {
             match (&self.content, &update.content) {
                 (Some(content), Some(update)) => {
-                    content.size == update.size
-                        && content.hash == update.hash
+                    content.hash == update.hash
                         && match (content.unix_mode, update.unix_mode) {
                             (None, None) => true,
                             (None, Some(_)) => false,
@@ -164,7 +168,17 @@ pub struct EntryVersion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileContent {
     pub modified_at: DateTimeUtc,
-    pub size: u64,
+    pub original_size: u64,
+    pub encrypted_size: u64,
     pub hash: ContentHash,
+    pub unix_mode: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptedFileContent {
+    pub modified_at: DateTimeUtc,
+    pub original_size: EncryptedSize,
+    pub encrypted_size: u64,
+    pub hash: EncryptedContentHash,
     pub unix_mode: Option<u32>,
 }

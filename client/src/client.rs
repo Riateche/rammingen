@@ -18,7 +18,7 @@ use tokio::task::block_in_place;
 use rammingen_protocol::{
     endpoints::{RequestToResponse, RequestToStreamingResponse},
     util::stream_file,
-    ContentHash,
+    EncryptedContentHash,
 };
 
 use crate::encryption::Decryptor;
@@ -103,11 +103,15 @@ impl Client {
         .boxed()
     }
 
-    pub async fn upload(&self, hash: &ContentHash, mut file: SpooledTempFile) -> Result<()> {
+    pub async fn upload(
+        &self,
+        hash: &EncryptedContentHash,
+        mut file: SpooledTempFile,
+    ) -> Result<()> {
         let size = file.seek(SeekFrom::End(0))?;
         file.rewind()?;
         self.reqwest
-            .put(format!("{}content/{}", self.server_url, hash))
+            .put(format!("{}content/{}", self.server_url, hash.to_url_safe()))
             .bearer_auth(&self.token)
             .header(CONTENT_LENGTH, size)
             .body(Body::wrap_stream(stream_file(file).map(io::Result::Ok)))
@@ -119,13 +123,13 @@ impl Client {
 
     pub async fn download(
         &self,
-        hash: &ContentHash,
+        hash: &EncryptedContentHash,
         path: impl AsRef<Path>,
         cipher: &Aes256SivAead,
     ) -> Result<()> {
         let mut response = self
             .reqwest
-            .get(format!("{}content/{}", self.server_url, hash))
+            .get(format!("{}content/{}", self.server_url, hash.to_url_safe()))
             .bearer_auth(&self.token)
             .send()
             .await?

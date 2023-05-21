@@ -7,7 +7,7 @@ use hyper::{
     header::CONTENT_LENGTH,
     Request, Response, StatusCode,
 };
-use rammingen_protocol::{util::stream_file, ContentHash};
+use rammingen_protocol::{util::stream_file, EncryptedContentHash};
 use tokio::task::block_in_place;
 use tracing::warn;
 
@@ -16,7 +16,7 @@ use crate::handler;
 pub async fn upload(
     ctx: handler::Context,
     mut request: Request<body::Incoming>,
-    hash: &ContentHash,
+    hash: &EncryptedContentHash,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode> {
     let content_length: u64 = request
         .headers()
@@ -73,7 +73,7 @@ pub async fn upload(
 
 pub async fn download(
     ctx: handler::Context,
-    hash: &ContentHash,
+    hash: &EncryptedContentHash,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode> {
     let file = block_in_place(|| ctx.storage.open_file(hash)).map_err(|err| {
         warn!(?err, "couldn't open content file");

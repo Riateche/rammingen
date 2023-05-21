@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ContentHash, DateTimeUtc, EncryptedArchivePath, Entry, EntryKind, EntryUpdateNumber,
-    EntryVersion, FileContent, RecordTrigger,
+    DateTimeUtc, EncryptedArchivePath, EncryptedContentHash, EncryptedFileContent, Entry,
+    EntryKind, EntryUpdateNumber, EntryVersion, RecordTrigger,
 };
 
 pub trait RequestToResponse {
@@ -82,7 +82,7 @@ pub struct AddVersion {
     pub path: EncryptedArchivePath,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
-    pub content: Option<FileContent>,
+    pub content: Option<EncryptedFileContent>,
 }
 response_type!(AddVersion, AddVersionResponse);
 
@@ -125,7 +125,7 @@ response_type!(RemovePath, BulkActionStats);
 
 /// Checks whether the specified content hash is stored on the server.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ContentHashExists(pub ContentHash);
+pub struct ContentHashExists(pub EncryptedContentHash);
 response_type!(ContentHashExists, bool);
 
 #[derive(Debug, Serialize, Deserialize)]

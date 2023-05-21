@@ -1,8 +1,7 @@
 use anyhow::{bail, Result};
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use fs2::available_space;
 use fs_err::{create_dir_all, remove_file, rename, File};
-use rammingen_protocol::{util::try_exists, ContentHash};
+use rammingen_protocol::{util::try_exists, EncryptedContentHash};
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -15,8 +14,8 @@ pub struct Storage {
     tmp: PathBuf,
 }
 
-fn storage_paths(root: &Path, hash: &ContentHash) -> (PathBuf, PathBuf) {
-    let hash_str = BASE64_URL_SAFE_NO_PAD.encode(&hash.0);
+fn storage_paths(root: &Path, hash: &EncryptedContentHash) -> (PathBuf, PathBuf) {
+    let hash_str = hash.to_url_safe();
     let dir = root
         .join(&hash_str[0..1])
         .join(&hash_str[1..2])
@@ -41,7 +40,7 @@ impl Storage {
         Ok(NamedTempFile::new_in(&self.tmp)?)
     }
 
-    pub fn commit_file(&self, mut file: NamedTempFile, hash: &ContentHash) -> Result<()> {
+    pub fn commit_file(&self, mut file: NamedTempFile, hash: &EncryptedContentHash) -> Result<()> {
         file.flush()?;
         let (dir, new_file_path) = storage_paths(&self.root, hash);
         create_dir_all(dir)?;
@@ -53,17 +52,17 @@ impl Storage {
         Ok(())
     }
 
-    pub fn open_file(&self, hash: &ContentHash) -> Result<File> {
+    pub fn open_file(&self, hash: &EncryptedContentHash) -> Result<File> {
         let (_, path) = storage_paths(&self.root, hash);
         Ok(File::open(path)?)
     }
 
-    pub fn remove_file(&self, hash: &ContentHash) -> Result<()> {
+    pub fn remove_file(&self, hash: &EncryptedContentHash) -> Result<()> {
         let (_, path) = storage_paths(&self.root, hash);
         Ok(remove_file(path)?)
     }
 
-    pub fn exists(&self, hash: &ContentHash) -> Result<bool> {
+    pub fn exists(&self, hash: &EncryptedContentHash) -> Result<bool> {
         let (_, path) = storage_paths(&self.root, hash);
         try_exists(path)
     }
@@ -80,7 +79,7 @@ fn basic() {
 
     let dir = TempDir::new().unwrap();
     let storage = Storage::new(dir.path().into()).unwrap();
-    let hash = ContentHash((0..64).collect());
+    let hash = EncryptedContentHash((0..64).collect());
     let mut file = storage.create_file().unwrap();
     writeln!(file, "ok").unwrap();
     storage.commit_file(file, &hash).unwrap();

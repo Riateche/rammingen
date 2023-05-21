@@ -9,7 +9,11 @@ use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
 use std::{fmt::Debug, io, iter, path::Path, str};
 
-use crate::{encryption::decrypt_path, path::SanitizedLocalPath, Ctx};
+use crate::{
+    encryption::{decrypt_content_hash, decrypt_path, decrypt_size},
+    path::SanitizedLocalPath,
+    Ctx,
+};
 
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
 
@@ -88,7 +92,17 @@ impl DecryptedEntryVersionData {
             source_id: data.source_id,
             record_trigger: data.record_trigger,
             kind: data.kind,
-            content: data.content,
+            content: if let Some(content) = data.content {
+                Some(FileContent {
+                    modified_at: content.modified_at,
+                    original_size: decrypt_size(&content.original_size, &ctx.cipher)?,
+                    encrypted_size: content.encrypted_size,
+                    hash: decrypt_content_hash(&content.hash, &ctx.cipher)?,
+                    unix_mode: content.unix_mode,
+                })
+            } else {
+                None
+            },
         })
     }
 }

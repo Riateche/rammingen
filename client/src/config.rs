@@ -73,8 +73,6 @@ pub struct Config {
     pub server_url: Url,
     #[derivative(Debug = "ignore")]
     pub token: String,
-    #[derivative(Debug = "ignore")]
-    pub salt: String,
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
 }

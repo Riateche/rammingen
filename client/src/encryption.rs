@@ -1,14 +1,16 @@
 use aes_siv::aead::Aead;
 use aes_siv::AeadCore;
 use aes_siv::{aead::OsRng, Aes256SivAead, Nonce};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use byteorder::{ByteOrder, WriteBytesExt, LE};
 use deflate::write::DeflateEncoder;
 use deflate::CompressionOptions;
 use fs_err::File;
 use inflate::InflateWriter;
-use rammingen_protocol::{ArchivePath, ContentHash, EncryptedArchivePath};
+use rammingen_protocol::{
+    ArchivePath, ContentHash, EncryptedArchivePath, EncryptedContentHash, EncryptedSize,
+};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use std::cmp::min;
@@ -45,11 +47,9 @@ impl<W: Write> Write for HashingWriter<W> {
 }
 
 impl<W> HashingWriter<W> {
-    pub fn new(inner: W, salt: &str) -> Self {
-        let mut hasher = Sha256::new();
-        hasher.update(salt);
+    pub fn new(inner: W) -> Self {
         Self {
-            hasher,
+            hasher: Sha256::new(),
             inner,
             size: 0,
         }
@@ -112,14 +112,11 @@ impl<'a, W: Write> Write for EncryptingWriter<'a, W> {
 pub struct EncryptedFileData {
     pub file: SpooledTempFile,
     pub hash: ContentHash,
-    pub size: u64,
+    pub original_size: u64,
+    pub encrypted_size: u64,
 }
 
-pub fn encrypt_file(
-    path: impl AsRef<Path>,
-    cipher: &Aes256SivAead,
-    salt: &str,
-) -> Result<EncryptedFileData> {
+pub fn encrypt_file(path: impl AsRef<Path>, cipher: &Aes256SivAead) -> Result<EncryptedFileData> {
     let mut file = File::open(path.as_ref())?;
     let mut output = SpooledTempFile::new(MAX_IN_MEMORY);
     output.write_u32::<LE>(MAGIC_NUMBER)?;
@@ -129,16 +126,17 @@ pub fn encrypt_file(
         cipher,
     };
     let mut encoder = DeflateEncoder::new(&mut encryptor, CompressionOptions::high());
-    let mut hasher = HashingWriter::new(&mut encoder, salt);
-    io::copy(&mut file, &mut hasher)?;
+    let mut hasher = HashingWriter::new(&mut encoder);
+    let original_size = io::copy(&mut file, &mut hasher)?;
     let hash = ContentHash(hasher.hasher.finalize().to_vec());
-    let size = hasher.size;
+    let encrypted_size = hasher.size;
     encoder.finish()?;
     encryptor.finish()?;
     Ok(EncryptedFileData {
         file: output,
         hash,
-        size,
+        original_size,
+        encrypted_size,
     })
 }
 
@@ -273,6 +271,46 @@ pub fn decrypt_path(value: &EncryptedArchivePath, cipher: &Aes256SivAead) -> Res
     ArchivePath::from_str_without_prefix(&parts.join("/"))
 }
 
+pub fn encrypt_content_hash(
+    value: &ContentHash,
+    cipher: &Aes256SivAead,
+) -> Result<EncryptedContentHash> {
+    let ciphertext = cipher
+        .encrypt(&Nonce::default(), &value.0[..])
+        .map_err(|_| anyhow!("encryption failed"))?;
+    Ok(EncryptedContentHash(ciphertext))
+}
+
+pub fn decrypt_content_hash(
+    value: &EncryptedContentHash,
+    cipher: &Aes256SivAead,
+) -> Result<ContentHash> {
+    let plaintext = cipher
+        .decrypt(&Nonce::default(), &value.0[..])
+        .map_err(|_| anyhow!("decryption failed for {:?}", value))?;
+    Ok(ContentHash(plaintext))
+}
+
+pub fn encrypt_size(value: u64, cipher: &Aes256SivAead) -> Result<EncryptedSize> {
+    let ciphertext = cipher
+        .encrypt(&Nonce::default(), &value.to_le_bytes()[..])
+        .map_err(|_| anyhow!("encryption failed"))?;
+    Ok(EncryptedSize(ciphertext))
+}
+
+pub fn decrypt_size(value: &EncryptedSize, cipher: &Aes256SivAead) -> Result<u64> {
+    let plaintext = cipher
+        .decrypt(&Nonce::default(), &value.0[..])
+        .map_err(|_| anyhow!("decryption failed for {:?}", value))?;
+    if plaintext.len() != 8 {
+        bail!(
+            "decrypt_size: invalid decrypted length: {}, expected 8",
+            plaintext.len()
+        );
+    }
+    Ok(u64::from_le_bytes(plaintext.try_into().unwrap()))
+}
+
 #[test]
 pub fn str_roundtrip() {
     use aes_siv::KeyInit;
@@ -315,7 +353,7 @@ pub fn file_roundtrip() {
     }
     file.flush().unwrap();
 
-    let mut encrypted_file = encrypt_file(file.path(), &cipher, "salt").unwrap().file;
+    let mut encrypted_file = encrypt_file(file.path(), &cipher).unwrap().file;
     println!(
         "encrypted size {}",
         encrypted_file.seek(SeekFrom::End(0)).unwrap()

@@ -4,7 +4,7 @@ use futures::future::BoxFuture;
 use rammingen_protocol::{
     endpoints::{AddVersion, ContentHashExists},
     util::native_to_archive_relative_path,
-    ArchivePath, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
+    ArchivePath, DateTimeUtc, EncryptedFileContent, EntryKind, FileContent, RecordTrigger,
 };
 use std::{collections::HashSet, sync::atomic::Ordering, time::Duration};
 use tokio::{task::block_in_place, time::sleep};
@@ -12,7 +12,7 @@ use tokio::{task::block_in_place, time::sleep};
 use crate::{
     config::MountPoint,
     db::LocalEntryInfo,
-    encryption::{self, encrypt_path},
+    encryption::{self, encrypt_content_hash, encrypt_path, encrypt_size},
     path::SanitizedLocalPath,
     rules::Rules,
     term::{debug, info, set_status, warn},
@@ -175,9 +175,8 @@ pub fn upload<'a>(
             });
 
             if maybe_changed {
-                let file_data = block_in_place(|| {
-                    encryption::encrypt_file(local_path, &ctx.cipher, &ctx.config.salt)
-                })?;
+                let file_data =
+                    block_in_place(|| encryption::encrypt_file(local_path, &ctx.cipher))?;
 
                 let final_modified = fs::symlink_metadata(local_path)?.modified()?;
                 if final_modified != modified {
@@ -189,7 +188,8 @@ pub fn upload<'a>(
 
                 let current_content = FileContent {
                     modified_at: modified_datetime,
-                    size: file_data.size,
+                    original_size: file_data.original_size,
+                    encrypted_size: file_data.encrypted_size,
                     hash: file_data.hash,
                     unix_mode,
                 };
@@ -203,15 +203,14 @@ pub fn upload<'a>(
                     }
                 });
 
+                let encrypted_hash = encrypt_content_hash(&current_content.hash, &ctx.cipher)?;
                 if changed
                     && !ctx
                         .client
-                        .request(&ContentHashExists(current_content.hash.clone()))
+                        .request(&ContentHashExists(encrypted_hash.clone()))
                         .await?
                 {
-                    ctx.client
-                        .upload(&current_content.hash, file_data.file)
-                        .await?;
+                    ctx.client.upload(&encrypted_hash, file_data.file).await?;
                 }
 
                 content = Some(current_content);
@@ -226,7 +225,17 @@ pub fn upload<'a>(
                 path: encrypt_path(archive_path, &ctx.cipher)?,
                 record_trigger: RecordTrigger::Upload,
                 kind: Some(kind),
-                content: content.clone(),
+                content: if let Some(content) = &content {
+                    Some(EncryptedFileContent {
+                        modified_at: content.modified_at,
+                        original_size: encrypt_size(content.original_size, &ctx.cipher)?,
+                        encrypted_size: content.encrypted_size,
+                        hash: encrypt_content_hash(&content.hash, &ctx.cipher)?,
+                        unix_mode: content.unix_mode,
+                    })
+                } else {
+                    None
+                },
             };
             ctx.counters.sent_to_server.fetch_add(1, Ordering::Relaxed);
             if ctx.client.request(&add_version).await?.added {
