@@ -4,9 +4,11 @@ use anyhow::{anyhow, Result};
 use byte_unit::Byte;
 use futures::TryStreamExt;
 use itertools::Itertools;
-use prettytable::{format::FormatBuilder, row, Table};
+use prettytable::{cell, format::FormatBuilder, row, Table};
 use rammingen_protocol::{
-    endpoints::GetDirectChildEntries, util::local_time, ArchivePath, EntryKind,
+    endpoints::{GetAllEntryVersions, GetDirectChildEntries},
+    util::local_time,
+    ArchivePath, EntryKind,
 };
 
 use crate::{
@@ -134,28 +136,11 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
             .last_name()
             .ok_or_else(|| anyhow!("any child entry must have last name (path: {}", entry.path))?;
         let recorded_at = local_time(entry.recorded_at).format("%Y/%m/%d %H:%M:%S");
-        let status = if let Some(kind) = entry.kind {
-            match kind {
-                EntryKind::File => {
-                    let content = entry
-                        .content
-                        .ok_or_else(|| anyhow!("missing content for file entry"))?;
-                    let mode = if let Some(unix_mode) = content.unix_mode {
-                        format!("{:o}", unix_mode & 0o777)
-                    } else {
-                        "FILE".into()
-                    };
-                    format!("{} {}", mode, pretty_size(content.size))
-                }
-                EntryKind::Directory => "DIR".to_string(),
-            }
-        } else {
-            if !show_deleted {
-                num_hidden_deleted += 1;
-                continue;
-            }
-            "DEL".to_string()
-        };
+        if entry.kind.is_none() && !show_deleted {
+            num_hidden_deleted += 1;
+            continue;
+        }
+        let status = pretty_status(&entry)?;
         table.add_row(row![recorded_at, status, name]);
     }
     info(table);
@@ -170,8 +155,72 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     Ok(())
 }
 
+fn pretty_status(data: &DecryptedEntryVersionData) -> Result<String> {
+    let text = if let Some(kind) = data.kind {
+        match kind {
+            EntryKind::File => {
+                let content = data
+                    .content
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("missing content for file entry"))?;
+                let mode = if let Some(unix_mode) = content.unix_mode {
+                    format!("{:o}", unix_mode & 0o777)
+                } else {
+                    "FILE".into()
+                };
+                format!("{} {}", mode, pretty_size(content.size))
+            }
+            EntryKind::Directory => "DIR".to_string(),
+        }
+    } else {
+        "DEL".to_string()
+    };
+    Ok(text)
+}
+
 fn pretty_size(size: u64) -> impl Display {
     Byte::from_bytes(size.into())
         .get_appropriate_unit(false)
         .to_string()
+}
+
+pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Result<()> {
+    let mut stream = ctx.client.stream(&GetAllEntryVersions {
+        path: encrypt_path(path, &ctx.cipher)?,
+        recursive,
+    });
+    let mut table = Table::new();
+    let parent = path.parent();
+    table.set_format(FormatBuilder::new().column_separator(' ').build());
+    let mut header = row!["Recorded", "Status", "Trigger", "Source"];
+    if recursive {
+        header.add_cell(cell!("Path"));
+    }
+    table.add_row(header);
+    while let Some(item) = stream.try_next().await? {
+        let data = DecryptedEntryVersionData::new(ctx, item.data)?;
+        let recorded_at = local_time(data.recorded_at).format("%Y/%m/%d %H:%M:%S");
+        let status = pretty_status(&data)?;
+        let trigger = format!("{:?}", data.record_trigger);
+        let mut row = row![recorded_at, status, trigger, data.source_id.0];
+        if recursive {
+            let relative_path = if let Some(parent) = &parent {
+                data.path
+                    .strip_prefix(parent)
+                    .ok_or_else(|| anyhow!("strip_prefix({:?}, {:?}) failed", data.path, parent))?
+                    .to_string()
+            } else {
+                data.path.to_str_without_prefix().to_string()
+            };
+            row.add_cell(cell!(relative_path));
+        }
+        table.add_row(row);
+        if table.len() > 50 {
+            info(table);
+            table = Table::new();
+            table.set_format(FormatBuilder::new().column_separator(' ').build());
+        }
+    }
+    info(table);
+    Ok(())
 }

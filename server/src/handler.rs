@@ -4,9 +4,9 @@ use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::endpoints::{
-    AddVersion, AddVersionResponse, BulkActionStats, ContentHashExists, GetDirectChildEntries,
-    GetEntryVersionsAtTime, GetNewEntries, MovePath, RemovePath, ResetVersion, Response,
-    StreamingResponseItem,
+    AddVersion, AddVersionResponse, BulkActionStats, ContentHashExists, GetAllEntryVersions,
+    GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries, MovePath, RemovePath,
+    ResetVersion, Response, StreamingResponseItem,
 };
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath, Entry,
@@ -352,15 +352,49 @@ pub async fn get_entry_versions_at_time(
     Ok(())
 }
 
+pub async fn get_all_entry_versions(
+    ctx: Context,
+    request: GetAllEntryVersions,
+    tx: Sender<Result<StreamingResponseItem<GetAllEntryVersions>>>,
+) -> Result<()> {
+    if request.recursive {
+        let mut rows = query!(
+            "SELECT * FROM entry_versions
+            WHERE path = $1 OR path LIKE $2
+            ORDER BY id",
+            request.path.0 .0,
+            starts_with(&request.path)
+        )
+        .fetch(&ctx.db_pool);
+        while let Some(row) = rows.try_next().await? {
+            tx.send(Ok(convert_entry_version!(row))).await?;
+        }
+    } else {
+        let mut rows = query!(
+            "SELECT * FROM entry_versions WHERE path = $1 ORDER BY id",
+            request.path.0 .0
+        )
+        .fetch(&ctx.db_pool);
+        while let Some(row) = rows.try_next().await? {
+            tx.send(Ok(convert_entry_version!(row))).await?;
+        }
+    }
+    Ok(())
+}
+
 fn starts_with(path: &EncryptedArchivePath) -> String {
-    format!(
-        "{}/%",
-        path.0
-             .0
-            .replace('\\', r"\\")
-            .replace('%', r"\%")
-            .replace('_', r"\_")
-    )
+    if path.0 .0 == "/" {
+        "/%".into()
+    } else {
+        format!(
+            "{}/%",
+            path.0
+                 .0
+                .replace('\\', r"\\")
+                .replace('%', r"\%")
+                .replace('_', r"\_")
+        )
+    }
 }
 
 async fn remove_entries_in_dir<'a>(

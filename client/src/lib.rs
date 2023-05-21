@@ -29,6 +29,7 @@ use counters::Counters;
 use derivative::Derivative;
 use download::{download_latest, download_version};
 use encryption::encrypt_path;
+use ls::list_versions;
 use path::SanitizedLocalPath;
 use rammingen_protocol::endpoints::{MovePath, RemovePath, ResetVersion};
 use rules::Rules;
@@ -142,6 +143,9 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                 })
                 .await?;
             info(format!("{:?}", stats));
+        }
+        cli::Command::Versions { path, recursive } => {
+            list_versions(&ctx, &path, recursive).await?;
         }
     }
 

@@ -92,9 +92,11 @@ impl Term {
         let old_status = self.current_status.clone();
         self.clear_status();
         self.stdout.queue(SetForegroundColor(color)).unwrap();
-        self.stdout
-            .write_all(format!("{text}\n").as_bytes())
-            .unwrap();
+        let mut text = text.to_string();
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        self.stdout.write_all(text.as_bytes()).unwrap();
         self.stdout.queue(ResetColor).unwrap();
         if let Some(old_status) = old_status {
             self.set_status(old_status);

@@ -38,6 +38,11 @@ pub enum Command {
         #[arg(short, long)]
         deleted: bool,
     },
+    Versions {
+        path: ArchivePath,
+        #[arg(short, long)]
+        recursive: bool,
+    },
     History {
         archive_path: ArchivePath,
         time_spec: String, // TODO

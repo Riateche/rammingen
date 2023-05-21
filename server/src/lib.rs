@@ -18,9 +18,9 @@ use hyper::{
 };
 use rammingen_protocol::{
     endpoints::{
-        AddVersion, ContentHashExists, GetDirectChildEntries, GetEntryVersionsAtTime,
-        GetNewEntries, MovePath, RemovePath, RequestToResponse, RequestToStreamingResponse,
-        ResetVersion, StreamingResponseItem,
+        AddVersion, ContentHashExists, GetAllEntryVersions, GetDirectChildEntries,
+        GetEntryVersionsAtTime, GetNewEntries, MovePath, RemovePath, RequestToResponse,
+        RequestToStreamingResponse, ResetVersion, StreamingResponseItem,
     },
     ContentHash, SourceId,
 };
@@ -150,6 +150,8 @@ async fn try_handle_request(
         wrap_stream(ctx, request, handler::get_direct_child_entries).await
     } else if path == GetEntryVersionsAtTime::PATH {
         wrap_stream(ctx, request, handler::get_entry_versions_at_time).await
+    } else if path == GetAllEntryVersions::PATH {
+        wrap_stream(ctx, request, handler::get_all_entry_versions).await
     } else if path == AddVersion::PATH {
         wrap_request(ctx, request, handler::add_version).await
     } else if path == MovePath::PATH {

@@ -15,6 +15,10 @@ impl ArchivePath {
         Ok(Self(path.into()))
     }
 
+    pub fn to_str_without_prefix(&self) -> &str {
+        &self.0
+    }
+
     pub fn join_one(&self, file_name: &str) -> Result<ArchivePath> {
         if file_name.is_empty() {
             bail!("file name cannot be empty");
@@ -58,9 +62,13 @@ impl ArchivePath {
     }
 
     pub fn strip_prefix(&self, base: &ArchivePath) -> Option<&str> {
-        self.0
-            .strip_prefix(&base.0)
-            .and_then(|prefix| prefix.strip_prefix('/'))
+        if base.0 == "/" {
+            self.0.strip_prefix(&base.0)
+        } else {
+            self.0
+                .strip_prefix(&base.0)
+                .and_then(|prefix| prefix.strip_prefix('/'))
+        }
     }
 
     pub fn last_name(&self) -> Option<&str> {
@@ -95,6 +103,10 @@ fn strip_prefix() {
     assert_eq!(p("/a1/b1/c1/d1").strip_prefix(&p("/a1/b1")), Some("c1/d1"));
     assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b/c/d")), None);
     assert_eq!(p("/a/b/c/d").strip_prefix(&p("/d")), None);
+
+    assert_eq!(p("/a").strip_prefix(&p("/")), Some("a"));
+    assert_eq!(p("/abc").strip_prefix(&p("/")), Some("abc"));
+    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/")), Some("a/b/c/d"));
 }
 
 impl<'de> Deserialize<'de> for ArchivePath {

@@ -87,6 +87,99 @@
     },
     "query": "SELECT * FROM entries WHERE (path = $1 OR path LIKE $2) AND kind > 0 ORDER BY path"
   },
+  "361c71d6266a0377a40c394900e7deada8963dcf2349e0d447d68e72b0a67ef4": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "entry_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "update_number",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "snapshot_id",
+          "ordinal": 3,
+          "type_info": "Int4"
+        },
+        {
+          "name": "path",
+          "ordinal": 4,
+          "type_info": "Varchar"
+        },
+        {
+          "name": "recorded_at",
+          "ordinal": 5,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "source_id",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "record_trigger",
+          "ordinal": 7,
+          "type_info": "Int4"
+        },
+        {
+          "name": "kind",
+          "ordinal": 8,
+          "type_info": "Int4"
+        },
+        {
+          "name": "size",
+          "ordinal": 9,
+          "type_info": "Int8"
+        },
+        {
+          "name": "modified_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 11,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "unix_mode",
+          "ordinal": 12,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT * FROM entry_versions\n            WHERE path = $1 OR path LIKE $2\n            ORDER BY id"
+  },
   "381f0b2330532afed572bd92fce88cce79078c0c38936c7cb59f29ace1cabaf6": {
     "describe": {
       "columns": [],
@@ -121,6 +214,98 @@
       }
     },
     "query": "UPDATE entries\n            SET update_number = nextval('entry_update_numbers'),\n                recorded_at = now(),\n                source_id = $1,\n                record_trigger = $2,\n                kind = $3,\n                size = $4,\n                modified_at = $5,\n                content_hash = $6,\n                unix_mode = $7\n            WHERE id = $8"
+  },
+  "4434ec55fe50b6d17c0bb8fc0ae7322c76016f3d48f044b25497e48a98c7576f": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "entry_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "update_number",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "snapshot_id",
+          "ordinal": 3,
+          "type_info": "Int4"
+        },
+        {
+          "name": "path",
+          "ordinal": 4,
+          "type_info": "Varchar"
+        },
+        {
+          "name": "recorded_at",
+          "ordinal": 5,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "source_id",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "record_trigger",
+          "ordinal": 7,
+          "type_info": "Int4"
+        },
+        {
+          "name": "kind",
+          "ordinal": 8,
+          "type_info": "Int4"
+        },
+        {
+          "name": "size",
+          "ordinal": 9,
+          "type_info": "Int8"
+        },
+        {
+          "name": "modified_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 11,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "unix_mode",
+          "ordinal": 12,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT * FROM entry_versions WHERE path = $1 ORDER BY id"
   },
   "53d5f5bbbb16979c34322ed58f576750d1daab3c8114bf7d08e8ba2aef436109": {
     "describe": {
