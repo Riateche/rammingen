@@ -5,8 +5,8 @@ use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::endpoints::{
     AddVersion, AddVersionResponse, BulkActionStats, ContentHashExists, GetAllEntryVersions,
-    GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries, MovePath, RemovePath,
-    ResetVersion, Response, StreamingResponseItem,
+    GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries, GetServerStatus, MovePath,
+    RemovePath, ResetVersion, Response, ServerStatus, StreamingResponseItem,
 };
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath, Entry,
@@ -301,8 +301,9 @@ pub async fn get_direct_child_entries(
     tx: Sender<Result<StreamingResponseItem<GetDirectChildEntries>>>,
 ) -> Result<()> {
     let main_entry_id = query_scalar!("SELECT id FROM entries WHERE path = $1", request.0 .0 .0)
-        .fetch_one(&ctx.db_pool)
-        .await?;
+        .fetch_optional(&ctx.db_pool)
+        .await?
+        .ok_or_else(|| anyhow!("entry not found"))?;
 
     let mut rows = query!(
         "SELECT * FROM entries WHERE parent_dir = $1 ORDER BY path",
@@ -596,4 +597,13 @@ pub async fn content_hash_exists(
     request: ContentHashExists,
 ) -> Result<Response<ContentHashExists>> {
     ctx.storage.exists(&request.0)
+}
+
+pub async fn get_server_status(
+    ctx: Context,
+    _request: GetServerStatus,
+) -> Result<Response<GetServerStatus>> {
+    Ok(ServerStatus {
+        available_space: ctx.storage.available_space()?,
+    })
 }

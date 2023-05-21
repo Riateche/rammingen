@@ -1933,6 +1933,7 @@ dependencies = [
  "bytes",
  "chrono",
  "fs-err",
+ "fs2",
  "futures-util",
  "http-body-util",
  "hyper 1.0.0-rc.3",

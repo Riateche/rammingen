@@ -19,8 +19,8 @@ use hyper::{
 use rammingen_protocol::{
     endpoints::{
         AddVersion, ContentHashExists, GetAllEntryVersions, GetDirectChildEntries,
-        GetEntryVersionsAtTime, GetNewEntries, MovePath, RemovePath, RequestToResponse,
-        RequestToStreamingResponse, ResetVersion, StreamingResponseItem,
+        GetEntryVersionsAtTime, GetNewEntries, GetServerStatus, MovePath, RemovePath,
+        RequestToResponse, RequestToStreamingResponse, ResetVersion, StreamingResponseItem,
     },
     ContentHash, SourceId,
 };
@@ -162,6 +162,8 @@ async fn try_handle_request(
         wrap_request(ctx, request, handler::reset_version).await
     } else if path == ContentHashExists::PATH {
         wrap_request(ctx, request, handler::content_hash_exists).await
+    } else if path == GetServerStatus::PATH {
+        wrap_request(ctx, request, handler::get_server_status).await
     } else {
         Err(StatusCode::NOT_FOUND)
     }

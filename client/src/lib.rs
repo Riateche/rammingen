@@ -31,7 +31,7 @@ use download::{download_latest, download_version};
 use encryption::encrypt_path;
 use info::{list_versions, pretty_size};
 use path::SanitizedLocalPath;
-use rammingen_protocol::endpoints::{MovePath, RemovePath, ResetVersion};
+use rammingen_protocol::endpoints::{GetServerStatus, MovePath, RemovePath, ResetVersion};
 use rules::Rules;
 use std::{collections::HashSet, sync::Arc};
 use sync::sync;
@@ -146,6 +146,13 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         }
         cli::Command::Versions { path, recursive } => {
             list_versions(&ctx, &path, recursive).await?;
+        }
+        cli::Command::Status => {
+            let status = ctx.client.request(&GetServerStatus).await?;
+            info(format!(
+                "Available space on server: {}",
+                pretty_size(status.available_space)
+            ));
         }
     }
 

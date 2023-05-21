@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+use fs2::available_space;
 use fs_err::{create_dir_all, remove_file, rename, File};
 use rammingen_protocol::{util::try_exists, ContentHash};
 use std::{
@@ -65,6 +66,10 @@ impl Storage {
     pub fn exists(&self, hash: &ContentHash) -> Result<bool> {
         let (_, path) = storage_paths(&self.root, hash);
         try_exists(path)
+    }
+
+    pub fn available_space(&self) -> Result<u64> {
+        Ok(available_space(&self.root)?)
     }
 }
 

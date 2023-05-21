@@ -58,4 +58,5 @@ pub enum Command {
     Remove {
         archive_path: ArchivePath,
     },
+    Status,
 }

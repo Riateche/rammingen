@@ -127,3 +127,12 @@ response_type!(RemovePath, BulkActionStats);
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContentHashExists(pub ContentHash);
 response_type!(ContentHashExists, bool);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetServerStatus;
+response_type!(GetServerStatus, ServerStatus);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServerStatus {
+    pub available_space: u64,
+}
