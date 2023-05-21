@@ -155,6 +155,7 @@ pub async fn download(
             info(format!("Removed {}", entry_local_path));
         }
     }
+    let mut found_any = false;
     while let Some(entry) = versions.try_next().await? {
         let Some(kind) = entry.kind else {
             continue;
@@ -251,7 +252,11 @@ pub async fn download(
                 )?;
             }
         }
+        found_any = true;
         info(format!("Downloaded {}", entry_local_path));
+    }
+    if !found_any {
+        bail!("no matching entries found");
     }
     Ok(())
 }
