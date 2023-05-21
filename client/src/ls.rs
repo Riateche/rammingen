@@ -5,7 +5,9 @@ use byte_unit::Byte;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use prettytable::{format::FormatBuilder, row, Table};
-use rammingen_protocol::{util::local_time, ArchivePath, EntryKind, GetDirectChildEntries};
+use rammingen_protocol::{
+    endpoints::GetDirectChildEntries, util::local_time, ArchivePath, EntryKind,
+};
 
 use crate::{
     db::DecryptedEntryVersionData,

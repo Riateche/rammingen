@@ -17,7 +17,12 @@ use hyper::{
     Method, Request, Response, StatusCode,
 };
 use rammingen_protocol::{
-    ContentHash, RequestToResponse, RequestToStreamingResponse, SourceId, StreamingResponseItem,
+    endpoints::{
+        AddVersion, ContentHashExists, GetDirectChildEntries, GetEntryVersionsAtTime,
+        GetNewEntries, MovePath, RemovePath, RequestToResponse, RequestToStreamingResponse,
+        ResetVersion, StreamingResponseItem,
+    },
+    ContentHash, SourceId,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sqlx::{query, PgPool};
@@ -139,21 +144,21 @@ async fn try_handle_request(
         }
     } else if request.method() != Method::POST {
         Err(StatusCode::NOT_FOUND)
-    } else if path == "/GetNewEntries" {
+    } else if path == GetNewEntries::PATH {
         wrap_stream(ctx, request, handler::get_new_entries).await
-    } else if path == "/GetDirectChildEntries" {
+    } else if path == GetDirectChildEntries::PATH {
         wrap_stream(ctx, request, handler::get_direct_child_entries).await
-    } else if path == "/GetVersions" {
-        wrap_stream(ctx, request, handler::get_versions).await
-    } else if path == "/AddVersion" {
+    } else if path == GetEntryVersionsAtTime::PATH {
+        wrap_stream(ctx, request, handler::get_entry_versions_at_time).await
+    } else if path == AddVersion::PATH {
         wrap_request(ctx, request, handler::add_version).await
-    } else if path == "/MovePath" {
+    } else if path == MovePath::PATH {
         wrap_request(ctx, request, handler::move_path).await
-    } else if path == "/RemovePath" {
+    } else if path == RemovePath::PATH {
         wrap_request(ctx, request, handler::remove_path).await
-    } else if path == "/ResetVersion" {
+    } else if path == ResetVersion::PATH {
         wrap_request(ctx, request, handler::reset_version).await
-    } else if path == "/ContentHashExists" {
+    } else if path == ContentHashExists::PATH {
         wrap_request(ctx, request, handler::content_hash_exists).await
     } else {
         Err(StatusCode::NOT_FOUND)

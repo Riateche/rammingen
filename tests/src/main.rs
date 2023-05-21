@@ -105,7 +105,7 @@ async fn try_main() -> Result<()> {
                 exclude: vec![],
             }],
             encryption_key: encryption_key.clone(),
-            server_url: format!("http://127.0.0.1:{port}/"),
+            server_url: format!("http://127.0.0.1:{port}/").parse()?,
             token: token.clone(),
             salt: "salt1".into(),
             local_db_path: Some(client_dir.join("db")),

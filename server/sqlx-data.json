@@ -337,7 +337,7 @@
     },
     "query": "UPDATE entries\n                SET update_number = nextval('entry_update_numbers'),\n                    recorded_at = now(),\n                    source_id = $1,\n                    record_trigger = $2,\n                    kind = $3,\n                    size = NULL,\n                    modified_at = NULL,\n                    content_hash = NULL,\n                    unix_mode = NULL\n                WHERE id = $4"
   },
-  "7a0212afe06f8e6d3d74392a51e79f4877fbc1f5a10a2a963a821c3f1b6bc729": {
+  "844faa9e9aff57024673809978425b667e1dedcc11e7f00cfdc7aebe9e7968dc": {
     "describe": {
       "columns": [
         {
@@ -421,7 +421,7 @@
         ]
       }
     },
-    "query": "SELECT * FROM entries WHERE parent_dir = $1"
+    "query": "SELECT * FROM entries WHERE parent_dir = $1 ORDER BY path"
   },
   "89329a72e0b4e698d0477a64c203d7e95be740cb0f0242a073f7aaab134585b1": {
     "describe": {

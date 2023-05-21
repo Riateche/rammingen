@@ -3,11 +3,14 @@ use std::{collections::HashSet, sync::Arc};
 use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, Stream, TryStreamExt};
+use rammingen_protocol::endpoints::{
+    AddVersion, AddVersionResponse, BulkActionStats, ContentHashExists, GetDirectChildEntries,
+    GetEntryVersionsAtTime, GetNewEntries, MovePath, RemovePath, ResetVersion, Response,
+    StreamingResponseItem,
+};
 use rammingen_protocol::{
-    entry_kind_from_db, entry_kind_to_db, AddVersion, AddVersionResponse, ArchivePath,
-    BulkActionStats, ContentHashExists, DateTimeUtc, EncryptedArchivePath, Entry, EntryKind,
-    EntryVersion, EntryVersionData, FileContent, GetDirectChildEntries, GetNewEntries, GetVersions,
-    MovePath, RecordTrigger, RemovePath, ResetVersion, Response, SourceId, StreamingResponseItem,
+    entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath, Entry,
+    EntryKind, EntryVersion, EntryVersionData, FileContent, RecordTrigger, SourceId,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -301,8 +304,11 @@ pub async fn get_direct_child_entries(
         .fetch_one(&ctx.db_pool)
         .await?;
 
-    let mut rows =
-        query!("SELECT * FROM entries WHERE parent_dir = $1", main_entry_id).fetch(&ctx.db_pool);
+    let mut rows = query!(
+        "SELECT * FROM entries WHERE parent_dir = $1 ORDER BY path",
+        main_entry_id
+    )
+    .fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
         tx.send(Ok(convert_entry!(row))).await?;
     }
@@ -329,10 +335,10 @@ async fn get_versions_inner<'a>(
     Ok(stream)
 }
 
-pub async fn get_versions(
+pub async fn get_entry_versions_at_time(
     ctx: Context,
-    request: GetVersions,
-    sender: Sender<Result<StreamingResponseItem<GetVersions>>>,
+    request: GetEntryVersionsAtTime,
+    sender: Sender<Result<StreamingResponseItem<GetEntryVersionsAtTime>>>,
 ) -> Result<()> {
     let mut tx = ctx.db_pool.begin().await?;
     let entries = get_versions_inner(request.recorded_at, &request.path, &mut tx).await?;

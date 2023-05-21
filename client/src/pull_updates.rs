@@ -2,7 +2,7 @@ use std::cmp::max;
 
 use anyhow::Result;
 use futures::TryStreamExt;
-use rammingen_protocol::GetNewEntries;
+use rammingen_protocol::endpoints::GetNewEntries;
 
 use crate::{db::DecryptedEntryVersionData, term::set_status, Ctx};
 

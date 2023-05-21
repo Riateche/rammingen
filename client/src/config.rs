@@ -5,6 +5,7 @@ use core::fmt;
 use derivative::Derivative;
 use generic_array::GenericArray;
 use rammingen_protocol::ArchivePath;
+use reqwest::Url;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -69,7 +70,7 @@ pub struct Config {
     pub always_exclude: Vec<Rule>,
     pub mount_points: Vec<MountPoint>,
     pub encryption_key: EncryptionKey,
-    pub server_url: String,
+    pub server_url: Url,
     #[derivative(Debug = "ignore")]
     pub token: String,
     #[derivative(Debug = "ignore")]

@@ -4,7 +4,7 @@ use byteorder::{ByteOrder, LE};
 use derivative::Derivative;
 use fs_err::File;
 use futures::{Stream, StreamExt};
-use reqwest::{header::CONTENT_LENGTH, Body, Method};
+use reqwest::{header::CONTENT_LENGTH, Body, Method, Url};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     io::{self, Seek, SeekFrom, Write},
@@ -16,7 +16,9 @@ use tempfile::SpooledTempFile;
 use tokio::task::block_in_place;
 
 use rammingen_protocol::{
-    util::stream_file, ContentHash, RequestToResponse, RequestToStreamingResponse,
+    endpoints::{RequestToResponse, RequestToStreamingResponse},
+    util::stream_file,
+    ContentHash,
 };
 
 use crate::encryption::Decryptor;
@@ -24,15 +26,15 @@ use crate::encryption::Decryptor;
 #[derive(Derivative, Clone)]
 pub struct Client {
     reqwest: reqwest::Client,
-    server_url: String,
+    server_url: Url,
     #[derivative(Debug = "ignore")]
     token: String,
 }
 
 impl Client {
-    pub fn new(server_url: &str, token: &str) -> Self {
+    pub fn new(server_url: Url, token: &str) -> Self {
         Self {
-            server_url: server_url.into(),
+            server_url,
             token: token.into(),
             reqwest: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
@@ -48,7 +50,7 @@ impl Client {
     {
         let response = self
             .reqwest
-            .request(Method::POST, format!("{}{}", self.server_url, R::NAME))
+            .request(Method::POST, self.server_url.join(R::PATH)?)
             .bearer_auth(&self.token)
             .body(bincode::serialize(&request)?)
             .send()
@@ -70,7 +72,7 @@ impl Client {
         generate_try_stream(|mut y| async move {
             let mut response = this
                 .reqwest
-                .request(Method::POST, format!("{}{}", this.server_url, R::NAME))
+                .request(Method::POST, this.server_url.join(R::PATH)?)
                 .bearer_auth(&this.token)
                 .body(request?)
                 .send()

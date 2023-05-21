@@ -1,6 +1,8 @@
 #![allow(clippy::collapsible_else_if)]
 
+pub mod endpoints;
 mod path;
+pub mod util;
 
 pub use crate::path::ArchivePath;
 use anyhow::bail;
@@ -8,43 +10,11 @@ use anyhow::Result;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use derive_more::{From, Into};
+use endpoints::AddVersion;
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 
-pub mod util;
-
 pub type DateTimeUtc = chrono::DateTime<Utc>;
-
-pub const VERSION: u32 = 1;
-
-pub trait RequestToResponse {
-    type Response;
-    const NAME: &'static str;
-}
-macro_rules! response_type {
-    ($request:ty, $response:ty) => {
-        impl RequestToResponse for $request {
-            type Response = $response;
-            const NAME: &'static str = stringify!($request);
-        }
-    };
-}
-
-pub trait RequestToStreamingResponse {
-    type ResponseItem;
-    const NAME: &'static str;
-}
-macro_rules! streaming_response_type {
-    ($request:ty, $response:ty) => {
-        impl RequestToStreamingResponse for $request {
-            type ResponseItem = $response;
-            const NAME: &'static str = stringify!($request);
-        }
-    };
-}
-
-pub type Response<Request> = <Request as RequestToResponse>::Response;
-pub type StreamingResponseItem<Request> = <Request as RequestToStreamingResponse>::ResponseItem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct SourceId(pub i32);
@@ -83,14 +53,6 @@ impl FromStr for ContentHash {
         Ok(Self(bytes))
     }
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Login {
-    pub version: u32,
-    pub source_id: SourceId,
-    pub secret: String,
-}
-response_type!(Login, ());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RecordTrigger {
@@ -206,108 +168,3 @@ pub struct FileContent {
     pub hash: ContentHash,
     pub unix_mode: Option<u32>,
 }
-
-// Returns all entries added or updated since the specified update number.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetNewEntries {
-    // for incremental updates
-    pub last_update_number: EntryUpdateNumber,
-}
-streaming_response_type!(GetNewEntries, Entry);
-
-// Returns all entries that are direct children of the specified path.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetDirectChildEntries(pub EncryptedArchivePath);
-streaming_response_type!(GetDirectChildEntries, Entry);
-
-// Returns the closest version to the specified date
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetVersions {
-    pub recorded_at: DateTimeUtc,
-    // if it's a dir, return a version for each nested path
-    pub path: EncryptedArchivePath,
-}
-streaming_response_type!(GetVersions, EntryVersion);
-
-// Returns all versions
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetAllVersions {
-    // if it's a dir, return all versions for each nested path
-    pub path: EncryptedArchivePath,
-}
-streaming_response_type!(GetAllVersions, EntryVersion);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AddVersion {
-    pub path: EncryptedArchivePath,
-    pub record_trigger: RecordTrigger,
-    pub kind: Option<EntryKind>,
-    pub content: Option<FileContent>,
-}
-response_type!(AddVersion, AddVersionResponse);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AddVersionResponse {
-    pub added: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BulkActionStats {
-    pub affected_paths: u64,
-}
-
-/// Set the specified version as the latest one.
-/// If a directory, resets all nested paths.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ResetVersion {
-    pub path: EncryptedArchivePath,
-    pub recorded_at: DateTimeUtc,
-}
-response_type!(ResetVersion, BulkActionStats);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MovePath {
-    pub old_path: EncryptedArchivePath,
-    pub new_path: EncryptedArchivePath,
-}
-response_type!(MovePath, BulkActionStats);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RemovePath {
-    pub path: EncryptedArchivePath,
-}
-response_type!(RemovePath, BulkActionStats);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RemoveVersion {
-    // if dir, remove this version for all nested paths (where it's present)
-    pub path: EncryptedArchivePath,
-    pub recorded_at: Option<DateTimeUtc>,
-}
-response_type!(RemoveVersion, BulkActionStats);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ContentHashExists(pub ContentHash);
-response_type!(ContentHashExists, bool);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ContentHead {
-    pub size: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetContent {
-    pub content_hash: ContentHash,
-}
-response_type!(GetContent, Option<Vec<u8>>); // TODO: streaming
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct StartContentUpload {
-    pub content_hash: ContentHash,
-    pub size: u64,
-}
-response_type!(StartContentUpload, ());
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UploadContentChunk(Option<Vec<u8>>);
-response_type!(UploadContentChunk, ());

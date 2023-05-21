@@ -2,8 +2,9 @@ use anyhow::{anyhow, bail, Result};
 use fs_err as fs;
 use futures::future::BoxFuture;
 use rammingen_protocol::{
-    util::native_to_archive_relative_path, AddVersion, ArchivePath, ContentHashExists, DateTimeUtc,
-    EntryKind, FileContent, RecordTrigger,
+    endpoints::{AddVersion, ContentHashExists},
+    util::native_to_archive_relative_path,
+    ArchivePath, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
 };
 use std::{collections::HashSet, sync::atomic::Ordering, time::Duration};
 use tokio::{task::block_in_place, time::sleep};

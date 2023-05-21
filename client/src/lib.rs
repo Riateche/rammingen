@@ -30,7 +30,7 @@ use derivative::Derivative;
 use download::{download_latest, download_version};
 use encryption::encrypt_path;
 use path::SanitizedLocalPath;
-use rammingen_protocol::{MovePath, RemovePath, ResetVersion};
+use rammingen_protocol::endpoints::{MovePath, RemovePath, ResetVersion};
 use rules::Rules;
 use std::{collections::HashSet, sync::Arc};
 use sync::sync;
@@ -54,7 +54,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         data_dir.join("rammingen.db")
     };
     let ctx = Arc::new(Ctx {
-        client: Client::new(&config.server_url, &config.token),
+        client: Client::new(config.server_url.clone(), &config.token),
         cipher: Aes256SivAead::new(&config.encryption_key.0),
         config,
         db: crate::db::Db::open(&local_db_path)?,

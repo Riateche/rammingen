@@ -4,8 +4,9 @@ use anyhow::{anyhow, bail, Result};
 use fs_err::{create_dir, remove_dir, remove_file, rename};
 use futures::{stream, Stream, TryStreamExt};
 use rammingen_protocol::{
+    endpoints::GetEntryVersionsAtTime,
     util::{archive_to_native_relative_path, try_exists},
-    ArchivePath, DateTimeUtc, EntryKind, GetVersions,
+    ArchivePath, DateTimeUtc, EntryKind,
 };
 use stream_generator::generate_try_stream;
 
@@ -58,7 +59,7 @@ pub async fn download_version(
 ) -> Result<()> {
     crate::term::debug("download_version");
     let stream = generate_try_stream(move |mut y| async move {
-        let mut response_stream = ctx.client.stream(&GetVersions {
+        let mut response_stream = ctx.client.stream(&GetEntryVersionsAtTime {
             path: encrypt_path(root_archive_path, &ctx.cipher)?,
             recorded_at: version,
         });
