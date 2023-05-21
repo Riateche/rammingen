@@ -178,7 +178,7 @@ fn pretty_status(data: &DecryptedEntryVersionData) -> Result<String> {
     Ok(text)
 }
 
-fn pretty_size(size: u64) -> impl Display {
+pub fn pretty_size(size: u64) -> impl Display {
     Byte::from_bytes(size.into())
         .get_appropriate_unit(false)
         .to_string()

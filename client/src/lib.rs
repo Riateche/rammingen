@@ -7,7 +7,7 @@ pub mod counters;
 pub mod db;
 pub mod download;
 pub mod encryption;
-pub mod ls;
+pub mod info;
 pub mod path;
 pub mod pull_updates;
 pub mod rules;
@@ -16,7 +16,7 @@ pub mod term;
 pub mod upload;
 
 use crate::{
-    ls::{local_status, ls},
+    info::{local_status, ls},
     pull_updates::pull_updates,
     upload::upload,
 };
@@ -29,7 +29,7 @@ use counters::Counters;
 use derivative::Derivative;
 use download::{download_latest, download_version};
 use encryption::encrypt_path;
-use ls::list_versions;
+use info::{list_versions, pretty_size};
 use path::SanitizedLocalPath;
 use rammingen_protocol::endpoints::{MovePath, RemovePath, ResetVersion};
 use rules::Rules;
