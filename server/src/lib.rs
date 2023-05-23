@@ -1,6 +1,9 @@
 #![allow(clippy::collapsible_else_if)]
 
-use std::{collections::HashMap, convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap, convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{anyhow, Result};
 use bytes::{BufMut, BytesMut};
@@ -43,6 +46,11 @@ pub struct Config {
     pub log_file: Option<PathBuf>,
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
+
+    #[serde(with = "humantime_serde")]
+    pub snapshot_interval: Duration,
+    #[serde(with = "humantime_serde")]
+    pub retain_detailed_history_for: Duration,
 }
 
 fn default_log_filter() -> String {

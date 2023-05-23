@@ -79,6 +79,8 @@ async fn try_main() -> Result<()> {
         storage_path,
         log_file: None,
         log_filter: String::new(),
+        retain_detailed_history_for: Duration::from_secs(60),
+        snapshot_interval: Duration::from_secs(60),
     };
     write(
         &dir.join("server_config.json5"),
