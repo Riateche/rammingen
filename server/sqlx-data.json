@@ -334,6 +334,24 @@
     },
     "query": "SELECT * FROM entry_versions WHERE path = $1 ORDER BY id"
   },
+  "50c192b63e5282d9224ba50f6002b3c4c53081a0aa100b3f57790fa159faa1ae": {
+    "describe": {
+      "columns": [
+        {
+          "name": "max",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT max(timestamp) FROM snapshots"
+  },
   "53d5f5bbbb16979c34322ed58f576750d1daab3c8114bf7d08e8ba2aef436109": {
     "describe": {
       "columns": [
@@ -425,6 +443,26 @@
       }
     },
     "query": "SELECT * FROM entries WHERE update_number > $1 ORDER BY update_number"
+  },
+  "585f2701f837b83e1ab1b496422757eaf02127667e6cb0c34e74aab7411fd0f1": {
+    "describe": {
+      "columns": [
+        {
+          "name": "?column?",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Bytea"
+        ]
+      }
+    },
+    "query": "SELECT 1 FROM entry_versions WHERE content_hash = $1 LIMIT 1"
   },
   "61042960e65b97bc40c998ac74e5fb7eafc5a8ab5e448d2925e5ee2d8fb87d71": {
     "describe": {
@@ -575,6 +613,44 @@
     },
     "query": "SELECT DISTINCT ON (path) *\n        FROM entry_versions\n        WHERE (path = $1 OR path LIKE $2) AND recorded_at <= $3\n        ORDER BY path, recorded_at DESC"
   },
+  "6907ae13f2129242e1e82d8a3ba0a3bad8b83a39e5efec695e2911fe7719c8f8": {
+    "describe": {
+      "columns": [
+        {
+          "name": "min",
+          "ordinal": 0,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT min(recorded_at) FROM entry_versions"
+  },
+  "6c7010e9c628a9448b51b1ea980625a2701ea14736ee5341f9cd3e93146918b4": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "INSERT INTO snapshots(timestamp) VALUES ($1) RETURNING id"
+  },
   "844faa9e9aff57024673809978425b667e1dedcc11e7f00cfdc7aebe9e7968dc": {
     "describe": {
       "columns": [
@@ -705,6 +781,18 @@
       }
     },
     "query": "SELECT id, secret FROM sources"
+  },
+  "99b324edb838cde08db2718cf670a34c2f1c0cc8fdfaf85bccbe0d645ed42366": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "DELETE FROM entry_versions WHERE recorded_at <= $1 AND snapshot_id IS NULL"
   },
   "ad1e724fbcfd0087189153bf35b3eb9ea912c45f595299c961cadb4b2ec0fc6d": {
     "describe": {
@@ -880,6 +968,30 @@
     },
     "query": "SELECT count(*) FROM entries\n                WHERE kind != 0 AND parent_dir = $1"
   },
+  "f0d094608e44a9f1ed752e8952cf878c47dbcd020786b770669fdf867922e74d": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Int8",
+          "Int4",
+          "Varchar",
+          "Timestamptz",
+          "Int4",
+          "Int4",
+          "Int4",
+          "Bytea",
+          "Int8",
+          "Timestamptz",
+          "Bytea",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n            INSERT INTO entry_versions (\n                entry_id, update_number, snapshot_id, path, recorded_at, source_id,\n                record_trigger, kind, original_size, encrypted_size, modified_at, content_hash, unix_mode\n            ) VALUES (\n                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13\n            );"
+  },
   "f815828d8762fbe3cf02b555e4afc28a6887ea979377d2866166ca71c0af4e8a": {
     "describe": {
       "columns": [],
@@ -916,5 +1028,103 @@
       }
     },
     "query": "SELECT id FROM entries\n        WHERE (path = $1 OR path LIKE $2) AND kind > 0\n        ORDER BY path DESC"
+  },
+  "fb5d51955b7e5f84f94dcaebb2b1d83dd709ccaf5fd734ad9c4840265fbfad4f": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "entry_id",
+          "ordinal": 1,
+          "type_info": "Int8"
+        },
+        {
+          "name": "update_number",
+          "ordinal": 2,
+          "type_info": "Int8"
+        },
+        {
+          "name": "snapshot_id",
+          "ordinal": 3,
+          "type_info": "Int4"
+        },
+        {
+          "name": "path",
+          "ordinal": 4,
+          "type_info": "Varchar"
+        },
+        {
+          "name": "recorded_at",
+          "ordinal": 5,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "source_id",
+          "ordinal": 6,
+          "type_info": "Int4"
+        },
+        {
+          "name": "record_trigger",
+          "ordinal": 7,
+          "type_info": "Int4"
+        },
+        {
+          "name": "kind",
+          "ordinal": 8,
+          "type_info": "Int4"
+        },
+        {
+          "name": "original_size",
+          "ordinal": 9,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "encrypted_size",
+          "ordinal": 10,
+          "type_info": "Int8"
+        },
+        {
+          "name": "modified_at",
+          "ordinal": 11,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 12,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "unix_mode",
+          "ordinal": 13,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "SELECT DISTINCT ON (path) *\n        FROM entry_versions\n        WHERE recorded_at <= $1 AND snapshot_id IS NULL\n        ORDER BY path, recorded_at DESC"
   }
 }

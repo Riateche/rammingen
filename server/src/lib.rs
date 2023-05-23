@@ -1,7 +1,7 @@
 #![allow(clippy::collapsible_else_if)]
 
 use std::{
-    collections::HashMap, convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc,
+    cmp::min, collections::HashMap, convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc,
     time::Duration,
 };
 
@@ -31,14 +31,19 @@ use stream_generator::{generate_stream, Yielder};
 use tokio::{
     net::TcpListener,
     sync::mpsc::{self, Sender},
+    task,
+    time::interval,
 };
-use tracing::{info, warn};
+use tracing::{error, info, warn};
+
+use crate::snapshot::make_snapshot;
 
 mod content_streaming;
 mod handler;
+mod snapshot;
 pub mod storage;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub database_url: String,
     pub storage_path: PathBuf,
@@ -58,10 +63,11 @@ fn default_log_filter() -> String {
 }
 
 #[derive(Debug, Clone)]
-struct Context {
+pub struct Context {
     db_pool: PgPool,
     storage: Arc<Storage>,
     sources: Arc<HashMap<String, SourceId>>,
+    config: Config,
 }
 
 pub async fn run(config: Config) -> Result<()> {
@@ -71,6 +77,7 @@ pub async fn run(config: Config) -> Result<()> {
         .await?;
 
     let ctx = Context {
+        config: config.clone(),
         db_pool: PgPool::connect(&config.database_url).await?,
         storage: Arc::new(Storage::new(config.storage_path)?),
         sources: Arc::new(
@@ -84,6 +91,18 @@ pub async fn run(config: Config) -> Result<()> {
     // Create the event loop and TCP listener we'll accept connections on.
     let listener = TcpListener::bind(&config.bind_addr).await?;
     info!("Listening on: {}", config.bind_addr);
+
+    let snapshot_check_interval = min(config.snapshot_interval / 2, Duration::from_secs(60));
+    let ctx2 = ctx.clone();
+    task::spawn(async move {
+        let mut interval = interval(snapshot_check_interval);
+        loop {
+            interval.tick().await;
+            if let Err(err) = make_snapshot(&ctx2).await {
+                error!(?err, "error while making snapshot");
+            }
+        }
+    });
 
     loop {
         match listener.accept().await {

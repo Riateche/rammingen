@@ -86,6 +86,7 @@ macro_rules! convert_version_data {
         }
     }};
 }
+pub(crate) use {convert_entry_version, convert_version_data};
 
 fn get_parent_dir<'a>(
     ctx: &'a Context,
@@ -585,7 +586,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
     Ok(BulkActionStats { affected_paths })
 }
 
-trait ToDb {
+pub trait ToDb {
     type Output;
     fn to_db(&self) -> Self::Output;
 }
@@ -600,7 +601,7 @@ impl ToDb for DateTimeUtc {
     }
 }
 
-trait FromDb {
+pub trait FromDb {
     type Output;
     #[allow(clippy::wrong_self_convention)]
     fn from_db(&self) -> Self::Output;
