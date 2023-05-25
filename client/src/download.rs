@@ -57,7 +57,6 @@ pub async fn download_version(
     root_local_path: &SanitizedLocalPath,
     version: DateTimeUtc,
 ) -> Result<bool> {
-    crate::term::debug("download_version");
     let stream = generate_try_stream(move |mut y| async move {
         let mut response_stream = ctx.client.stream(&GetEntryVersionsAtTime {
             path: encrypt_path(root_archive_path, &ctx.cipher)?,

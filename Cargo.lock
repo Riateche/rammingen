@@ -1894,6 +1894,7 @@ dependencies = [
  "crossterm",
  "deflate",
  "derivative",
+ "derive_more",
  "dirs",
  "fs-err",
  "futures",

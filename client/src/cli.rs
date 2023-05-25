@@ -1,10 +1,12 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
-use chrono::{DateTime, FixedOffset};
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 use clap::{Parser, Subcommand};
-use rammingen_protocol::ArchivePath;
+use derive_more::{From, Into};
+use rammingen_protocol::{ArchivePath, DateTimeUtc};
 
-use crate::path::SanitizedLocalPath;
+use crate::{info::DATE_TIME_FORMAT, path::SanitizedLocalPath};
 
 // #[clap(author, version, about, long_about = None)]
 // #[clap(propagate_version = true)]
@@ -28,7 +30,7 @@ pub enum Command {
     Download {
         archive_path: ArchivePath,
         local_path: SanitizedLocalPath,
-        version: Option<DateTime<FixedOffset>>,
+        version: Option<DateTimeArg>,
     },
     LocalStatus {
         path: SanitizedLocalPath,
@@ -59,4 +61,22 @@ pub enum Command {
         archive_path: ArchivePath,
     },
     Status,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, From, Into)]
+pub struct DateTimeArg(pub DateTimeUtc);
+
+impl FromStr for DateTimeArg {
+    type Err = anyhow::Error;
+
+    fn from_str(input: &str) -> Result<Self> {
+        let naive: NaiveDateTime = NaiveDateTime::parse_from_str(input, DATE_TIME_FORMAT)?;
+        Ok(Self(
+            Local
+                .from_local_datetime(&naive)
+                .single()
+                .ok_or_else(|| anyhow!("ambiguous time"))?
+                .into(),
+        ))
+    }
 }

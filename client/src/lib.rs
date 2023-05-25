@@ -93,7 +93,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             version,
         } => {
             let found_any = if let Some(version) = version {
-                download_version(&ctx, &archive_path, &local_path, version.into()).await?
+                download_version(&ctx, &archive_path, &local_path, version.0).await?
             } else {
                 pull_updates(&ctx).await?;
                 download_latest(

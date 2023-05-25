@@ -2,13 +2,13 @@ use std::fmt::Display;
 
 use anyhow::{anyhow, Result};
 use byte_unit::Byte;
+use chrono::{DateTime, Local, SubsecRound, Timelike};
 use futures::TryStreamExt;
 use itertools::Itertools;
 use prettytable::{cell, format::FormatBuilder, row, Table};
 use rammingen_protocol::{
     endpoints::{GetAllEntryVersions, GetDirectChildEntries},
-    util::local_time,
-    ArchivePath, EntryKind,
+    ArchivePath, DateTimeUtc, EntryKind,
 };
 
 use crate::{
@@ -73,7 +73,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     info(format!("path: {}", main_entry.path));
     info(format!(
         "recorded at: {}",
-        local_time(main_entry.recorded_at)
+        pretty_time(main_entry.recorded_at)
     ));
     info(format!("source id: {}", main_entry.source_id.0));
     info(format!("record trigger: {:?}", main_entry.record_trigger));
@@ -86,7 +86,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
                     .ok_or_else(|| anyhow!("missing content for file entry"))?;
                 info(format!(
                     "FS modified at: {}",
-                    local_time(content.modified_at)
+                    pretty_time(content.modified_at)
                 ));
                 info(format!(
                     "original size: {} ({} bytes)",
@@ -139,7 +139,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
             .path
             .last_name()
             .ok_or_else(|| anyhow!("any child entry must have last name (path: {}", entry.path))?;
-        let recorded_at = local_time(entry.recorded_at).format("%Y/%m/%d %H:%M:%S");
+        let recorded_at = pretty_time(entry.recorded_at);
         if entry.kind.is_none() && !show_deleted {
             num_hidden_deleted += 1;
             continue;
@@ -157,6 +157,17 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     }
 
     Ok(())
+}
+
+pub const DATE_TIME_FORMAT: &str = "%Y-%m-%d_%H:%M:%S";
+
+fn pretty_time(value: DateTimeUtc) -> impl Display {
+    let mut local = DateTime::<Local>::from(value);
+    if local.nanosecond() != 0 {
+        local = local.trunc_subsecs(0) + chrono::Duration::seconds(1);
+    }
+
+    local.format(DATE_TIME_FORMAT)
 }
 
 fn pretty_status(data: &DecryptedEntryVersionData) -> Result<String> {
@@ -203,7 +214,7 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
     table.add_row(header);
     while let Some(item) = stream.try_next().await? {
         let data = DecryptedEntryVersionData::new(ctx, item.data)?;
-        let recorded_at = local_time(data.recorded_at).format("%Y/%m/%d %H:%M:%S");
+        let recorded_at = pretty_time(data.recorded_at);
         let status = pretty_status(&data)?;
         let trigger = format!("{:?}", data.record_trigger);
         let mut row = row![recorded_at, status, trigger, data.source_id.0];

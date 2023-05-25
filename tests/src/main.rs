@@ -429,7 +429,7 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
             .download(
                 ctx.archive_mount_path.clone(),
                 download_path.to_str().unwrap().parse()?,
-                Some((*time).into()),
+                Some(*time),
             )
             .await
         {
@@ -514,7 +514,7 @@ impl ClientData {
         &self,
         archive_path: ArchivePath,
         local_path: SanitizedLocalPath,
-        version: Option<DateTime<FixedOffset>>,
+        version: Option<DateTimeUtc>,
     ) -> Result<()> {
         rammingen::run(
             rammingen::cli::Cli {
@@ -522,7 +522,7 @@ impl ClientData {
                 command: rammingen::cli::Command::Download {
                     archive_path,
                     local_path,
-                    version,
+                    version: version.map(Into::into),
                 },
             },
             self.config.clone(),
