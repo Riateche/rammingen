@@ -782,18 +782,6 @@
     },
     "query": "SELECT id, secret FROM sources"
   },
-  "99b324edb838cde08db2718cf670a34c2f1c0cc8fdfaf85bccbe0d645ed42366": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Timestamptz"
-        ]
-      }
-    },
-    "query": "DELETE FROM entry_versions WHERE recorded_at <= $1 AND snapshot_id IS NULL"
-  },
   "ad1e724fbcfd0087189153bf35b3eb9ea912c45f595299c961cadb4b2ec0fc6d": {
     "describe": {
       "columns": [
@@ -932,6 +920,26 @@
       }
     },
     "query": "SELECT * FROM entries WHERE path = $1"
+  },
+  "b4eb33a8d0f0570961fa28da9f3b23fe3150ea6d77dd9688f4ae512529b79eaa": {
+    "describe": {
+      "columns": [
+        {
+          "name": "content_hash",
+          "ordinal": 0,
+          "type_info": "Bytea"
+        }
+      ],
+      "nullable": [
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "DELETE FROM entry_versions\n        WHERE recorded_at <= $1 AND snapshot_id IS NULL\n        RETURNING content_hash"
   },
   "c4672ad9ea39036ce20d2923a353b5ff0b5d7ffbbc3f21bf3a9550e756137895": {
     "describe": {

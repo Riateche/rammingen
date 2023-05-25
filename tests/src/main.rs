@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use chrono::{DateTime, FixedOffset, Utc};
 use clap::{Parser, Subcommand};
 use diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files};
@@ -24,13 +24,13 @@ use rammingen::{
 };
 use rammingen_protocol::{
     util::{log_writer, native_to_archive_relative_path},
-    ArchivePath,
+    ArchivePath, DateTimeUtc,
 };
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use shuffle::{choose_path, random_content, random_name, shuffle};
 use sqlx::{query, PgPool};
 use tempfile::TempDir;
-use tokio::time::sleep;
+use tokio::time::{interval, sleep};
 use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
@@ -157,13 +157,9 @@ async fn try_main() -> Result<()> {
         archive_mount_path,
     };
     match cli.command {
-        Command::Random => {
-            test_random(ctx).await?;
-        }
-        Command::Snapshot => todo!(),
+        Command::Random => test_random(ctx).await,
+        Command::Snapshot => test_snapshot(ctx).await,
     }
-
-    Ok(())
 }
 
 struct Context {
@@ -395,6 +391,106 @@ async fn test_random(ctx: Context) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+async fn test_snapshot(ctx: Context) -> Result<()> {
+    let index = 0;
+    let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
+    let mut interval = interval(Duration::from_secs(1));
+    //let unique_file_path = ctx.clients[index].mount_dir.join("unique_file.txt");
+    for i in 0..30 {
+        interval.tick().await;
+        debug(format!("shuffling mount for client {index}"));
+        // if unique_file_path.exists() {
+        //     remove_dir_or_file(&unique_file_path)?;
+        // }
+        while snapshots
+            .iter()
+            .any(|(path, _)| diff(path, &ctx.clients[index].mount_dir).is_ok())
+        {
+            shuffle(&ctx.clients[index].mount_dir)?;
+        }
+        // write(&unique_file_path, format!("unique content {i}"))?;
+        debug(format!("syncing client {index}"));
+        ctx.clients[index].sync().await?;
+        let snapshot_path = ctx.dir.join(format!("snapshot_{i}"));
+        debug(format!("recording snapshot {i}"));
+        copy_dir_all(&ctx.clients[index].mount_dir, &snapshot_path)?;
+        snapshots.push((snapshot_path, Utc::now()));
+    }
+    let download_path = ctx.dir.join("download");
+    let mut results = Vec::new();
+    for (i, (_, time)) in snapshots.iter().enumerate() {
+        if download_path.exists() {
+            remove_dir_or_file(&download_path)?;
+        }
+        match ctx.clients[index]
+            .download(
+                ctx.archive_mount_path.clone(),
+                download_path.to_str().unwrap().parse()?,
+                Some((*time).into()),
+            )
+            .await
+        {
+            Ok(()) => {
+                let mut same_as = Vec::new();
+                for (i2, (path, time2)) in snapshots.iter().enumerate() {
+                    if diff(&download_path, path).is_ok() {
+                        info(format!(
+                            "download {i} ({time}) is the same as snapshot {i2} ({time2})"
+                        ));
+                        same_as.push(i2);
+                    }
+                }
+                if same_as.len() != 1 {
+                    bail!("expected result to be the same as exactly one snapshot");
+                }
+                results.push(Some(same_as[0]));
+            }
+            Err(err) => {
+                debug(format!("cannot download {i} ({time}): {err:?}"));
+                results.push(None);
+            }
+        }
+    }
+    // Expected snapshots: after i = 4, 9, 14.
+    assert_eq!(
+        results,
+        vec![
+            // No info because the first snapshot (after i = 4) removes all previous versions.
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(4),
+            Some(4),
+            Some(4),
+            Some(4),
+            Some(4),
+            Some(9),
+            Some(9),
+            Some(9),
+            Some(9),
+            Some(9),
+            Some(15),
+            Some(16),
+            Some(17),
+            Some(18),
+            Some(19),
+            Some(20),
+            Some(21),
+            Some(22),
+            Some(23),
+            Some(24),
+            Some(25),
+            Some(26),
+            Some(27),
+            Some(28),
+            Some(29),
+        ]
+    );
     Ok(())
 }
 

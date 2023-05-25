@@ -50,13 +50,23 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     .await?;
     let num_added = versions.len();
 
-    let num_deleted = query!(
-        "DELETE FROM entry_versions WHERE recorded_at <= $1 AND snapshot_id IS NULL",
-        next_snapshot_timestamp_db,
-    )
-    .execute(&mut tx)
-    .await?
-    .rows_affected();
+    let mut hashes_to_check = HashSet::new();
+    let mut num_deleted = 0;
+    {
+        let mut deleted_rows = query_scalar!(
+            "DELETE FROM entry_versions
+        WHERE recorded_at <= $1 AND snapshot_id IS NULL
+        RETURNING content_hash",
+            next_snapshot_timestamp_db,
+        )
+        .fetch(&mut tx);
+        while let Some(hash) = deleted_rows.try_next().await? {
+            num_deleted += 1;
+            if let Some(hash) = hash {
+                hashes_to_check.insert(hash);
+            }
+        }
+    }
 
     let snapshot_id = query_scalar!(
         "INSERT INTO snapshots(timestamp) VALUES ($1) RETURNING id",
@@ -65,7 +75,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     .fetch_one(&mut tx)
     .await?;
 
-    let mut hashes_to_remove = HashSet::new();
+    let mut hashes_to_remove = Vec::new();
     for version in versions {
         query!("
             INSERT INTO entry_versions (
@@ -90,19 +100,19 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         ).execute(&mut tx)
         .await?;
         if let Some(hash) = version.content_hash {
-            if hashes_to_remove.contains(&hash) {
-                continue;
-            }
-            let exists = query_scalar!(
-                "SELECT 1 FROM entry_versions WHERE content_hash = $1 LIMIT 1",
-                hash
-            )
-            .fetch_optional(&mut tx)
-            .await?
-            .is_some();
-            if !exists {
-                hashes_to_remove.insert(hash);
-            }
+            hashes_to_check.insert(hash);
+        }
+    }
+    for hash in hashes_to_check {
+        let exists = query_scalar!(
+            "SELECT 1 FROM entry_versions WHERE content_hash = $1 LIMIT 1",
+            hash
+        )
+        .fetch_optional(&mut tx)
+        .await?
+        .is_some();
+        if !exists {
+            hashes_to_remove.push(hash);
         }
     }
 
