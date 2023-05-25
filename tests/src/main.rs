@@ -10,13 +10,13 @@ use std::{
 
 use anyhow::Result;
 use chrono::{DateTime, FixedOffset, Utc};
+use clap::{Parser, Subcommand};
 use diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files};
 use fs_err::{
     copy, create_dir, create_dir_all, read_dir, remove_dir_all, remove_file, rename, write,
 };
 use portpicker::pick_unused_port;
 use rammingen::{
-    cli::{Cli, Command},
     config::{EncryptionKey, MountPoint},
     path::SanitizedLocalPath,
     rules::Rule,
@@ -55,9 +55,24 @@ async fn main() {
     }
 }
 
+#[derive(Debug, Parser)]
+pub struct Cli {
+    #[clap(long)]
+    pub database_url: String,
+    #[clap(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum Command {
+    Random,
+    Snapshot,
+}
+
 async fn try_main() -> Result<()> {
     // TODO: remove into_path
     let dir = TempDir::new()?.into_path();
+    let cli = Cli::parse();
 
     tracing_subscriber::fmt()
         .with_writer(Mutex::new(log_writer(Some(&dir.join("1.log")))?))
@@ -65,8 +80,7 @@ async fn try_main() -> Result<()> {
         .finish()
         .init();
 
-    let database_url = std::env::args().nth(1).expect("missing arg");
-    rammingen_server::migrate(&database_url).await?;
+    rammingen_server::migrate(&cli.database_url).await?;
 
     debug(format!("dir: {}", dir.display()));
     let storage_path = dir.join("storage");
@@ -75,12 +89,18 @@ async fn try_main() -> Result<()> {
     let port = pick_unused_port().expect("failed to pick port");
     let server_config = rammingen_server::Config {
         bind_addr: SocketAddr::new("127.0.0.1".parse()?, port),
-        database_url: database_url.clone(),
+        database_url: cli.database_url.clone(),
         storage_path,
         log_file: None,
         log_filter: String::new(),
-        retain_detailed_history_for: Duration::from_secs(60),
-        snapshot_interval: Duration::from_secs(60),
+        retain_detailed_history_for: match &cli.command {
+            Command::Random => Duration::from_secs(3600),
+            Command::Snapshot => Duration::from_secs(10),
+        },
+        snapshot_interval: match &cli.command {
+            Command::Random => Duration::from_secs(3600),
+            Command::Snapshot => Duration::from_secs(5),
+        },
     };
     write(
         &dir.join("server_config.json5"),
@@ -88,7 +108,7 @@ async fn try_main() -> Result<()> {
     )?;
 
     let encryption_key = EncryptionKey::generate();
-    let db_pool = PgPool::connect(&database_url).await?;
+    let db_pool = PgPool::connect(&cli.database_url).await?;
     let mut clients = Vec::new();
     let archive_mount_path: ArchivePath = "ar:/my_files".parse()?;
     for client_index in 0..3 {
@@ -121,6 +141,7 @@ async fn try_main() -> Result<()> {
             .execute(&db_pool)
             .await?;
     }
+    drop(db_pool);
 
     tokio::spawn(async move {
         if let Err(err) = rammingen_server::run(server_config).await {
@@ -130,17 +151,39 @@ async fn try_main() -> Result<()> {
         }
     });
 
-    let old_snapshot_path = dir.join("old_snapshot");
+    let ctx = Context {
+        clients,
+        dir,
+        archive_mount_path,
+    };
+    match cli.command {
+        Command::Random => {
+            test_random(ctx).await?;
+        }
+        Command::Snapshot => todo!(),
+    }
+
+    Ok(())
+}
+
+struct Context {
+    clients: Vec<ClientData>,
+    dir: PathBuf,
+    archive_mount_path: ArchivePath,
+}
+
+async fn test_random(ctx: Context) -> Result<()> {
+    let old_snapshot_path = ctx.dir.join("old_snapshot");
     let mut snapshot_time: Option<DateTime<Utc>> = None;
     'outer: for _ in 0..1000 {
         if thread_rng().gen_bool(0.2) {
             // mutate through server command
-            let expected = dir.join("expected");
+            let expected = ctx.dir.join("expected");
             if expected.exists() {
                 remove_dir_or_file(&expected)?;
             }
-            copy_dir_all(&clients[0].mount_dir, &expected)?;
-            let client1 = clients.choose(&mut thread_rng()).unwrap();
+            copy_dir_all(&ctx.clients[0].mount_dir, &expected)?;
+            let client1 = ctx.clients.choose(&mut thread_rng()).unwrap();
             match thread_rng().gen_range(0..=4) {
                 0 => {
                     // reset
@@ -153,7 +196,7 @@ async fn try_main() -> Result<()> {
                         continue;
                     }
                     let archive_path =
-                        archive_subpath(&archive_mount_path, &old_snapshot_path, &local_path)?;
+                        archive_subpath(&ctx.archive_mount_path, &old_snapshot_path, &local_path)?;
                     let path_in_expected = if local_path == old_snapshot_path {
                         expected.clone()
                     } else {
@@ -182,7 +225,7 @@ async fn try_main() -> Result<()> {
                 }
                 1 => {
                     // upload new path
-                    let path_for_upload = dir.join("for_upload");
+                    let path_for_upload = ctx.dir.join("for_upload");
                     if path_for_upload.exists() {
                         remove_dir_or_file(&path_for_upload)?;
                     }
@@ -203,7 +246,7 @@ async fn try_main() -> Result<()> {
                         copy(&path_for_upload, &path_in_expected)?;
                     }
                     let archive_path =
-                        archive_subpath(&archive_mount_path, &expected, &path_in_expected)?;
+                        archive_subpath(&ctx.archive_mount_path, &expected, &path_in_expected)?;
                     debug(format!("Checking upload ({archive_path})"));
                     client1
                         .upload(SanitizedLocalPath::new(&path_for_upload)?, archive_path)
@@ -220,8 +263,9 @@ async fn try_main() -> Result<()> {
                         continue;
                     }
                     rename(&path1, &path2)?;
-                    let archive_path = archive_subpath(&archive_mount_path, &expected, &path1)?;
-                    let new_archive_path = archive_subpath(&archive_mount_path, &expected, &path2)?;
+                    let archive_path = archive_subpath(&ctx.archive_mount_path, &expected, &path1)?;
+                    let new_archive_path =
+                        archive_subpath(&ctx.archive_mount_path, &expected, &path2)?;
                     debug(format!(
                         "Checking mv ({archive_path} -> {new_archive_path})"
                     ));
@@ -236,14 +280,14 @@ async fn try_main() -> Result<()> {
                         continue;
                     }
                     remove_dir_or_file(&path1)?;
-                    let archive_path = archive_subpath(&archive_mount_path, &expected, &path1)?;
+                    let archive_path = archive_subpath(&ctx.archive_mount_path, &expected, &path1)?;
                     debug(format!("Checking rm {archive_path}"));
                     client1.remove_path(archive_path).await?;
                 }
                 4 => {
                     // simultaneous edit of two mounts
                     let two_clients: Vec<_> =
-                        clients.choose_multiple(&mut thread_rng(), 2).collect();
+                        ctx.clients.choose_multiple(&mut thread_rng(), 2).collect();
                     let mut chosen_paths = Vec::<(PathBuf, PathBuf)>::new();
                     info("Checking simultaneous edit");
                     for client in &two_clients {
@@ -291,23 +335,23 @@ async fn try_main() -> Result<()> {
                 }
                 _ => unreachable!(),
             }
-            for client in &clients {
+            for client in &ctx.clients {
                 client.sync().await?;
                 diff(&expected, &client.mount_dir)?;
             }
         } else {
             // edit mount
-            let index = thread_rng().gen_range(0..clients.len());
+            let index = thread_rng().gen_range(0..ctx.clients.len());
             for _ in 0..thread_rng().gen_range(1..=3) {
                 debug(format!("shuffling mount for client {index}"));
-                shuffle(&clients[index].mount_dir)?;
+                shuffle(&ctx.clients[index].mount_dir)?;
                 debug(format!("syncing client {index}"));
-                clients[index].sync().await?;
+                ctx.clients[index].sync().await?;
             }
-            for (index2, client) in clients.iter().enumerate() {
+            for (index2, client) in ctx.clients.iter().enumerate() {
                 if index2 != index {
                     debug(format!("syncing client {index2}"));
-                    let before_sync_snapshot = dir.join("snapshot");
+                    let before_sync_snapshot = ctx.dir.join("snapshot");
                     if before_sync_snapshot.exists() {
                         remove_dir_all(&before_sync_snapshot)?;
                     }
@@ -316,24 +360,24 @@ async fn try_main() -> Result<()> {
                     diff_ignored(&client.mount_dir, &before_sync_snapshot)?;
                 }
             }
-            for client in &clients[1..] {
-                diff(&clients[0].mount_dir, &client.mount_dir)?;
+            for client in &ctx.clients[1..] {
+                diff(&ctx.clients[0].mount_dir, &client.mount_dir)?;
             }
         }
         check_download(
-            &dir,
-            &archive_mount_path,
-            &clients,
+            &ctx.dir,
+            &ctx.archive_mount_path,
+            &ctx.clients,
             None,
-            &clients.choose(&mut thread_rng()).unwrap().mount_dir,
+            &ctx.clients.choose(&mut thread_rng()).unwrap().mount_dir,
         )
         .await?;
         if thread_rng().gen_bool(0.3) {
             if let Some(snapshot_time_value) = snapshot_time {
                 check_download(
-                    &dir,
-                    &archive_mount_path,
-                    &clients,
+                    &ctx.dir,
+                    &ctx.archive_mount_path,
+                    &ctx.clients,
                     Some(snapshot_time_value),
                     &old_snapshot_path,
                 )
@@ -346,12 +390,11 @@ async fn try_main() -> Result<()> {
                 if old_snapshot_path.exists() {
                     remove_dir_or_file(&old_snapshot_path)?;
                 }
-                copy_dir_all(&clients[0].mount_dir, &old_snapshot_path)?;
+                copy_dir_all(&ctx.clients[0].mount_dir, &old_snapshot_path)?;
                 sleep(Duration::from_millis(500)).await;
             }
         }
     }
-
     Ok(())
 }
 
@@ -363,9 +406,9 @@ struct ClientData {
 impl ClientData {
     async fn sync(&self) -> Result<()> {
         rammingen::run(
-            Cli {
+            rammingen::cli::Cli {
                 config: None,
-                command: Command::Sync,
+                command: rammingen::cli::Command::Sync,
             },
             self.config.clone(),
         )
@@ -378,9 +421,9 @@ impl ClientData {
         version: Option<DateTime<FixedOffset>>,
     ) -> Result<()> {
         rammingen::run(
-            Cli {
+            rammingen::cli::Cli {
                 config: None,
-                command: Command::Download {
+                command: rammingen::cli::Command::Download {
                     archive_path,
                     local_path,
                     version,
@@ -396,9 +439,9 @@ impl ClientData {
         archive_path: ArchivePath,
     ) -> Result<()> {
         rammingen::run(
-            Cli {
+            rammingen::cli::Cli {
                 config: None,
-                command: Command::Upload {
+                command: rammingen::cli::Command::Upload {
                     local_path,
                     archive_path,
                 },
@@ -413,9 +456,9 @@ impl ClientData {
         new_archive_path: ArchivePath,
     ) -> Result<()> {
         rammingen::run(
-            Cli {
+            rammingen::cli::Cli {
                 config: None,
-                command: Command::Move {
+                command: rammingen::cli::Command::Move {
                     old_path: archive_path,
                     new_path: new_archive_path,
                 },
@@ -426,9 +469,9 @@ impl ClientData {
     }
     async fn remove_path(&self, archive_path: ArchivePath) -> Result<()> {
         rammingen::run(
-            Cli {
+            rammingen::cli::Cli {
                 config: None,
-                command: Command::Remove { archive_path },
+                command: rammingen::cli::Command::Remove { archive_path },
             },
             self.config.clone(),
         )
@@ -436,9 +479,9 @@ impl ClientData {
     }
     async fn reset(&self, archive_path: ArchivePath, version: DateTime<FixedOffset>) -> Result<()> {
         rammingen::run(
-            Cli {
+            rammingen::cli::Cli {
                 config: None,
-                command: Command::Reset {
+                command: rammingen::cli::Command::Reset {
                     archive_path,
                     version,
                 },
