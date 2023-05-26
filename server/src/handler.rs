@@ -181,6 +181,19 @@ async fn add_version_inner<'a>(
     request: AddVersion,
     tx: &'a mut Transaction<'_, Postgres>,
 ) -> Result<Response<AddVersion>> {
+    if let Some(content) = &request.content {
+        if !ctx.storage.exists(&content.hash)? {
+            bail!("cannot add version: hash not found in storage");
+        }
+        let storage_size = ctx.storage.file_size(&content.hash)?;
+        if content.encrypted_size != storage_size {
+            bail!(
+                "cannot add version: size mismatch: {} in request, {} in storage",
+                content.encrypted_size,
+                storage_size
+            );
+        }
+    }
     let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0 .0)
         .fetch_optional(&mut *tx)
         .await?;

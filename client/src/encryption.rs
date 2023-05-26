@@ -29,7 +29,6 @@ fn nonce_size() -> usize {
 
 struct HashingWriter<W> {
     hasher: Sha256,
-    size: u64,
     inner: W,
 }
 
@@ -37,7 +36,6 @@ impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let len = self.inner.write(buf)?;
         self.hasher.update(buf);
-        self.size += buf.len() as u64;
         Ok(len)
     }
 
@@ -51,7 +49,6 @@ impl<W> HashingWriter<W> {
         Self {
             hasher: Sha256::new(),
             inner,
-            size: 0,
         }
     }
 }
@@ -60,13 +57,14 @@ struct EncryptingWriter<'a, W> {
     buf: Vec<u8>,
     output: W,
     cipher: &'a Aes256SivAead,
+    encrypted_size: u64,
 }
 
 impl<'a, W: Write> EncryptingWriter<'a, W> {
-    fn finish(mut self) -> io::Result<W> {
+    fn finish(mut self) -> io::Result<(W, u64)> {
         self.write_block()?;
         self.output.flush()?;
-        Ok(self.output)
+        Ok((self.output, self.encrypted_size))
     }
 }
 
@@ -88,6 +86,7 @@ impl<'a, W: Write> EncryptingWriter<'a, W> {
         self.output.write_u32::<LE>(output_size as u32)?;
         self.output.write_all(&nonce)?;
         self.output.write_all(&ciphertext)?;
+        self.encrypted_size += 4 + output_size as u64;
 
         self.buf.drain(..input_len);
 
@@ -124,14 +123,14 @@ pub fn encrypt_file(path: impl AsRef<Path>, cipher: &Aes256SivAead) -> Result<En
         buf: Vec::new(),
         output: &mut output,
         cipher,
+        encrypted_size: 4,
     };
     let mut encoder = DeflateEncoder::new(&mut encryptor, CompressionOptions::high());
     let mut hasher = HashingWriter::new(&mut encoder);
     let original_size = io::copy(&mut file, &mut hasher)?;
     let hash = ContentHash(hasher.hasher.finalize().to_vec());
-    let encrypted_size = hasher.size;
     encoder.finish()?;
-    encryptor.finish()?;
+    let (_, encrypted_size) = encryptor.finish()?;
     Ok(EncryptedFileData {
         file: output,
         hash,

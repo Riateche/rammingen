@@ -68,6 +68,11 @@ impl Storage {
         try_exists(path)
     }
 
+    pub fn file_size(&self, hash: &EncryptedContentHash) -> Result<u64> {
+        let (_, path) = storage_paths(&self.root, hash);
+        Ok(symlink_metadata(path)?.len())
+    }
+
     pub fn available_space(&self) -> Result<u64> {
         Ok(available_space(&self.root)?)
     }
