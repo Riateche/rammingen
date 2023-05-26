@@ -40,7 +40,7 @@ pub fn generate_access_token() -> String {
     Alphanumeric.sample_string(&mut OsRng, 64)
 }
 
-pub async fn migrate(db: &PgPool) -> anyhow::Result<()> {
+pub async fn migrate(db: &PgPool) -> Result<()> {
     sqlx::migrate!().run(db).await?;
     Ok(())
 }

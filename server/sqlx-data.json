@@ -967,6 +967,30 @@
     },
     "query": "DELETE FROM entry_versions\n        WHERE recorded_at <= $1 AND snapshot_id IS NULL\n        RETURNING content_hash"
   },
+  "c126b79e8e76ef2c3056410487c6373efdfd204a55e59d491d2efaf73f9554fd": {
+    "describe": {
+      "columns": [
+        {
+          "name": "encrypted_size",
+          "ordinal": 0,
+          "type_info": "Int8"
+        },
+        {
+          "name": "content_hash",
+          "ordinal": 1,
+          "type_info": "Bytea"
+        }
+      ],
+      "nullable": [
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT encrypted_size, content_hash FROM entry_versions WHERE content_hash IS NOT NULL"
+  },
   "c4672ad9ea39036ce20d2923a353b5ff0b5d7ffbbc3f21bf3a9550e756137895": {
     "describe": {
       "columns": [],

@@ -61,6 +61,7 @@ pub enum Command {
         archive_path: ArchivePath,
     },
     Status,
+    CheckIntegrity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, From, Into)]

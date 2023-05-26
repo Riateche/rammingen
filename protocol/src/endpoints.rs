@@ -128,6 +128,7 @@ response_type!(RemovePath, BulkActionStats);
 pub struct ContentHashExists(pub EncryptedContentHash);
 response_type!(ContentHashExists, bool);
 
+/// Returns available space on server.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetServerStatus;
 response_type!(GetServerStatus, ServerStatus);
@@ -136,3 +137,8 @@ response_type!(GetServerStatus, ServerStatus);
 pub struct ServerStatus {
     pub available_space: u64,
 }
+
+/// Checks that file storage is consistent with database.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckIntegrity;
+response_type!(CheckIntegrity, ());

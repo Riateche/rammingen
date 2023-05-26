@@ -1,8 +1,9 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use fs2::available_space;
-use fs_err::{create_dir_all, remove_file, rename, File};
+use fs_err::{create_dir_all, read_dir, remove_file, rename, symlink_metadata, File};
 use rammingen_protocol::{util::try_exists, EncryptedContentHash};
 use std::{
+    collections::HashMap,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -69,6 +70,42 @@ impl Storage {
 
     pub fn available_space(&self) -> Result<u64> {
         Ok(available_space(&self.root)?)
+    }
+
+    pub fn all_hashes_and_sizes(&self) -> Result<HashMap<EncryptedContentHash, u64>> {
+        let mut map = HashMap::new();
+        self.add_hashes_and_sizes(&self.root, &mut map)?;
+        Ok(map)
+    }
+
+    fn add_hashes_and_sizes(
+        &self,
+        dir: &Path,
+        out: &mut HashMap<EncryptedContentHash, u64>,
+    ) -> Result<()> {
+        for entry in read_dir(dir)? {
+            let path = entry?.path();
+            if path == self.tmp {
+                continue;
+            }
+            let meta = symlink_metadata(&path)?;
+            if meta.is_symlink() {
+                bail!("unexpected symlink");
+            }
+            if meta.is_dir() {
+                self.add_hashes_and_sizes(&path, out)?;
+            } else {
+                let name = path
+                    .file_name()
+                    .ok_or_else(|| anyhow!("found path without file name: {:?}", path))?
+                    .to_str()
+                    .ok_or_else(|| anyhow!("invalid file name: {:?}", path))?;
+                let hash = EncryptedContentHash::from_url_safe(name)?;
+                let size = meta.len();
+                out.insert(hash, size);
+            }
+        }
+        Ok(())
     }
 }
 

@@ -31,7 +31,9 @@ use download::{download_latest, download_version};
 use encryption::encrypt_path;
 use info::{list_versions, pretty_size};
 use path::SanitizedLocalPath;
-use rammingen_protocol::endpoints::{GetServerStatus, MovePath, RemovePath, ResetVersion};
+use rammingen_protocol::endpoints::{
+    CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion,
+};
 use rules::Rules;
 use std::{collections::HashSet, sync::Arc};
 use sync::sync;
@@ -156,6 +158,10 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                 "Available space on server: {}",
                 pretty_size(status.available_space)
             ));
+        }
+        cli::Command::CheckIntegrity => {
+            ctx.client.request(&CheckIntegrity).await?;
+            info("It's fine.");
         }
     }
 

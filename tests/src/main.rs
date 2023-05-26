@@ -387,6 +387,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                 sleep(Duration::from_millis(500)).await;
             }
         }
+        ctx.clients[0].check_integrity().await?;
     }
     Ok(())
 }
@@ -415,6 +416,7 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
         debug(format!("recording snapshot {i}"));
         copy_dir_all(&ctx.clients[index].mount_dir, &snapshot_path)?;
         snapshots.push((snapshot_path, Utc::now()));
+        ctx.clients[0].check_integrity().await?;
     }
     let download_path = ctx.dir.join("download");
     let mut results = Vec::new();
@@ -578,6 +580,16 @@ impl ClientData {
                     archive_path,
                     version,
                 },
+            },
+            self.config.clone(),
+        )
+        .await
+    }
+    async fn check_integrity(&self) -> Result<()> {
+        rammingen::run(
+            rammingen::cli::Cli {
+                config: None,
+                command: rammingen::cli::Command::CheckIntegrity,
             },
             self.config.clone(),
         )

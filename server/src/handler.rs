@@ -1,12 +1,14 @@
+use std::collections::HashMap;
 use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::endpoints::{
-    AddVersion, AddVersionResponse, BulkActionStats, ContentHashExists, GetAllEntryVersions,
-    GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries, GetServerStatus, MovePath,
-    RemovePath, ResetVersion, Response, ServerStatus, StreamingResponseItem,
+    AddVersion, AddVersionResponse, BulkActionStats, CheckIntegrity, ContentHashExists,
+    GetAllEntryVersions, GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries,
+    GetServerStatus, MovePath, RemovePath, ResetVersion, Response, ServerStatus,
+    StreamingResponseItem,
 };
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath,
@@ -584,6 +586,51 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
     }
     tx.commit().await?;
     Ok(BulkActionStats { affected_paths })
+}
+
+pub async fn check_integrity(
+    ctx: Context,
+    _request: CheckIntegrity,
+) -> Result<Response<CheckIntegrity>> {
+    let mut db_hashes = HashMap::new();
+    let mut rows = query!(
+        "SELECT encrypted_size, content_hash FROM entry_versions WHERE content_hash IS NOT NULL"
+    )
+    .fetch(&ctx.db_pool);
+    while let Some(row) = rows.try_next().await? {
+        let hash = EncryptedContentHash(
+            row.content_hash
+                .ok_or_else(|| anyhow!("expected hash to exist in query output"))?,
+        );
+        let size: u64 = row
+            .encrypted_size
+            .ok_or_else(|| anyhow!("expected size to exist in query output"))?
+            .try_into()?;
+        db_hashes.insert(hash, size);
+    }
+
+    let storage_hashes = ctx.storage.all_hashes_and_sizes()?;
+    for (hash, size) in &db_hashes {
+        if let Some(size2) = storage_hashes.get(hash) {
+            if size != size2 {
+                bail!(
+                    "size mismatch for hash {}: {} in db, {} in storage",
+                    hash.to_url_safe(),
+                    size,
+                    size2
+                );
+            }
+        } else {
+            bail!("hash not found in storage: {}", hash.to_url_safe());
+        }
+    }
+    for hash in storage_hashes.keys() {
+        if !db_hashes.contains_key(hash) {
+            bail!("hash not found in db: {}", hash.to_url_safe());
+        }
+    }
+
+    Ok(())
 }
 
 pub trait ToDb {
