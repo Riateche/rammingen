@@ -1063,6 +1063,24 @@
     },
     "query": "SELECT id FROM entries\n        WHERE (path = $1 OR path LIKE $2) AND kind > 0\n        ORDER BY path DESC"
   },
+  "fa2b6a95b40cd777df16cacca694b2825b3357875c942f8b64864fa3982f45f3": {
+    "describe": {
+      "columns": [
+        {
+          "name": "name",
+          "ordinal": 0,
+          "type_info": "Varchar"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT name FROM sources ORDER BY name"
+  },
   "fb5d51955b7e5f84f94dcaebb2b1d83dd709ccaf5fd734ad9c4840265fbfad4f": {
     "describe": {
       "columns": [

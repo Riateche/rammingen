@@ -1,6 +1,13 @@
 use anyhow::{bail, Result};
 use rand::{distributions::Alphanumeric, distributions::DistString, rngs::OsRng};
-use sqlx::{query, PgPool};
+use sqlx::{query, query_scalar, PgPool};
+
+pub async fn sources(db: &PgPool) -> Result<Vec<String>> {
+    query_scalar!("SELECT name FROM sources ORDER BY name")
+        .fetch_all(db)
+        .await
+        .map_err(Into::into)
+}
 
 pub async fn add_source(db: &PgPool, name: &str, access_token: &str) -> Result<()> {
     query!(
