@@ -22,7 +22,7 @@ async fn try_main() -> Result<()> {
         config.clone()
     } else {
         let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
-        config_dir.join("rammingen.json5")
+        config_dir.join("rammingen.conf")
     };
     let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
     rammingen::run(cli, config).await?;

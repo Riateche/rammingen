@@ -6,6 +6,7 @@ use rammingen_server::{
     Config,
 };
 use sqlx::PgPool;
+
 #[derive(Debug, Parser)]
 pub struct Cli {
     #[clap(long)]

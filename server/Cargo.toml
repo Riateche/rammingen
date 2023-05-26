@@ -37,3 +37,4 @@ fs2 = "0.4.3"
 humantime-serde = "1.1.1"
 clap = { version = "4.2.1", features = ["derive"] }
 rand = "0.8.5"
+dirs = "5.0.1"

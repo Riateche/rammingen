@@ -105,7 +105,7 @@ async fn try_main() -> Result<()> {
         },
     };
     write(
-        &dir.join("server_config.json5"),
+        &dir.join("rammingen-server.conf"),
         json5::to_string(&server_config)?,
     )?;
 
@@ -132,7 +132,7 @@ async fn try_main() -> Result<()> {
             token: access_token.clone(),
             local_db_path: Some(client_dir.join("db")),
         };
-        let config_path = client_dir.join("config.json5");
+        let config_path = client_dir.join("rammingen.conf");
         write(&config_path, json5::to_string(&config)?)?;
         clients.push(ClientData { config, mount_dir });
 
