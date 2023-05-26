@@ -68,7 +68,6 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         cli::Command::Sync => {
             sync(&ctx).await?;
         }
-        cli::Command::DryRun => todo!(),
         cli::Command::Upload {
             local_path,
             archive_path,
@@ -113,10 +112,6 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         }
         cli::Command::LocalStatus { path } => local_status(&ctx, &path).await?,
         cli::Command::Ls { path, deleted } => ls(&ctx, &path, deleted).await?,
-        cli::Command::History {
-            archive_path,
-            time_spec,
-        } => todo!(),
         cli::Command::Reset {
             archive_path,
             version,
@@ -149,7 +144,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                 .await?;
             info(format!("{:?}", stats));
         }
-        cli::Command::Versions { path, recursive } => {
+        cli::Command::History { path, recursive } => {
             list_versions(&ctx, &path, recursive).await?;
         }
         cli::Command::Status => {
@@ -163,6 +158,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             ctx.client.request(&CheckIntegrity).await?;
             info("It's fine.");
         }
+        cli::Command::GenerateEncryptionKey => unreachable!(),
     }
 
     #[allow(unreachable_code)]

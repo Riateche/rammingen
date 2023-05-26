@@ -22,7 +22,6 @@ pub struct Cli {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     Sync,
-    DryRun,
     Upload {
         local_path: SanitizedLocalPath,
         archive_path: ArchivePath,
@@ -40,14 +39,10 @@ pub enum Command {
         #[arg(short, long)]
         deleted: bool,
     },
-    Versions {
+    History {
         path: ArchivePath,
         #[arg(short, long)]
         recursive: bool,
-    },
-    History {
-        archive_path: ArchivePath,
-        time_spec: String, // TODO
     },
     Reset {
         archive_path: ArchivePath,
@@ -62,6 +57,7 @@ pub enum Command {
     },
     Status,
     CheckIntegrity,
+    GenerateEncryptionKey,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, From, Into)]

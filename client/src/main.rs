@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Result};
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use clap::Parser;
 use rammingen::{
-    cli::Cli,
-    config::Config,
+    cli::{Cli, Command},
+    config::{Config, EncryptionKey},
     term::{clear_status, error},
 };
 
@@ -17,6 +18,11 @@ async fn main() {
 
 async fn try_main() -> Result<()> {
     let cli = Cli::parse();
+    if cli.command == Command::GenerateEncryptionKey {
+        let key = EncryptionKey::generate();
+        println!("{}", BASE64_URL_SAFE_NO_PAD.encode(key.0));
+        return Ok(());
+    }
 
     let config_path = if let Some(config) = &cli.config {
         config.clone()
