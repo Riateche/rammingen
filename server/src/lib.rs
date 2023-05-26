@@ -1,7 +1,12 @@
 #![allow(clippy::collapsible_else_if)]
 
 use std::{
-    cmp::min, collections::HashMap, convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc,
+    cmp::min,
+    collections::HashMap,
+    convert::Infallible,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
@@ -42,6 +47,7 @@ mod content_streaming;
 mod handler;
 mod snapshot;
 pub mod storage;
+pub mod util;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -56,6 +62,12 @@ pub struct Config {
     pub snapshot_interval: Duration,
     #[serde(with = "humantime_serde")]
     pub retain_detailed_history_for: Duration,
+}
+
+impl Config {
+    pub fn parse(config_path: impl AsRef<Path>) -> Result<Self> {
+        Ok(json5::from_str(&fs_err::read_to_string(config_path)?)?)
+    }
 }
 
 fn default_log_filter() -> String {
@@ -329,10 +341,4 @@ fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<Sour
         .get(secret)
         .copied()
         .ok_or_else(|| anyhow!("invalid bearer token"))
-}
-
-pub async fn migrate(db_url: &str) -> anyhow::Result<()> {
-    let pool = PgPool::connect(db_url).await?;
-    sqlx::migrate!().run(&pool).await?;
-    Ok(())
 }

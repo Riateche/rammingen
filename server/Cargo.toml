@@ -2,7 +2,15 @@
 name = "rammingen_server"
 version = "0.1.0"
 edition = "2021"
-default-run = "rammingen_server"
+default-run = "rammingen-server"
+
+[[bin]]
+name = "rammingen-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "rammingen-admin"
+path = "src/bin/admin.rs"
 
 [dependencies]
 rammingen_protocol = { path = "../protocol" }
@@ -27,3 +35,5 @@ tokio-stream = "0.1.12"
 bytes = "1.4.0"
 fs2 = "0.4.3"
 humantime-serde = "1.1.1"
+clap = { version = "4.2.1", features = ["derive"] }
+rand = "0.8.5"

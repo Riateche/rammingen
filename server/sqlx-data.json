@@ -236,6 +236,19 @@
     },
     "query": "SELECT * FROM entry_versions\n            WHERE path = $1 OR path LIKE $2\n            ORDER BY id"
   },
+  "400a8aa60e4025b0b932de2c0517fd152191b9fb45dd36d93969c07934fe06fc": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Varchar",
+          "Varchar"
+        ]
+      }
+    },
+    "query": "INSERT INTO sources (name, secret) VALUES ($1, $2)"
+  },
   "4434ec55fe50b6d17c0bb8fc0ae7322c76016f3d48f044b25497e48a98c7576f": {
     "describe": {
       "columns": [
@@ -742,6 +755,19 @@
       }
     },
     "query": "SELECT * FROM entries WHERE parent_dir = $1 ORDER BY path"
+  },
+  "91295c28aa477ee14dc55de5481824ca6d11cc31dce4e913ca5415536d59058a": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Varchar",
+          "Text"
+        ]
+      }
+    },
+    "query": "UPDATE sources SET secret = $1 WHERE name = $2"
   },
   "93f2f96d0a5b1247557cc869e02c14b6b17630eeac13136cd3ec5dfa5d51ac09": {
     "describe": {

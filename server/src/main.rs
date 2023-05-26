@@ -7,7 +7,7 @@ use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
 #[tokio::main]
 async fn main() -> Result<()> {
     let config_path = env::args().nth(1).expect("missing config arg");
-    let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
+    let config = Config::parse(&config_path)?;
 
     tracing_subscriber::fmt()
         .with_writer(Mutex::new(log_writer(config.log_file.as_deref())?))

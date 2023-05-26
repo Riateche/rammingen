@@ -26,9 +26,10 @@ use rammingen_protocol::{
     util::{log_writer, native_to_archive_relative_path},
     ArchivePath, DateTimeUtc,
 };
+use rammingen_server::util::{add_source, generate_access_token, migrate};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use shuffle::{choose_path, random_content, random_name, shuffle};
-use sqlx::{query, PgPool};
+use sqlx::PgPool;
 use tempfile::TempDir;
 use tokio::time::{interval, sleep};
 use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
@@ -80,7 +81,8 @@ async fn try_main() -> Result<()> {
         .finish()
         .init();
 
-    rammingen_server::migrate(&cli.database_url).await?;
+    let db_pool = PgPool::connect(&cli.database_url).await?;
+    migrate(&db_pool).await?;
 
     debug(format!("dir: {}", dir.display()));
     let storage_path = dir.join("storage");
@@ -108,14 +110,13 @@ async fn try_main() -> Result<()> {
     )?;
 
     let encryption_key = EncryptionKey::generate();
-    let db_pool = PgPool::connect(&cli.database_url).await?;
     let mut clients = Vec::new();
     let archive_mount_path: ArchivePath = "ar:/my_files".parse()?;
     for client_index in 0..3 {
         let client_dir = dir.join(format!("client{client_index}"));
         let mount_dir = client_dir.join("mount1");
         create_dir_all(&mount_dir)?;
-        let token = format!("token{client_index}");
+        let access_token = generate_access_token();
         let config = rammingen::config::Config {
             always_exclude: vec![
                 Rule::NameEquals("target".into()),
@@ -128,18 +129,14 @@ async fn try_main() -> Result<()> {
             }],
             encryption_key: encryption_key.clone(),
             server_url: format!("http://127.0.0.1:{port}/").parse()?,
-            token: token.clone(),
+            token: access_token.clone(),
             local_db_path: Some(client_dir.join("db")),
         };
         let config_path = client_dir.join("config.json5");
         write(&config_path, json5::to_string(&config)?)?;
         clients.push(ClientData { config, mount_dir });
 
-        query("INSERT INTO sources(name, secret) VALUES ($1, $2)")
-            .bind(format!("client{client_index}"))
-            .bind(token)
-            .execute(&db_pool)
-            .await?;
+        add_source(&db_pool, &format!("client{client_index}"), &access_token).await?;
     }
     drop(db_pool);
 
