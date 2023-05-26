@@ -1,5 +1,11 @@
 #![allow(clippy::collapsible_else_if)]
 
+mod content_streaming;
+mod handler;
+mod snapshot;
+pub mod storage;
+pub mod util;
+
 use std::{
     cmp::min,
     collections::HashMap,
@@ -7,12 +13,12 @@ use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Result};
 use bytes::{BufMut, BytesMut};
-use futures_util::{Future, StreamExt};
+use futures_util::{Future, StreamExt, TryStreamExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
 use hyper::{
     body::{self, Bytes, Frame},
@@ -35,7 +41,10 @@ use storage::Storage;
 use stream_generator::{generate_stream, Yielder};
 use tokio::{
     net::TcpListener,
-    sync::mpsc::{self, Sender},
+    sync::{
+        mpsc::{self, Sender},
+        Mutex,
+    },
     task,
     time::interval,
 };
@@ -43,11 +52,7 @@ use tracing::{error, info, warn};
 
 use crate::snapshot::make_snapshot;
 
-mod content_streaming;
-mod handler;
-mod snapshot;
-pub mod storage;
-pub mod util;
+const SOURCES_CACHE_INTERVAL: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -78,31 +83,39 @@ fn default_log_filter() -> String {
 pub struct Context {
     db_pool: PgPool,
     storage: Arc<Storage>,
-    sources: Arc<HashMap<String, SourceId>>,
+    sources: Arc<Mutex<CachedSources>>,
     config: Config,
+}
+
+#[derive(Debug)]
+struct CachedSources {
+    sources: HashMap<String, SourceId>,
+    updated_at: Instant,
+}
+
+async fn load_sources(db_pool: &PgPool) -> Result<HashMap<String, SourceId>> {
+    query!("SELECT id, secret FROM sources")
+        .fetch(db_pool)
+        .map_ok(|row| (row.secret, SourceId(row.id)))
+        .try_collect()
+        .await
+        .map_err(Into::into)
 }
 
 pub async fn run(config: Config) -> Result<()> {
     let db_pool = PgPool::connect(&config.database_url).await?;
-    let sources = query!("SELECT id, secret FROM sources")
-        .fetch_all(&db_pool)
-        .await?;
-
     let ctx = Context {
         config: config.clone(),
-        db_pool: PgPool::connect(&config.database_url).await?,
         storage: Arc::new(Storage::new(config.storage_path)?),
-        sources: Arc::new(
-            sources
-                .into_iter()
-                .map(|row| (row.secret, SourceId(row.id)))
-                .collect(),
-        ),
+        sources: Arc::new(Mutex::new(CachedSources {
+            sources: load_sources(&db_pool).await?,
+            updated_at: Instant::now(),
+        })),
+        db_pool,
     };
 
-    // Create the event loop and TCP listener we'll accept connections on.
     let listener = TcpListener::bind(&config.bind_addr).await?;
-    info!("Listening on: {}", config.bind_addr);
+    info!("Listening on {}", config.bind_addr);
 
     let snapshot_check_interval = min(config.snapshot_interval / 2, Duration::from_secs(60));
     let ctx2 = ctx.clone();
@@ -154,7 +167,7 @@ async fn try_handle_request(
     ctx: Context,
     request: Request<body::Incoming>,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode> {
-    let source_id = auth(&ctx, &request).map_err(|err| {
+    let source_id = auth(&ctx, &request).await.map_err(|err| {
         warn!(?err, "auth error");
         StatusCode::UNAUTHORIZED
     })?;
@@ -218,7 +231,7 @@ where
     T: RequestToResponse + DeserializeOwned,
     <T as RequestToResponse>::Response: Serialize,
     F: FnOnce(handler::Context, T) -> Fut,
-    Fut: Future<Output = anyhow::Result<<T as RequestToResponse>::Response>>,
+    Fut: Future<Output = Result<<T as RequestToResponse>::Response>>,
 {
     let request = parse_request(request).await?;
     let response = f(ctx, request).await;
@@ -237,10 +250,10 @@ async fn wrap_stream<F, Fut, T>(
 where
     T: RequestToStreamingResponse + DeserializeOwned + Send + 'static,
     StreamingResponseItem<T>: Serialize + Send + Sync,
-    F: FnOnce(handler::Context, T, Sender<anyhow::Result<StreamingResponseItem<T>>>) -> Fut
+    F: FnOnce(handler::Context, T, Sender<Result<StreamingResponseItem<T>>>) -> Fut
         + Send
         + 'static,
-    Fut: Future<Output = anyhow::Result<()>> + Send,
+    Fut: Future<Output = Result<()>> + Send,
 {
     type ChunkData<'a, T> = Option<&'a [StreamingResponseItem<T>]>;
 
@@ -253,10 +266,8 @@ where
     });
 
     let body_stream = generate_stream(move |mut y| async move {
-        async fn send<T>(
-            y: &mut Yielder<Bytes>,
-            data: anyhow::Result<Option<&[StreamingResponseItem<T>]>>,
-        ) where
+        async fn send<T>(y: &mut Yielder<Bytes>, data: Result<Option<&[StreamingResponseItem<T>]>>)
+        where
             T: RequestToStreamingResponse,
             StreamingResponseItem<T>: Serialize,
         {
@@ -308,7 +319,7 @@ async fn parse_request<T: DeserializeOwned>(
     })
 }
 
-fn serialize_response<T: Serialize>(data: anyhow::Result<T>) -> Bytes {
+fn serialize_response<T: Serialize>(data: Result<T>) -> Bytes {
     bincode::serialize(&data.map_err(|err| {
         warn!(?err, "handler error");
         format!("{err:?}")
@@ -317,7 +328,7 @@ fn serialize_response<T: Serialize>(data: anyhow::Result<T>) -> Bytes {
     .into()
 }
 
-fn serialize_response_with_length<T: Serialize>(data: anyhow::Result<T>) -> Bytes {
+fn serialize_response_with_length<T: Serialize>(data: Result<T>) -> Bytes {
     let mut buf = BytesMut::zeroed(4);
     bincode::serialize_into(
         (&mut buf).writer(),
@@ -332,7 +343,7 @@ fn serialize_response_with_length<T: Serialize>(data: anyhow::Result<T>) -> Byte
     buf.freeze()
 }
 
-fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<SourceId> {
+async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<SourceId> {
     let auth = request
         .headers()
         .get(AUTHORIZATION)
@@ -341,7 +352,13 @@ fn auth(ctx: &Context, request: &Request<body::Incoming>) -> anyhow::Result<Sour
     let secret = auth
         .strip_prefix("Bearer ")
         .ok_or_else(|| anyhow!("authorization header is not Bearer"))?;
-    ctx.sources
+    let mut sources = ctx.sources.lock().await;
+    if sources.updated_at.elapsed() > SOURCES_CACHE_INTERVAL {
+        sources.sources = load_sources(&ctx.db_pool).await?;
+        sources.updated_at = Instant::now();
+    }
+    sources
+        .sources
         .get(secret)
         .copied()
         .ok_or_else(|| anyhow!("invalid bearer token"))
