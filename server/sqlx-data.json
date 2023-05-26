@@ -365,6 +365,30 @@
     },
     "query": "SELECT max(timestamp) FROM snapshots"
   },
+  "51a4e76cd81fd14972bc368e93ee61a2cb94e164111ecb0738f0cdd9510b3690": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int4"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Varchar"
+        }
+      ],
+      "nullable": [
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT id, name FROM sources ORDER BY id"
+  },
   "53d5f5bbbb16979c34322ed58f576750d1daab3c8114bf7d08e8ba2aef436109": {
     "describe": {
       "columns": [

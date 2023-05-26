@@ -7,8 +7,8 @@ use futures::TryStreamExt;
 use itertools::Itertools;
 use prettytable::{cell, format::FormatBuilder, row, Table};
 use rammingen_protocol::{
-    endpoints::{GetAllEntryVersions, GetDirectChildEntries},
-    ArchivePath, DateTimeUtc, EntryKind,
+    endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
+    ArchivePath, DateTimeUtc, EntryKind, SourceId,
 };
 
 use crate::{
@@ -21,6 +21,22 @@ use crate::{
     upload::to_archive_path,
     Ctx,
 };
+
+struct Sources(Vec<SourceInfo>);
+
+impl Sources {
+    fn format(&self, id: SourceId) -> String {
+        if let Some(source) = self.0.iter().find(|s| s.id == id) {
+            source.name.clone()
+        } else {
+            format!("{id:?}")
+        }
+    }
+}
+
+async fn get_sources(ctx: &Ctx) -> Result<Sources> {
+    ctx.client.request(&GetSources).await.map(Sources)
+}
 
 pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
     pull_updates(ctx).await?;
@@ -64,6 +80,7 @@ pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
 
 pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()> {
     pull_updates(ctx).await?;
+    let sources = get_sources(ctx).await?;
 
     let Some(main_entry) = ctx.db.get_archive_entry(path)? else {
         error("no such path");
@@ -71,11 +88,16 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     };
 
     info(format!("path: {}", main_entry.path));
+    let encrypted = encrypt_path(path, &ctx.cipher)?;
+    info(format!("encrypted archive path: {}", encrypted));
     info(format!(
         "recorded at: {}",
         pretty_time(main_entry.recorded_at)
     ));
-    info(format!("source id: {}", main_entry.source_id.0));
+    info(format!(
+        "source id: {}",
+        sources.format(main_entry.source_id)
+    ));
     info(format!("record trigger: {:?}", main_entry.record_trigger));
     if let Some(kind) = main_entry.kind {
         match kind {
@@ -200,6 +222,7 @@ pub fn pretty_size(size: u64) -> impl Display {
 }
 
 pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Result<()> {
+    let sources = get_sources(ctx).await?;
     let mut stream = ctx.client.stream(&GetAllEntryVersions {
         path: encrypt_path(path, &ctx.cipher)?,
         recursive,
@@ -217,7 +240,7 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
         let recorded_at = pretty_time(data.recorded_at);
         let status = pretty_status(&data)?;
         let trigger = format!("{:?}", data.record_trigger);
-        let mut row = row![recorded_at, status, trigger, data.source_id.0];
+        let mut row = row![recorded_at, status, trigger, sources.format(data.source_id)];
         if recursive {
             let relative_path = if let Some(parent) = &parent {
                 data.path

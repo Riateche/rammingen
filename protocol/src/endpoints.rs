@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     DateTimeUtc, EncryptedArchivePath, EncryptedContentHash, EncryptedFileContent, Entry,
-    EntryKind, EntryUpdateNumber, EntryVersion, RecordTrigger,
+    EntryKind, EntryUpdateNumber, EntryVersion, RecordTrigger, SourceId,
 };
 
 pub trait RequestToResponse {
@@ -142,3 +142,15 @@ pub struct ServerStatus {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckIntegrity;
 response_type!(CheckIntegrity, ());
+
+/// Returns id and name of all sources.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetSources;
+
+response_type!(GetSources, Vec<SourceInfo>);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SourceInfo {
+    pub id: SourceId,
+    pub name: String,
+}

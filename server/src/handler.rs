@@ -7,8 +7,8 @@ use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::endpoints::{
     AddVersion, AddVersionResponse, BulkActionStats, CheckIntegrity, ContentHashExists,
     GetAllEntryVersions, GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries,
-    GetServerStatus, MovePath, RemovePath, ResetVersion, Response, ServerStatus,
-    StreamingResponseItem,
+    GetServerStatus, GetSources, MovePath, RemovePath, ResetVersion, Response, ServerStatus,
+    SourceInfo, StreamingResponseItem,
 };
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath,
@@ -644,6 +644,19 @@ pub async fn check_integrity(
     }
 
     Ok(())
+}
+
+pub async fn get_sources(ctx: Context, _request: GetSources) -> Result<Response<GetSources>> {
+    let mut sources = Vec::new();
+    let mut rows = query!("SELECT id, name FROM sources ORDER BY id").fetch(&ctx.db_pool);
+    while let Some(row) = rows.try_next().await? {
+        sources.push(SourceInfo {
+            id: SourceId(row.id),
+            name: row.name,
+        });
+    }
+
+    Ok(sources)
 }
 
 pub trait ToDb {
