@@ -18,7 +18,7 @@ use tokio::task::block_in_place;
 use rammingen_protocol::{
     endpoints::{RequestToResponse, RequestToStreamingResponse},
     util::stream_file,
-    EncryptedContentHash,
+    ContentHash, EncryptedContentHash,
 };
 
 use crate::encryption::Decryptor;
@@ -123,13 +123,19 @@ impl Client {
 
     pub async fn download(
         &self,
-        hash: &EncryptedContentHash,
+        hash: &ContentHash,
+        original_size: u64,
+        encrypted_hash: &EncryptedContentHash,
         path: impl AsRef<Path>,
         cipher: &Aes256SivAead,
     ) -> Result<()> {
         let mut response = self
             .reqwest
-            .get(format!("{}content/{}", self.server_url, hash.to_url_safe()))
+            .get(format!(
+                "{}content/{}",
+                self.server_url,
+                encrypted_hash.to_url_safe()
+            ))
             .bearer_auth(&self.token)
             .send()
             .await?
@@ -143,15 +149,21 @@ impl Client {
 
         let file = File::create(path.as_ref())?;
         let mut decryptor = Decryptor::new(cipher, file);
-        let mut actual_len = 0;
+        let mut actual_encrypted_size = 0;
 
         while let Some(chunk) = response.chunk().await? {
-            actual_len += chunk.len() as u64;
+            actual_encrypted_size += chunk.len() as u64;
             block_in_place(|| decryptor.write_all(&chunk))?;
         }
-        block_in_place(|| decryptor.finish())?;
-        if actual_len != header_len {
+        let (_, actual_hash, actual_original_size) = block_in_place(|| decryptor.finish())?;
+        if actual_encrypted_size != header_len {
             bail!("content length mismatch");
+        }
+        if hash != &actual_hash {
+            bail!("content hash mismatch");
+        }
+        if original_size != actual_original_size {
+            bail!("original size mismatch");
         }
 
         Ok(())

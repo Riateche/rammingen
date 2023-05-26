@@ -117,6 +117,9 @@ pub async fn download(
         .parent()?
         .ok_or_else(|| anyhow!("failed to get parent for local path"))?
         .join("__rammingen_tmp")?;
+    if try_exists(&tmp_path)? {
+        remove_file(&tmp_path)?;
+    }
     if is_mount {
         set_status("Checking for files deleted remotely");
         for entry in ctx.db.get_archive_entries(root_archive_path).rev() {
@@ -212,6 +215,8 @@ pub async fn download(
                     .ok_or_else(|| anyhow!("missing content info for existing file"))?;
                 ctx.client
                     .download(
+                        &content.hash,
+                        content.original_size,
                         &encrypt_content_hash(&content.hash, &ctx.cipher)?,
                         &tmp_path,
                         &ctx.cipher,

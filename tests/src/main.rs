@@ -173,7 +173,7 @@ async fn test_random(ctx: Context) -> Result<()> {
             // mutate through server command
             let expected = ctx.dir.join("expected");
             if expected.exists() {
-                remove_dir_or_file(&expected)?;
+                remove_dir_all_or_file(&expected)?;
             }
             copy_dir_all(&ctx.clients[0].mount_dir, &expected)?;
             let client1 = ctx.clients.choose(&mut thread_rng()).unwrap();
@@ -196,7 +196,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                         expected.join(local_path.strip_prefix(&old_snapshot_path)?)
                     };
                     if path_in_expected.exists() {
-                        remove_dir_or_file(&path_in_expected)?;
+                        remove_dir_all_or_file(&path_in_expected)?;
                     }
                     let parent_path_in_expected = path_in_expected.parent().unwrap();
                     if !parent_path_in_expected.exists() {
@@ -220,7 +220,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                     // upload new path
                     let path_for_upload = ctx.dir.join("for_upload");
                     if path_for_upload.exists() {
-                        remove_dir_or_file(&path_for_upload)?;
+                        remove_dir_all_or_file(&path_for_upload)?;
                     }
                     if thread_rng().gen_bool(0.3) {
                         write(&path_for_upload, random_content())?;
@@ -272,7 +272,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                     if is_leftover_dir_with_ignored_files(&path1)? {
                         continue;
                     }
-                    remove_dir_or_file(&path1)?;
+                    remove_dir_all_or_file(&path1)?;
                     let archive_path = archive_subpath(&ctx.archive_mount_path, &expected, &path1)?;
                     debug(format!("Checking rm {archive_path}"));
                     client1.remove_path(archive_path).await?;
@@ -293,7 +293,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                         let path_in_expected =
                             expected.join(path1.strip_prefix(&client.mount_dir)?);
                         if path_in_expected.exists() {
-                            remove_dir_or_file(&path_in_expected)?;
+                            remove_dir_all_or_file(&path_in_expected)?;
                         }
                         let parent_path_in_expected = path_in_expected.parent().unwrap();
                         if !parent_path_in_expected.exists() {
@@ -381,7 +381,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                 snapshot_time = Some(Utc::now());
                 info(format!("Saving snapshot for later ({snapshot_time:?})"));
                 if old_snapshot_path.exists() {
-                    remove_dir_or_file(&old_snapshot_path)?;
+                    remove_dir_all_or_file(&old_snapshot_path)?;
                 }
                 copy_dir_all(&ctx.clients[0].mount_dir, &old_snapshot_path)?;
                 sleep(Duration::from_millis(500)).await;
@@ -422,7 +422,7 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
     let mut results = Vec::new();
     for (i, (_, time)) in snapshots.iter().enumerate() {
         if download_path.exists() {
-            remove_dir_or_file(&download_path)?;
+            remove_dir_all_or_file(&download_path)?;
         }
         match ctx.clients[index]
             .download(
@@ -629,7 +629,7 @@ async fn check_download(
     let client2 = clients.choose(&mut thread_rng()).unwrap();
     let destination = dir.join("tmp_download");
     if destination.exists() {
-        remove_dir_or_file(&destination)?;
+        remove_dir_all_or_file(&destination)?;
     }
     client2
         .download(
@@ -647,7 +647,7 @@ fn is_ignored(path: &Path) -> bool {
     name == "target" || name.starts_with("build_")
 }
 
-fn remove_dir_or_file(path: &Path) -> Result<()> {
+fn remove_dir_all_or_file(path: &Path) -> Result<()> {
     if path.is_dir() {
         remove_dir_all(path)?;
     } else {

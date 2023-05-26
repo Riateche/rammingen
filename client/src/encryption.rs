@@ -29,6 +29,7 @@ fn nonce_size() -> usize {
 
 struct HashingWriter<W> {
     hasher: Sha256,
+    size: u64,
     inner: W,
 }
 
@@ -36,6 +37,7 @@ impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let len = self.inner.write(buf)?;
         self.hasher.update(buf);
+        self.size += buf.len() as u64;
         Ok(len)
     }
 
@@ -49,7 +51,13 @@ impl<W> HashingWriter<W> {
         Self {
             hasher: Sha256::new(),
             inner,
+            size: 0,
         }
+    }
+
+    pub fn finish(self) -> (W, ContentHash, u64) {
+        let hash = ContentHash(self.hasher.finalize().to_vec());
+        (self.inner, hash, self.size)
     }
 }
 
@@ -119,17 +127,17 @@ pub fn encrypt_file(path: impl AsRef<Path>, cipher: &Aes256SivAead) -> Result<En
     let mut file = File::open(path.as_ref())?;
     let mut output = SpooledTempFile::new(MAX_IN_MEMORY);
     output.write_u32::<LE>(MAGIC_NUMBER)?;
-    let mut encryptor = EncryptingWriter {
+    let encryptor = EncryptingWriter {
         buf: Vec::new(),
         output: &mut output,
         cipher,
         encrypted_size: 4,
     };
-    let mut encoder = DeflateEncoder::new(&mut encryptor, CompressionOptions::high());
-    let mut hasher = HashingWriter::new(&mut encoder);
-    let original_size = io::copy(&mut file, &mut hasher)?;
-    let hash = ContentHash(hasher.hasher.finalize().to_vec());
-    encoder.finish()?;
+    let encoder = DeflateEncoder::new(encryptor, CompressionOptions::high());
+    let mut hasher = HashingWriter::new(encoder);
+    io::copy(&mut file, &mut hasher)?;
+    let (encoder, hash, original_size) = hasher.finish();
+    let encryptor = encoder.finish()?;
     let (_, encrypted_size) = encryptor.finish()?;
     Ok(EncryptedFileData {
         file: output,
@@ -143,7 +151,7 @@ pub struct Decryptor<'a, W: Write> {
     got_header: bool,
     buf: Vec<u8>,
     cipher: &'a Aes256SivAead,
-    output: InflateWriter<W>,
+    output: InflateWriter<HashingWriter<W>>,
 }
 
 impl<'a, W: Write> Decryptor<'a, W> {
@@ -152,16 +160,16 @@ impl<'a, W: Write> Decryptor<'a, W> {
             got_header: false,
             buf: Vec::new(),
             cipher,
-            output: InflateWriter::new(output),
+            output: InflateWriter::new(HashingWriter::new(output)),
         }
     }
 
-    pub fn finish(mut self) -> io::Result<W> {
+    pub fn finish(mut self) -> io::Result<(W, ContentHash, u64)> {
         self.process_block()?;
         if !self.buf.is_empty() {
             return Err(io::Error::new(io::ErrorKind::Other, "trailing data found"));
         }
-        self.output.finish()
+        Ok(self.output.finish()?.finish())
     }
 
     fn process_block(&mut self) -> io::Result<()> {
