@@ -59,6 +59,7 @@ pub struct Config {
     pub database_url: String,
     pub storage_path: PathBuf,
     pub bind_addr: SocketAddr,
+    #[serde(default)]
     pub log_file: Option<PathBuf>,
     #[serde(default = "default_log_filter")]
     pub log_filter: String,

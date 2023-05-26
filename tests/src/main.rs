@@ -4,7 +4,6 @@ mod shuffle;
 use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Mutex,
     time::Duration,
 };
 
@@ -20,19 +19,16 @@ use rammingen::{
     config::{EncryptionKey, MountPoint},
     path::SanitizedLocalPath,
     rules::Rule,
+    setup_logger,
     term::{clear_status, debug, error, info},
 };
-use rammingen_protocol::{
-    util::{log_writer, native_to_archive_relative_path},
-    ArchivePath, DateTimeUtc,
-};
+use rammingen_protocol::{util::native_to_archive_relative_path, ArchivePath, DateTimeUtc};
 use rammingen_server::util::{add_source, generate_access_token, migrate};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use shuffle::{choose_path, random_content, random_name, shuffle};
 use sqlx::PgPool;
 use tempfile::TempDir;
 use tokio::time::{interval, sleep};
-use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
     create_dir_all(&dst)?;
@@ -75,11 +71,10 @@ async fn try_main() -> Result<()> {
     let dir = TempDir::new()?.into_path();
     let cli = Cli::parse();
 
-    tracing_subscriber::fmt()
-        .with_writer(Mutex::new(log_writer(Some(&dir.join("1.log")))?))
-        .with_env_filter(EnvFilter::try_new("info,sqlx=warn,rammingen_server=debug")?)
-        .finish()
-        .init();
+    setup_logger(
+        Some(dir.join("1.log")),
+        "info,sqlx=warn,rammingen_server=debug".into(),
+    )?;
 
     let db_pool = PgPool::connect(&cli.database_url).await?;
     migrate(&db_pool).await?;
@@ -131,6 +126,8 @@ async fn try_main() -> Result<()> {
             server_url: format!("http://127.0.0.1:{port}/").parse()?,
             access_token: access_token.clone(),
             local_db_path: Some(client_dir.join("db")),
+            log_file: None,
+            log_filter: String::new(),
         };
         let config_path = client_dir.join("rammingen.conf");
         write(&config_path, json5::to_string(&config)?)?;

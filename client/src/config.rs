@@ -75,4 +75,12 @@ pub struct Config {
     pub access_token: String,
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
+    #[serde(default)]
+    pub log_file: Option<PathBuf>,
+    #[serde(default = "default_log_filter")]
+    pub log_filter: String,
+}
+
+fn default_log_filter() -> String {
+    "info".into()
 }

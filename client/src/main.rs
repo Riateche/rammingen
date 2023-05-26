@@ -4,6 +4,7 @@ use clap::Parser;
 use rammingen::{
     cli::{Cli, Command},
     config::{Config, EncryptionKey},
+    setup_logger,
     term::{clear_status, error},
 };
 
@@ -31,6 +32,7 @@ async fn try_main() -> Result<()> {
         config_dir.join("rammingen.conf")
     };
     let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
+    setup_logger(config.log_file.clone(), config.log_filter.clone())?;
     rammingen::run(cli, config).await?;
     Ok(())
 }
