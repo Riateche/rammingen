@@ -72,7 +72,7 @@ pub struct Config {
     pub encryption_key: EncryptionKey,
     pub server_url: Url,
     #[derivative(Debug = "ignore")]
-    pub token: String,
+    pub access_token: String,
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
 }

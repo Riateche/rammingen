@@ -129,7 +129,7 @@ async fn try_main() -> Result<()> {
             }],
             encryption_key: encryption_key.clone(),
             server_url: format!("http://127.0.0.1:{port}/").parse()?,
-            token: access_token.clone(),
+            access_token: access_token.clone(),
             local_db_path: Some(client_dir.join("db")),
         };
         let config_path = client_dir.join("rammingen.conf");
