@@ -3,6 +3,7 @@ name = "rammingen_server"
 version = "0.1.0"
 edition = "2021"
 default-run = "rammingen-server"
+license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "rammingen-server"
