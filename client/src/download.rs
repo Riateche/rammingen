@@ -9,13 +9,14 @@ use rammingen_protocol::{
     ArchivePath, DateTimeUtc, EntryKind,
 };
 use stream_generator::generate_try_stream;
+use tracing::{info, warn};
 
 use crate::{
     db::{DecryptedEntryVersionData, LocalEntryInfo},
     encryption::{encrypt_content_hash, encrypt_path},
     path::SanitizedLocalPath,
     rules::Rules,
-    term::{info, set_status, warn},
+    term::set_status,
     Ctx,
 };
 
@@ -38,11 +39,7 @@ fn remove_dir_or_file(path: impl AsRef<Path>) -> Result<bool> {
     let path = path.as_ref();
     if fs_err::metadata(path)?.is_dir() {
         if let Err(err) = remove_dir(path) {
-            warn(format!(
-                "Cannot remove directory {}: {}",
-                path.display(),
-                err
-            ));
+            warn!("Cannot remove directory {}: {}", path.display(), err);
             return Ok(false);
         }
     } else {
@@ -142,17 +139,14 @@ pub async fn download(
                     }
                     EntryKind::Directory => {
                         if let Err(err) = remove_dir(&entry_local_path) {
-                            warn(format!(
-                                "Cannot remove directory {}: {}",
-                                entry_local_path, err
-                            ));
+                            warn!("Cannot remove directory {}: {}", entry_local_path, err);
                             continue;
                         }
                     }
                 }
             }
             ctx.db.remove_local_entry(&entry_local_path)?;
-            info(format!("Removed {}", entry_local_path));
+            info!("Removed {}", entry_local_path);
         }
     }
     let mut found_any = false;
@@ -259,7 +253,7 @@ pub async fn download(
             }
         }
         found_any = true;
-        info(format!("Downloaded {}", entry_local_path));
+        info!("Downloaded {}", entry_local_path);
     }
     Ok(found_any)
 }

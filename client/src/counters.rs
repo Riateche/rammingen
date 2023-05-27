@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::term::info;
+use tracing::info;
 
 #[derive(Debug, Default)]
 pub struct Counters {
@@ -16,15 +16,15 @@ impl Counters {
         let modified_files = self.modified_files.load(Ordering::Relaxed);
         let sent_to_server = self.sent_to_server.load(Ordering::Relaxed);
         let updated_on_server = self.updated_on_server.load(Ordering::Relaxed);
-        info(format!("scanned {} entries", scanned_entries));
+        info!("scanned {} entries", scanned_entries);
         if modified_files > 0 {
-            info(format!("found {} modified files", modified_files));
+            info!("found {} modified files", modified_files);
         }
         if sent_to_server > 0 {
-            info(format!("sent {} entries to server", sent_to_server));
+            info!("sent {} entries to server", sent_to_server);
         }
         if updated_on_server > 0 {
-            info(format!("updated {} entries on server", updated_on_server));
+            info!("updated {} entries on server", updated_on_server);
         }
     }
 }

@@ -6,13 +6,13 @@ use std::{
 
 use anyhow::Result;
 use fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write};
-use rammingen::term::debug;
 use rand::{
     distributions::{Alphanumeric, DistString, WeightedIndex},
     prelude::Distribution,
     seq::SliceRandom,
     thread_rng, Rng,
 };
+use tracing::debug;
 
 use crate::{diff::is_leftover_dir_with_ignored_files, is_ignored};
 
@@ -96,11 +96,11 @@ fn create(dir: &Path) -> Result<()> {
     if thread_rng().gen_bool(0.1) {
         // dir
         create_dir(&path)?;
-        debug(format!("created dir {}", path.display()));
+        debug!("created dir {}", path.display());
     } else {
         // file
         write(&path, random_content())?;
-        debug(format!("created file {}", path.display()));
+        debug!("created file {}", path.display());
     }
     Ok(())
 }
@@ -111,7 +111,7 @@ fn file_to_dir(dir: &Path) -> Result<()> {
     };
     remove_file(&path)?;
     create_dir(&path)?;
-    debug(format!("replaced file with dir {}", path.display()));
+    debug!("replaced file with dir {}", path.display());
     Ok(())
 }
 
@@ -121,7 +121,7 @@ fn dir_to_file(dir: &Path) -> Result<()> {
     };
     remove_dir_all(&path)?;
     write(&path, random_content())?;
-    debug(format!("replaced dir with file {}", path.display()));
+    debug!("replaced dir with file {}", path.display());
     Ok(())
 }
 
@@ -138,7 +138,7 @@ fn random_rename(dir: &Path) -> Result<()> {
     };
     if !to.exists() && !to.starts_with(&from) {
         rename(&from, &to)?;
-        debug(format!("renamed {} -> {}", from.display(), to.display()));
+        debug!("renamed {} -> {}", from.display(), to.display());
     }
     Ok(())
 }
@@ -152,12 +152,7 @@ fn edit(dir: &Path) -> Result<()> {
     }
     write(&path, random_content())?;
     //let new_modified = symlink_metadata(&path)?.modified()?;
-    debug(format!(
-        "edited file {}", // (modified: {:?} -> {:?})",
-        path.display(),
-        //   old_modified,
-        //   new_modified
-    ));
+    debug!("edited file {}", path.display());
     Ok(())
 }
 
@@ -175,11 +170,7 @@ fn change_mode(dir: &Path) -> Result<()> {
             .unwrap();
 
         fs_err::set_permissions(&path, Permissions::from_mode(*mode))?;
-        debug(format!(
-            "changed mode of file {} to {:#o}",
-            path.display(),
-            mode
-        ));
+        debug!("changed mode of file {} to {:#o}", path.display(), mode);
     }
     Ok(())
 }
@@ -191,14 +182,14 @@ fn delete(dir: &Path) -> Result<()> {
             return Ok(());
         };
         remove_dir_all(&path)?;
-        debug(format!("removed dir {}", path.display()));
+        debug!("removed dir {}", path.display());
     } else {
         // file
         let Some(path) = choose_path(dir, true, false, false, true)? else {
             return Ok(());
         };
         remove_file(&path)?;
-        debug(format!("removed file {}", path.display()));
+        debug!("removed file {}", path.display());
     }
     Ok(())
 }

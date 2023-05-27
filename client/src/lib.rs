@@ -42,7 +42,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 use sync::sync;
-use term::{clear_status, error, info, TermLayer};
+use term::{clear_status, TermLayer};
+use tracing::{error, info};
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
 };
@@ -91,7 +92,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             )
             .await
             {
-                error(format!("Failed to process {:?}: {:?}", local_path, err));
+                error!("Failed to process {:?}: {:?}", local_path, err);
             }
             clear_status();
             ctx.counters.report();
@@ -131,7 +132,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                     recorded_at: version.into(),
                 })
                 .await?;
-            info(format!("{:?}", stats));
+            info!("{:?}", stats);
         }
         cli::Command::Move { old_path, new_path } => {
             let stats = ctx
@@ -141,7 +142,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                     new_path: encrypt_path(&new_path, &ctx.cipher)?,
                 })
                 .await?;
-            info(format!("{:?}", stats));
+            info!("{stats:?}");
         }
         cli::Command::Remove { archive_path } => {
             let stats = ctx
@@ -150,21 +151,21 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                     path: encrypt_path(&archive_path, &ctx.cipher)?,
                 })
                 .await?;
-            info(format!("{:?}", stats));
+            info!("{:?}", stats);
         }
         cli::Command::History { path, recursive } => {
             list_versions(&ctx, &path, recursive).await?;
         }
         cli::Command::Status => {
             let status = ctx.client.request(&GetServerStatus).await?;
-            info(format!(
+            info!(
                 "Available space on server: {}",
                 pretty_size(status.available_space)
-            ));
+            );
         }
         cli::Command::CheckIntegrity => {
             ctx.client.request(&CheckIntegrity).await?;
-            info("It's fine.");
+            info!("It's fine.");
         }
         cli::Command::GenerateEncryptionKey => unreachable!(),
     }

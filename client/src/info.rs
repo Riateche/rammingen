@@ -10,16 +10,11 @@ use rammingen_protocol::{
     endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
     ArchivePath, DateTimeUtc, EntryKind, SourceId,
 };
+use tracing::{error, info};
 
 use crate::{
-    db::DecryptedEntryVersionData,
-    encryption::encrypt_path,
-    path::SanitizedLocalPath,
-    pull_updates::pull_updates,
-    rules::Rules,
-    term::{error, info},
-    upload::to_archive_path,
-    Ctx,
+    db::DecryptedEntryVersionData, encryption::encrypt_path, path::SanitizedLocalPath,
+    pull_updates::pull_updates, rules::Rules, upload::to_archive_path, Ctx,
 };
 
 struct Sources(Vec<SourceInfo>);
@@ -53,26 +48,26 @@ pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
         })
         .collect_vec();
 
-    info(format!("normalized local path: {}", path));
+    info!("normalized local path: {}", path);
 
     if let Some((archive_path, rules)) = to_archive_path(path, &mut mount_points)? {
         if rules.matches(path)? {
-            info("this path is ignored according to the configured exclude rules");
+            info!("this path is ignored according to the configured exclude rules");
         } else {
-            info(format!("archive path: {}", archive_path));
+            info!("archive path: {}", archive_path);
             let encrypted = encrypt_path(&archive_path, &ctx.cipher)?;
-            info(format!("encrypted archive path: {}", encrypted));
-            info(format!(
+            info!("encrypted archive path: {}", encrypted);
+            info!(
                 "archive entry in local db: {:?}",
                 ctx.db.get_archive_entry(&archive_path)?
-            ));
-            info(format!(
+            );
+            info!(
                 "local entry in local db: {:?}",
                 ctx.db.get_local_entry(path)?
-            ));
+            );
         }
     } else {
-        info("this path is not inside any of the configured mount points");
+        info!("this path is not inside any of the configured mount points");
     }
 
     Ok(())
@@ -83,56 +78,47 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     let sources = get_sources(ctx).await?;
 
     let Some(main_entry) = ctx.db.get_archive_entry(path)? else {
-        error("no such path");
+        error!("no such path");
         return Ok(());
     };
 
-    info(format!("path: {}", main_entry.path));
+    info!("path: {}", main_entry.path);
     let encrypted = encrypt_path(path, &ctx.cipher)?;
-    info(format!("encrypted archive path: {}", encrypted));
-    info(format!(
-        "recorded at: {}",
-        pretty_time(main_entry.recorded_at)
-    ));
-    info(format!(
-        "source id: {}",
-        sources.format(main_entry.source_id)
-    ));
-    info(format!("record trigger: {:?}", main_entry.record_trigger));
+    info!("encrypted archive path: {}", encrypted);
+    info!("recorded at: {}", pretty_time(main_entry.recorded_at));
+    info!("source id: {}", sources.format(main_entry.source_id));
+    info!("record trigger: {:?}", main_entry.record_trigger);
     if let Some(kind) = main_entry.kind {
         match kind {
             EntryKind::File => {
-                info("current status: existing file");
+                info!("current status: existing file");
                 let content = main_entry
                     .content
                     .ok_or_else(|| anyhow!("missing content for file entry"))?;
-                info(format!(
-                    "FS modified at: {}",
-                    pretty_time(content.modified_at)
-                ));
-                info(format!(
+                info!("FS modified at: {}", pretty_time(content.modified_at));
+                info!(
                     "original size: {} ({} bytes)",
                     pretty_size(content.original_size),
                     content.original_size
-                ));
-                info(format!(
+                );
+                info!(
                     "encrypted size: {} ({} bytes)",
                     pretty_size(content.encrypted_size),
                     content.encrypted_size
-                ));
+                );
                 if let Some(unix_mode) = content.unix_mode {
-                    info(format!("unix mode: {:#o}", unix_mode));
+                    info!("unix mode: {:#o}", unix_mode);
                 } else {
-                    info("unix mode: n/a");
+                    info!("unix mode: n/a");
                 }
-                info(format!("content hash: {}", content.hash));
+                info!("content hash: {}", content.hash);
             }
             EntryKind::Directory => {
-                info("current status: existing directory");
+                info!("current status: existing directory");
             }
         }
     } else {
-        info("current status: deleted");
+        info!("current status: deleted");
     }
 
     let mut entries = Vec::new();
@@ -151,7 +137,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     });
 
     if !entries.is_empty() {
-        info("");
+        info!("");
     }
     let mut table = Table::new();
     table.set_format(FormatBuilder::new().column_separator(' ').build());
@@ -169,13 +155,13 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
         let status = pretty_status(&entry)?;
         table.add_row(row![recorded_at, status, name]);
     }
-    info(table);
+    info!("{table}");
 
     if num_hidden_deleted > 0 {
-        info(format!(
+        info!(
             "{} deleted entries (use --deleted to view)",
             num_hidden_deleted
-        ));
+        );
     }
 
     Ok(())
@@ -254,11 +240,11 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
         }
         table.add_row(row);
         if table.len() > 50 {
-            info(table);
+            info!("{table}");
             table = Table::new();
             table.set_format(FormatBuilder::new().column_separator(' ').build());
         }
     }
-    info(table);
+    info!("{table}");
     Ok(())
 }

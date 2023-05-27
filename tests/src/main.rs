@@ -20,7 +20,7 @@ use rammingen::{
     path::SanitizedLocalPath,
     rules::Rule,
     setup_logger,
-    term::{clear_status, debug, error, info},
+    term::clear_status,
 };
 use rammingen_protocol::{util::native_to_archive_relative_path, ArchivePath, DateTimeUtc};
 use rammingen_server::util::{add_source, generate_access_token, migrate};
@@ -29,6 +29,7 @@ use shuffle::{choose_path, random_content, random_name, shuffle};
 use sqlx::PgPool;
 use tempfile::TempDir;
 use tokio::time::{interval, sleep};
+use tracing::{debug, error, info};
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
     create_dir_all(&dst)?;
@@ -48,7 +49,7 @@ async fn main() {
     let r = try_main().await;
     clear_status();
     if let Err(err) = r {
-        error(format!("{:?}", err));
+        error!("{:?}", err);
     }
 }
 
@@ -79,7 +80,7 @@ async fn try_main() -> Result<()> {
     let db_pool = PgPool::connect(&cli.database_url).await?;
     migrate(&db_pool).await?;
 
-    debug(format!("dir: {}", dir.display()));
+    debug!("dir: {}", dir.display());
     let storage_path = dir.join("storage");
     create_dir_all(&storage_path)?;
 
@@ -140,7 +141,7 @@ async fn try_main() -> Result<()> {
     tokio::spawn(async move {
         if let Err(err) = rammingen_server::run(server_config).await {
             clear_status();
-            error(format!("server failed: {err:?}"));
+            error!("server failed: {err:?}");
             std::process::exit(1);
         }
     });
@@ -204,10 +205,10 @@ async fn test_random(ctx: Context) -> Result<()> {
                     } else {
                         copy_dir_all(&local_path, &path_in_expected)?;
                     }
-                    info(format!(
+                    info!(
                         "Checking reset: {}, {:?}",
                         archive_path, snapshot_time_value
-                    ));
+                    );
                     client1
                         .reset(archive_path, snapshot_time_value.into())
                         .await?;
@@ -237,7 +238,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                     }
                     let archive_path =
                         archive_subpath(&ctx.archive_mount_path, &expected, &path_in_expected)?;
-                    debug(format!("Checking upload ({archive_path})"));
+                    debug!("Checking upload ({archive_path})");
                     client1
                         .upload(SanitizedLocalPath::new(&path_for_upload)?, archive_path)
                         .await?;
@@ -256,9 +257,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                     let archive_path = archive_subpath(&ctx.archive_mount_path, &expected, &path1)?;
                     let new_archive_path =
                         archive_subpath(&ctx.archive_mount_path, &expected, &path2)?;
-                    debug(format!(
-                        "Checking mv ({archive_path} -> {new_archive_path})"
-                    ));
+                    debug!("Checking mv ({archive_path} -> {new_archive_path})");
                     client1.move_path(archive_path, new_archive_path).await?;
                 }
                 3 => {
@@ -271,7 +270,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                     }
                     remove_dir_all_or_file(&path1)?;
                     let archive_path = archive_subpath(&ctx.archive_mount_path, &expected, &path1)?;
-                    debug(format!("Checking rm {archive_path}"));
+                    debug!("Checking rm {archive_path}");
                     client1.remove_path(archive_path).await?;
                 }
                 4 => {
@@ -279,7 +278,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                     let two_clients: Vec<_> =
                         ctx.clients.choose_multiple(&mut thread_rng(), 2).collect();
                     let mut chosen_paths = Vec::<(PathBuf, PathBuf)>::new();
-                    info("Checking simultaneous edit");
+                    info!("Checking simultaneous edit");
                     for client in &two_clients {
                         let Some(path1) = choose_path(&client.mount_dir, true, true, false, false)? else {
                             continue;
@@ -307,7 +306,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                         chosen_paths.push((path1, path_in_expected));
                     }
                     for (path1, path_in_expected) in &chosen_paths {
-                        info(format!("Shuffling {}", path1.display()));
+                        info!("Shuffling {}", path1.display());
                         if path1.is_dir() {
                             shuffle(path1)?;
                         } else {
@@ -333,14 +332,14 @@ async fn test_random(ctx: Context) -> Result<()> {
             // edit mount
             let index = thread_rng().gen_range(0..ctx.clients.len());
             for _ in 0..thread_rng().gen_range(1..=3) {
-                debug(format!("shuffling mount for client {index}"));
+                debug!("shuffling mount for client {index}");
                 shuffle(&ctx.clients[index].mount_dir)?;
-                debug(format!("syncing client {index}"));
+                debug!("syncing client {index}");
                 ctx.clients[index].sync().await?;
             }
             for (index2, client) in ctx.clients.iter().enumerate() {
                 if index2 != index {
-                    debug(format!("syncing client {index2}"));
+                    debug!("syncing client {index2}");
                     let before_sync_snapshot = ctx.dir.join("snapshot");
                     if before_sync_snapshot.exists() {
                         remove_dir_all(&before_sync_snapshot)?;
@@ -376,7 +375,7 @@ async fn test_random(ctx: Context) -> Result<()> {
             } else {
                 sleep(Duration::from_millis(500)).await;
                 snapshot_time = Some(Utc::now());
-                info(format!("Saving snapshot for later ({snapshot_time:?})"));
+                info!("Saving snapshot for later ({snapshot_time:?})");
                 if old_snapshot_path.exists() {
                     remove_dir_all_or_file(&old_snapshot_path)?;
                 }
@@ -396,7 +395,7 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
     //let unique_file_path = ctx.clients[index].mount_dir.join("unique_file.txt");
     for i in 0..30 {
         interval.tick().await;
-        debug(format!("shuffling mount for client {index}"));
+        debug!("shuffling mount for client {index}");
         // if unique_file_path.exists() {
         //     remove_dir_or_file(&unique_file_path)?;
         // }
@@ -407,10 +406,10 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
             shuffle(&ctx.clients[index].mount_dir)?;
         }
         // write(&unique_file_path, format!("unique content {i}"))?;
-        debug(format!("syncing client {index}"));
+        debug!("syncing client {index}");
         ctx.clients[index].sync().await?;
         let snapshot_path = ctx.dir.join(format!("snapshot_{i}"));
-        debug(format!("recording snapshot {i}"));
+        debug!("recording snapshot {i}");
         copy_dir_all(&ctx.clients[index].mount_dir, &snapshot_path)?;
         snapshots.push((snapshot_path, Utc::now()));
         ctx.clients[0].check_integrity().await?;
@@ -433,9 +432,7 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
                 let mut same_as = Vec::new();
                 for (i2, (path, time2)) in snapshots.iter().enumerate() {
                     if diff(&download_path, path).is_ok() {
-                        info(format!(
-                            "download {i} ({time}) is the same as snapshot {i2} ({time2})"
-                        ));
+                        info!("download {i} ({time}) is the same as snapshot {i2} ({time2})");
                         same_as.push(i2);
                     }
                 }
@@ -445,7 +442,7 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
                 results.push(Some(same_as[0]));
             }
             Err(err) => {
-                debug(format!("cannot download {i} ({time}): {err:?}"));
+                debug!("cannot download {i} ({time}): {err:?}");
                 results.push(None);
             }
         }
@@ -619,10 +616,7 @@ async fn check_download(
         return Ok(());
     }
     let archive_path = archive_subpath(archive_mount_path, source_dir, &local_path)?;
-    info(format!(
-        "Checking download: {}, {:?}",
-        archive_path, version
-    ));
+    info!("Checking download: {}, {:?}", archive_path, version);
     let client2 = clients.choose(&mut thread_rng()).unwrap();
     let destination = dir.join("tmp_download");
     if destination.exists() {

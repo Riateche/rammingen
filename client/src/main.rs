@@ -5,15 +5,16 @@ use rammingen::{
     cli::{Cli, Command},
     config::{Config, EncryptionKey},
     setup_logger,
-    term::{clear_status, error},
+    term::clear_status,
 };
+use tracing::error;
 
 #[tokio::main]
 async fn main() {
     let r = try_main().await;
     clear_status();
     if let Err(err) = r {
-        error(format!("{:?}", err));
+        error!("{err:?}");
     }
 }
 

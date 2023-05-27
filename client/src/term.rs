@@ -15,8 +15,8 @@ use once_cell::sync::Lazy;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use tokio::signal::ctrl_c;
 use tokio::task;
+use tracing::{error, warn, Level};
 use tracing::{field::Visit, Subscriber};
-use tracing::{warn, Level};
 use tracing_subscriber::Layer;
 
 struct Term {
@@ -37,29 +37,13 @@ pub fn clear_status() {
     term().clear_status()
 }
 
-pub fn debug(text: impl Display) {
-    term().write(Some(Color::Grey), text)
-}
-
-pub fn info(text: impl Display) {
-    term().write(None, text)
-}
-
-pub fn warn(text: impl Display) {
-    term().write(Some(Color::DarkYellow), text)
-}
-
-pub fn error(text: impl Display) {
-    term().write(Some(Color::Red), text)
-}
-
 impl Term {
     fn new() -> Self {
         task::spawn(async {
             match ctrl_c().await {
                 Ok(()) => {
                     clear_status();
-                    error("Interrupted.");
+                    error!("Interrupted.");
                     process::exit(1);
                 }
                 Err(err) => {
@@ -153,13 +137,14 @@ impl<S: Subscriber> Layer<S> for TermLayer {
             write!(message, " ({})", fields.join(", ")).unwrap();
         }
         let level = *event.metadata().level();
-        if level == Level::ERROR || level == Level::WARN {
-            error(message);
+        let color = if level == Level::ERROR || level == Level::WARN {
+            Some(Color::Red)
         } else if level == Level::INFO {
-            info(message);
+            None
         } else {
-            debug(message);
-        }
+            Some(Color::Grey)
+        };
+        term().write(color, message);
     }
 
     fn enabled(

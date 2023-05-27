@@ -8,6 +8,7 @@ use rammingen_protocol::{
 };
 use std::{collections::HashSet, sync::atomic::Ordering, time::Duration};
 use tokio::{task::block_in_place, time::sleep};
+use tracing::{debug, info, warn};
 
 use crate::{
     config::MountPoint,
@@ -15,7 +16,7 @@ use crate::{
     encryption::{self, encrypt_content_hash, encrypt_path, encrypt_size},
     path::SanitizedLocalPath,
     rules::Rules,
-    term::{debug, info, set_status, warn},
+    term::set_status,
     unix_mode, Ctx,
 };
 
@@ -101,7 +102,7 @@ pub async fn find_local_deletions<'a>(
             ctx.counters
                 .updated_on_server
                 .fetch_add(1, Ordering::Relaxed);
-            info(format!("Recorded deletion of {}", local_path));
+            info!("Recorded deletion of {}", local_path);
         }
         ctx.db.remove_local_entry(&local_path)?;
     }
@@ -121,11 +122,11 @@ pub fn upload<'a>(
         existing_paths.insert(local_path.clone());
         let mut metadata = fs::symlink_metadata(local_path)?;
         if metadata.is_symlink() {
-            warn(format!("skipping symlink: {}", local_path));
+            warn!("skipping symlink: {}", local_path);
             return Ok(());
         }
         if rules.matches(local_path)? {
-            debug(format!("ignored: {}", local_path));
+            debug!("ignored: {}", local_path);
             return Ok(());
         }
         ctx.counters.scanned_entries.fetch_add(1, Ordering::Relaxed);
@@ -151,10 +152,7 @@ pub fn upload<'a>(
                 metadata = fs::symlink_metadata(local_path)?;
                 let new_modified = metadata.modified()?;
                 if new_modified.elapsed()? < TOO_RECENT_INTERVAL {
-                    info(format!(
-                        "file {} was modified recently, waiting...",
-                        local_path
-                    ));
+                    info!("file {} was modified recently, waiting...", local_path);
                     sleep(TOO_RECENT_INTERVAL).await;
                 } else {
                     modified = Some(new_modified);
@@ -242,7 +240,7 @@ pub fn upload<'a>(
                 ctx.counters
                     .updated_on_server
                     .fetch_add(1, Ordering::Relaxed);
-                info(format!("Uploaded {}", local_path));
+                info!("Uploaded {}", local_path);
             }
             if is_mount {
                 ctx.db
