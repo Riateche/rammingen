@@ -74,7 +74,7 @@ pub async fn find_local_deletions<'a>(
     mount_points: &'a mut [(&MountPoint, Rules)],
     existing_paths: &'a HashSet<SanitizedLocalPath>,
 ) -> Result<()> {
-    set_status("Checking for files deleted locally");
+    let _status = set_status("Checking for files deleted locally");
     for entry in ctx.db.get_all_local_entries().rev() {
         let (local_path, _data) = entry?;
         if existing_paths.contains(&local_path) {
@@ -118,7 +118,7 @@ pub fn upload<'a>(
     existing_paths: &'a mut HashSet<SanitizedLocalPath>,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
-        set_status(format!("Scanning local files: {}", local_path));
+        let _status = set_status(format!("Scanning local files: {}", local_path));
         existing_paths.insert(local_path.clone());
         let mut metadata = fs::symlink_metadata(local_path)?;
         if metadata.is_symlink() {

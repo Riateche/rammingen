@@ -7,7 +7,7 @@ use rammingen_protocol::endpoints::GetNewEntries;
 use crate::{db::DecryptedEntryVersionData, term::set_status, Ctx};
 
 pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
-    set_status("Pulling updates from server");
+    let _status = set_status("Pulling updates from server");
     let mut last_update_number = ctx.db.last_entry_update_number()?;
     let mut stream = ctx.client.stream(&GetNewEntries { last_update_number });
     let mut decrypted = Vec::new();

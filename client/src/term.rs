@@ -29,8 +29,17 @@ fn term() -> ArcMutexGuard<RawMutex, Term> {
     Mutex::lock_arc(&TERM)
 }
 
-pub fn set_status(status: impl Display) {
-    term().set_status(status)
+#[must_use]
+pub struct StatusGuard;
+impl Drop for StatusGuard {
+    fn drop(&mut self) {
+        clear_status()
+    }
+}
+
+pub fn set_status(status: impl Display) -> StatusGuard {
+    term().set_status(status);
+    StatusGuard
 }
 
 pub fn clear_status() {

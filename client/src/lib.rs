@@ -42,7 +42,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use sync::sync;
-use term::{clear_status, TermLayer};
+use term::TermLayer;
 use tracing::{error, info};
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
@@ -94,7 +94,6 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             {
                 error!("Failed to process {:?}: {:?}", local_path, err);
             }
-            clear_status();
             ctx.counters.report();
         }
         cli::Command::Download {

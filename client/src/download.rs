@@ -118,7 +118,7 @@ pub async fn download(
         remove_file(&tmp_path)?;
     }
     if is_mount {
-        set_status("Checking for files deleted remotely");
+        let _status = set_status("Checking for files deleted remotely");
         for entry in ctx.db.get_archive_entries(root_archive_path).rev() {
             let entry = entry?;
             if entry.kind.is_some() {
@@ -159,7 +159,7 @@ pub async fn download(
         if rules.matches(&entry_local_path)? {
             continue;
         }
-        set_status(format!("Scanning remote files: {}", root_local_path));
+        let _status = set_status(format!("Scanning remote files: {}", root_local_path));
 
         let mut must_delete = false;
         let db_data = if is_mount {

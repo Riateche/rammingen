@@ -46,9 +46,7 @@ fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
 
 #[tokio::main]
 async fn main() {
-    let r = try_main().await;
-    clear_status();
-    if let Err(err) = r {
+    if let Err(err) = try_main().await {
         error!("{:?}", err);
     }
 }
