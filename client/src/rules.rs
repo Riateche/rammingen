@@ -158,7 +158,7 @@ mod tests {
     fn with_subdirs() {
         let mut rules = rules(
             r#"[
-            { subdirs_of: "/tmp/1/projects", except: ["p1", "p2"] },
+            { subdirs_of: { path: "/tmp/1/projects", except: ["p1", "p2"] } },
         ]"#,
         );
         i(&mut rules, "/tmp/1");
