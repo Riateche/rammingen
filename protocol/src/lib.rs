@@ -126,7 +126,7 @@ pub struct EntryVersionData {
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
-    pub content: Option<EncryptedFileContent>,
+    pub content: Option<FileContent>,
 }
 
 impl EntryVersionData {
@@ -167,15 +167,6 @@ pub struct EntryVersion {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileContent {
-    pub modified_at: DateTimeUtc,
-    pub original_size: u64,
-    pub encrypted_size: u64,
-    pub hash: ContentHash,
-    pub unix_mode: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EncryptedFileContent {
     pub modified_at: DateTimeUtc,
     pub original_size: EncryptedSize,
     pub encrypted_size: u64,

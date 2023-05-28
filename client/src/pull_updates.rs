@@ -4,7 +4,7 @@ use anyhow::Result;
 use futures::TryStreamExt;
 use rammingen_protocol::endpoints::GetNewEntries;
 
-use crate::{db::DecryptedEntryVersionData, term::set_status, Ctx};
+use crate::{data::DecryptedEntryVersionData, term::set_status, Ctx};
 
 pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     let _status = set_status("Pulling updates from server");

@@ -4,6 +4,7 @@ pub mod cli;
 pub mod client;
 pub mod config;
 pub mod counters;
+pub mod data;
 pub mod db;
 pub mod download;
 pub mod encryption;

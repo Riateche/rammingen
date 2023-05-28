@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    DateTimeUtc, EncryptedArchivePath, EncryptedContentHash, EncryptedFileContent, Entry,
-    EntryKind, EntryUpdateNumber, EntryVersion, RecordTrigger, SourceId,
+    DateTimeUtc, EncryptedArchivePath, EncryptedContentHash, Entry, EntryKind, EntryUpdateNumber,
+    EntryVersion, FileContent, RecordTrigger, SourceId,
 };
 
 pub trait RequestToResponse {
@@ -82,7 +82,7 @@ pub struct AddVersion {
     pub path: EncryptedArchivePath,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
-    pub content: Option<EncryptedFileContent>,
+    pub content: Option<FileContent>,
 }
 response_type!(AddVersion, AddVersionResponse);
 

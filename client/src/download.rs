@@ -12,7 +12,7 @@ use stream_generator::generate_try_stream;
 use tracing::{info, warn};
 
 use crate::{
-    db::{DecryptedEntryVersionData, LocalEntryInfo},
+    data::{DecryptedEntryVersionData, LocalEntryInfo},
     encryption::encrypt_path,
     path::SanitizedLocalPath,
     rules::Rules,

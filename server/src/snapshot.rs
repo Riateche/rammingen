@@ -55,8 +55,8 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     {
         let mut deleted_rows = query_scalar!(
             "DELETE FROM entry_versions
-        WHERE recorded_at <= $1 AND snapshot_id IS NULL
-        RETURNING content_hash",
+            WHERE recorded_at <= $1 AND snapshot_id IS NULL
+            RETURNING content_hash",
             next_snapshot_timestamp_db,
         )
         .fetch(&mut tx);

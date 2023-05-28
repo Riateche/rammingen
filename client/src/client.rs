@@ -17,10 +17,13 @@ use tokio::task::block_in_place;
 use rammingen_protocol::{
     endpoints::{RequestToResponse, RequestToStreamingResponse},
     util::stream_file,
-    EncryptedContentHash, FileContent,
+    EncryptedContentHash,
 };
 
-use crate::encryption::{encrypt_content_hash, Decryptor};
+use crate::{
+    data::DecryptedFileContent,
+    encryption::{encrypt_content_hash, Decryptor},
+};
 
 #[derive(Derivative, Clone)]
 pub struct Client {
@@ -57,6 +60,7 @@ impl Client {
             .error_for_status()?
             .bytes()
             .await?;
+
         bincode::deserialize::<Result<R::Response, String>>(&response)?
             .map_err(|msg| anyhow!("server error: {msg}"))
     }
@@ -86,6 +90,7 @@ impl Client {
                             chunk,
                         )?
                         .map_err(|msg| anyhow!("server error: {msg}"))?;
+
                     buf.drain(..index);
                     if let Some(data) = data {
                         for item in data {
@@ -123,7 +128,7 @@ impl Client {
 
     pub async fn download_and_decrypt(
         &self,
-        content: &FileContent,
+        content: &DecryptedFileContent,
         path: impl AsRef<Path>,
         cipher: &Aes256SivAead,
     ) -> Result<()> {

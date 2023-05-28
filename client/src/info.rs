@@ -13,7 +13,7 @@ use rammingen_protocol::{
 use tracing::{error, info};
 
 use crate::{
-    db::DecryptedEntryVersionData, encryption::encrypt_path, path::SanitizedLocalPath,
+    data::DecryptedEntryVersionData, encryption::encrypt_path, path::SanitizedLocalPath,
     pull_updates::pull_updates, rules::Rules, upload::to_archive_path, Ctx,
 };
 

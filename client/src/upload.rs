@@ -4,7 +4,7 @@ use futures::future::BoxFuture;
 use rammingen_protocol::{
     endpoints::{AddVersion, ContentHashExists},
     util::native_to_archive_relative_path,
-    ArchivePath, DateTimeUtc, EncryptedFileContent, EntryKind, FileContent, RecordTrigger,
+    ArchivePath, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
 };
 use std::{collections::HashSet, sync::atomic::Ordering, time::Duration};
 use tokio::{task::block_in_place, time::sleep};
@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use crate::{
     config::MountPoint,
-    db::LocalEntryInfo,
+    data::{DecryptedFileContent, LocalEntryInfo},
     encryption::{self, encrypt_content_hash, encrypt_path, encrypt_size},
     path::SanitizedLocalPath,
     rules::Rules,
@@ -184,7 +184,7 @@ pub fn upload<'a>(
                     );
                 }
 
-                let current_content = FileContent {
+                let current_content = DecryptedFileContent {
                     modified_at: modified_datetime,
                     original_size: file_data.original_size,
                     encrypted_size: file_data.encrypted_size,
@@ -224,7 +224,7 @@ pub fn upload<'a>(
                 record_trigger: RecordTrigger::Upload,
                 kind: Some(kind),
                 content: if let Some(content) = &content {
-                    Some(EncryptedFileContent {
+                    Some(FileContent {
                         modified_at: content.modified_at,
                         original_size: encrypt_size(content.original_size, &ctx.cipher)?,
                         encrypted_size: content.encrypted_size,

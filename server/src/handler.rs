@@ -12,8 +12,8 @@ use rammingen_protocol::endpoints::{
 };
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath,
-    EncryptedContentHash, EncryptedFileContent, EncryptedSize, Entry, EntryKind, EntryVersion,
-    EntryVersionData, RecordTrigger, SourceId,
+    EncryptedContentHash, EncryptedSize, Entry, EntryKind, EntryVersion, EntryVersionData,
+    FileContent, RecordTrigger, SourceId,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -62,7 +62,7 @@ macro_rules! convert_version_data {
             record_trigger: row.record_trigger.try_into()?,
             kind,
             content: if kind == Some(EntryKind::File) {
-                Some(EncryptedFileContent {
+                Some(FileContent {
                     modified_at: row
                         .modified_at
                         .ok_or_else(|| anyhow!("missing modified_at for file"))?
