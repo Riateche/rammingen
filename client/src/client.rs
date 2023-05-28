@@ -7,21 +7,20 @@ use futures::{Stream, StreamExt};
 use reqwest::{header::CONTENT_LENGTH, Body, Method, Url};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
-    io::{self, Seek, SeekFrom, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
     time::Duration,
 };
 use stream_generator::generate_try_stream;
-use tempfile::SpooledTempFile;
 use tokio::task::block_in_place;
 
 use rammingen_protocol::{
     endpoints::{RequestToResponse, RequestToStreamingResponse},
     util::stream_file,
-    ContentHash, EncryptedContentHash,
+    EncryptedContentHash, FileContent,
 };
 
-use crate::encryption::Decryptor;
+use crate::encryption::{encrypt_content_hash, Decryptor};
 
 #[derive(Derivative, Clone)]
 pub struct Client {
@@ -105,29 +104,30 @@ impl Client {
     pub async fn upload(
         &self,
         hash: &EncryptedContentHash,
-        mut file: SpooledTempFile,
+        mut encrypted_file: impl Read + Seek + Send + 'static,
     ) -> Result<()> {
-        let size = file.seek(SeekFrom::End(0))?;
-        file.rewind()?;
+        let size = encrypted_file.seek(SeekFrom::End(0))?;
+        encrypted_file.rewind()?;
         self.reqwest
             .put(format!("{}content/{}", self.server_url, hash.to_url_safe()))
             .bearer_auth(&self.token)
             .header(CONTENT_LENGTH, size)
-            .body(Body::wrap_stream(stream_file(file).map(io::Result::Ok)))
+            .body(Body::wrap_stream(
+                stream_file(encrypted_file).map(io::Result::Ok),
+            ))
             .send()
             .await?
             .error_for_status()?;
         Ok(())
     }
 
-    pub async fn download(
+    pub async fn download_and_decrypt(
         &self,
-        hash: &ContentHash,
-        original_size: u64,
-        encrypted_hash: &EncryptedContentHash,
+        content: &FileContent,
         path: impl AsRef<Path>,
         cipher: &Aes256SivAead,
     ) -> Result<()> {
+        let encrypted_hash = encrypt_content_hash(&content.hash, cipher)?;
         let mut response = self
             .reqwest
             .get(format!(
@@ -139,12 +139,17 @@ impl Client {
             .send()
             .await?
             .error_for_status()?;
+
         let header_len: u64 = response
             .headers()
             .get(CONTENT_LENGTH)
             .ok_or_else(|| anyhow!("missing content length header"))?
             .to_str()?
             .parse()?;
+
+        if content.encrypted_size != header_len {
+            bail!("encrypted size mismatch");
+        }
 
         let file = File::create(path.as_ref())?;
         let mut decryptor = Decryptor::new(cipher, file);
@@ -158,10 +163,10 @@ impl Client {
         if actual_encrypted_size != header_len {
             bail!("content length mismatch");
         }
-        if hash != &actual_hash {
+        if content.hash != actual_hash {
             bail!("content hash mismatch");
         }
-        if original_size != actual_original_size {
+        if content.original_size != actual_original_size {
             bail!("original size mismatch");
         }
 

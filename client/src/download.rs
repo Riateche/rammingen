@@ -13,7 +13,7 @@ use tracing::{info, warn};
 
 use crate::{
     db::{DecryptedEntryVersionData, LocalEntryInfo},
-    encryption::{encrypt_content_hash, encrypt_path},
+    encryption::encrypt_path,
     path::SanitizedLocalPath,
     rules::Rules,
     term::set_status,
@@ -208,13 +208,7 @@ pub async fn download(
                     .content
                     .ok_or_else(|| anyhow!("missing content info for existing file"))?;
                 ctx.client
-                    .download(
-                        &content.hash,
-                        content.original_size,
-                        &encrypt_content_hash(&content.hash, &ctx.cipher)?,
-                        &tmp_path,
-                        &ctx.cipher,
-                    )
+                    .download_and_decrypt(&content, &tmp_path, &ctx.cipher)
                     .await?;
                 if let Some(db_data) = &db_data {
                     // Check again just in case.
