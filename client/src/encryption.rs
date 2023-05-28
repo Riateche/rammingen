@@ -1,3 +1,30 @@
+//! All encryption operations use AES-SIV.
+//!
+//! Data that will be stored in the server's database is encrypted using zero nonce,
+//! so the result is deterministic. This is important, e.g., for paths, because we
+//! should be able to encrypt the path again and retrieve it from the server.
+//! For file content, a random nonce is used for each block.
+//!
+//! File hash and size are encrypted using a single pass of AES-SIV with a zero nonce.
+//!
+//! When encrypting an archive path, it's split into components, and each component
+//! is encrypted individually using a single pass of AES-SIV with a zero nonce, and then
+//! encoded in base64. An encrypted path is then reconstructed from the encrypted components.
+//! Thus, encrypted path is still a valid archive path, and
+//! parent-child relationships are preserved even in encrypted form. This is important for
+//! certain server operations. For example, if a MovePath or RemovePath command is issued,
+//! the server should be able to find all paths nested in the specified path.
+//!
+//! When encrypting file content, it's first compressed using deflate and then split into fixed-size blocks.
+//! For each block, a random nonce is chosen. The nonce and encrypted block data are written to the encrypted file
+//! in the following form:
+//!
+//! - block size (32 bits, little endian) - length of the following block (nonce + encrypted content)
+//! - nonce (128 bits) - the random nonce used to encrypt this block
+//! - encrypted content
+//!
+//! Integrity of the file content is ensured on decryption by checking the resulting file content hash.
+
 use aes_siv::aead::Aead;
 use aes_siv::AeadCore;
 use aes_siv::{aead::OsRng, Aes256SivAead, Nonce};
@@ -19,18 +46,45 @@ use std::path::Path;
 use tempfile::SpooledTempFile;
 use typenum::ToInt;
 
-const BLOCK_SIZE: usize = 1024 * 1024;
+/// Max size of encrypted file content that will be stored in memory.
+/// Files exceeding this limit will be stored as a temporary file on disk.
 const MAX_IN_MEMORY: usize = 32 * 1024 * 1024;
+
+/// Max length of a file chunk that will be encrypted at once.
+const BLOCK_SIZE: usize = 1024 * 1024;
+
+/// File type marker that is stored at the beginning of every encrypted file.
 const MAGIC_NUMBER: u32 = 3137690536;
 
+// It should be a constant, but it currently doesn't work.
 fn nonce_size() -> usize {
     <Aes256SivAead as AeadCore>::NonceSize::to_int()
 }
 
+/// Passes through any writes and calculates Sha256 hash and size of the written data.
 struct HashingWriter<W> {
     hasher: Sha256,
     size: u64,
     inner: W,
+}
+
+impl<W> HashingWriter<W> {
+    pub fn new(inner: W) -> Self {
+        Self {
+            hasher: Sha256::new(),
+            inner,
+            size: 0,
+        }
+    }
+
+    pub fn finish(mut self) -> io::Result<(W, ContentHash, u64)>
+    where
+        W: Write,
+    {
+        self.inner.flush()?;
+        let hash = ContentHash(self.hasher.finalize().to_vec());
+        Ok((self.inner, hash, self.size))
+    }
 }
 
 impl<W: Write> Write for HashingWriter<W> {
@@ -46,22 +100,9 @@ impl<W: Write> Write for HashingWriter<W> {
     }
 }
 
-impl<W> HashingWriter<W> {
-    pub fn new(inner: W) -> Self {
-        Self {
-            hasher: Sha256::new(),
-            inner,
-            size: 0,
-        }
-    }
-
-    pub fn finish(self) -> (W, ContentHash, u64) {
-        let hash = ContentHash(self.hasher.finalize().to_vec());
-        (self.inner, hash, self.size)
-    }
-}
-
+/// Writes encrypted blocks of file content.
 struct EncryptingWriter<'a, W> {
+    // Input data of the currently accumulated block.
     buf: Vec<u8>,
     output: W,
     cipher: &'a Aes256SivAead,
@@ -69,14 +110,17 @@ struct EncryptingWriter<'a, W> {
 }
 
 impl<'a, W: Write> EncryptingWriter<'a, W> {
-    fn finish(mut self) -> io::Result<(W, u64)> {
-        self.write_block()?;
-        self.output.flush()?;
-        Ok((self.output, self.encrypted_size))
+    fn new(mut output: W, cipher: &'a Aes256SivAead) -> io::Result<Self> {
+        output.write_u32::<LE>(MAGIC_NUMBER)?;
+        Ok(Self {
+            buf: Vec::new(),
+            output,
+            cipher,
+            // size of magic number
+            encrypted_size: 4,
+        })
     }
-}
 
-impl<'a, W: Write> EncryptingWriter<'a, W> {
     fn write_block(&mut self) -> io::Result<()> {
         if self.buf.is_empty() {
             return Ok(());
@@ -99,6 +143,12 @@ impl<'a, W: Write> EncryptingWriter<'a, W> {
         self.buf.drain(..input_len);
 
         Ok(())
+    }
+
+    fn finish(mut self) -> io::Result<(W, u64)> {
+        self.write_block()?;
+        self.output.flush()?;
+        Ok((self.output, self.encrypted_size))
     }
 }
 
@@ -124,31 +174,28 @@ pub struct EncryptedFileData {
 }
 
 pub fn encrypt_file(path: impl AsRef<Path>, cipher: &Aes256SivAead) -> Result<EncryptedFileData> {
-    let mut file = File::open(path.as_ref())?;
-    let mut output = SpooledTempFile::new(MAX_IN_MEMORY);
-    output.write_u32::<LE>(MAGIC_NUMBER)?;
-    let encryptor = EncryptingWriter {
-        buf: Vec::new(),
-        output: &mut output,
-        cipher,
-        encrypted_size: 4,
-    };
+    let mut input_file = File::open(path.as_ref())?;
+    let output = SpooledTempFile::new(MAX_IN_MEMORY);
+    let encryptor = EncryptingWriter::new(output, cipher)?;
     let encoder = DeflateEncoder::new(encryptor, CompressionOptions::high());
     let mut hasher = HashingWriter::new(encoder);
-    io::copy(&mut file, &mut hasher)?;
-    let (encoder, hash, original_size) = hasher.finish();
+    io::copy(&mut input_file, &mut hasher)?;
+    let (encoder, hash, original_size) = hasher.finish()?;
     let encryptor = encoder.finish()?;
-    let (_, encrypted_size) = encryptor.finish()?;
+    let (file, encrypted_size) = encryptor.finish()?;
     Ok(EncryptedFileData {
-        file: output,
+        file,
         hash,
         original_size,
         encrypted_size,
     })
 }
 
+// Decrypts encrypted files.
 pub struct Decryptor<'a, W: Write> {
+    // Whether the magic number has been read.
     got_header: bool,
+    // Input data that is not yet decrypted.
     buf: Vec<u8>,
     cipher: &'a Aes256SivAead,
     output: InflateWriter<HashingWriter<W>>,
@@ -169,7 +216,7 @@ impl<'a, W: Write> Decryptor<'a, W> {
         if !self.buf.is_empty() {
             return Err(io::Error::new(io::ErrorKind::Other, "trailing data found"));
         }
-        Ok(self.output.finish()?.finish())
+        self.output.finish()?.finish()
     }
 
     fn process_block(&mut self) -> io::Result<()> {
@@ -189,7 +236,8 @@ impl<'a, W: Write> Decryptor<'a, W> {
         if self.buf.len() < 4 {
             return Ok(());
         }
-        let len = usize::try_from(LE::read_u32(&self.buf))
+        let len: usize = LE::read_u32(&self.buf)
+            .try_into()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         if len > BLOCK_SIZE {
             return Err(io::Error::new(
