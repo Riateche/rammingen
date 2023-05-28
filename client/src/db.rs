@@ -81,8 +81,9 @@ impl Db {
         Ok(self
             .db
             .get(KEY_LAST_ENTRY_UPDATE_NUMBER)?
-            .map(|value| EntryUpdateNumber(LE::read_i64(&value)))
-            .unwrap_or(EntryUpdateNumber(0)))
+            .map(|value| LE::read_i64(&value))
+            .unwrap_or(0)
+            .into())
     }
 
     pub fn update_archive_entries(
@@ -102,7 +103,7 @@ impl Db {
             }
             db.insert(
                 &KEY_LAST_ENTRY_UPDATE_NUMBER,
-                &update_number.0.to_le_bytes(),
+                &i64::from(update_number).to_le_bytes(),
             )?;
             Ok(())
         })?;

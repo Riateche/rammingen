@@ -63,7 +63,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         while let Some(hash) = deleted_rows.try_next().await? {
             num_deleted += 1;
             if let Some(hash) = hash {
-                hashes_to_check.insert(hash);
+                hashes_to_check.insert(EncryptedContentHash::from_encrypted(hash));
             }
         }
     }
@@ -100,13 +100,13 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         ).execute(&mut tx)
         .await?;
         if let Some(hash) = version.content_hash {
-            hashes_to_check.insert(hash);
+            hashes_to_check.insert(EncryptedContentHash::from_encrypted(hash));
         }
     }
     for hash in hashes_to_check {
         let exists = query_scalar!(
             "SELECT 1 FROM entry_versions WHERE content_hash = $1 LIMIT 1",
-            hash
+            hash.as_slice()
         )
         .fetch_optional(&mut tx)
         .await?
@@ -120,7 +120,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
 
     let mut num_removed_files = 0;
     for hash in hashes_to_remove {
-        match ctx.storage.remove_file(&EncryptedContentHash(hash)) {
+        match ctx.storage.remove_file(&hash) {
             Ok(()) => num_removed_files += 1,
             Err(err) => {
                 warn!(?err, "failed to remove content file");

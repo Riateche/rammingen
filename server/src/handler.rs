@@ -43,7 +43,6 @@ macro_rules! convert_entry_version {
     ($row:expr) => {{
         let row = $row;
         EntryVersion {
-            id: row.id.into(),
             entry_id: row.entry_id.into(),
             snapshot_id: row.snapshot_id.map(Into::into),
             data: convert_version_data!(row),
@@ -67,7 +66,7 @@ macro_rules! convert_version_data {
                         .modified_at
                         .ok_or_else(|| anyhow!("missing modified_at for file"))?
                         .from_db(),
-                    original_size: EncryptedSize(
+                    original_size: EncryptedSize::from_encrypted(
                         row.original_size
                             .ok_or_else(|| anyhow!("missing original_size for file"))?,
                     ),
@@ -75,7 +74,7 @@ macro_rules! convert_version_data {
                         .encrypted_size
                         .ok_or_else(|| anyhow!("missing encrypted_size for file"))?
                         .try_into()?,
-                    hash: EncryptedContentHash(
+                    hash: EncryptedContentHash::from_encrypted(
                         row.content_hash
                             .ok_or_else(|| anyhow!("missing content_hash for file"))?
                             .into(),
@@ -123,7 +122,7 @@ fn get_parent_dir<'a>(
                         record_trigger = $3
                     WHERE id = $4",
                     EntryKind::Directory as i32,
-                    ctx.source_id.0,
+                    ctx.source_id.to_db(),
                     request.record_trigger as i32,
                     entry.id,
                 )
@@ -165,7 +164,7 @@ fn get_parent_dir<'a>(
                 kind,
                 parent_of_parent,
                 parent.0 .0,
-                ctx.source_id.0,
+                ctx.source_id.to_db(),
                 request.record_trigger as i32,
             )
             .fetch_one(&mut *tx)
@@ -197,7 +196,7 @@ async fn add_version_inner<'a>(
     let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0 .0)
         .fetch_optional(&mut *tx)
         .await?;
-    let original_size_db = request.content.as_ref().map(|c| &c.original_size.0[..]);
+    let original_size_db = request.content.as_ref().map(|c| c.original_size.as_slice());
     let encrypted_size_db = request
         .content
         .as_ref()
@@ -208,7 +207,7 @@ async fn add_version_inner<'a>(
         .as_ref()
         .map(|c| c.modified_at.to_db())
         .transpose()?;
-    let content_hash_db = request.content.as_ref().map(|c| &c.hash.0);
+    let content_hash_db = request.content.as_ref().map(|c| c.hash.as_slice());
     if let Some(entry) = entry {
         let entry = convert_entry!(entry);
         if entry.data.is_same(&request) {
@@ -218,7 +217,7 @@ async fn add_version_inner<'a>(
             let child_count = query_scalar!(
                 "SELECT count(*) FROM entries
                 WHERE kind != 0 AND parent_dir = $1",
-                Some(entry.id.0)
+                entry.id.to_db()
             )
             .fetch_one(&mut *tx)
             .await?
@@ -254,7 +253,7 @@ async fn add_version_inner<'a>(
                 content_hash = $7,
                 unix_mode = $8
             WHERE id = $9",
-            ctx.source_id.0,
+            ctx.source_id.to_db(),
             request.record_trigger as i32,
             entry_kind_to_db(request.kind),
             original_size_db,
@@ -262,7 +261,7 @@ async fn add_version_inner<'a>(
             modified_at_db,
             content_hash_db,
             unix_mode_db,
-            entry.id.0,
+            entry.id.to_db(),
         )
         .execute(&mut *tx)
         .await?;
@@ -293,7 +292,7 @@ async fn add_version_inner<'a>(
             ) RETURNING id",
             parent,
             request.path.0 .0,
-            ctx.source_id.0,
+            ctx.source_id.to_db(),
             request.record_trigger as i32,
             entry_kind_to_db(request.kind),
             original_size_db,
@@ -322,7 +321,7 @@ pub async fn get_new_entries(
 ) -> Result<()> {
     let mut rows = query!(
         "SELECT * FROM entries WHERE update_number > $1 ORDER BY update_number",
-        request.last_update_number.0
+        request.last_update_number.to_db()
     )
     .fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
@@ -453,7 +452,7 @@ async fn remove_entries_in_dir<'a>(
             content_hash = NULL,
             unix_mode = NULL
         WHERE (path = $4 OR path LIKE $5) AND kind > 0",
-        ctx.source_id.0,
+        ctx.source_id.to_db(),
         trigger as i32,
         EntryKind::NOT_EXISTS,
         path.0 .0,
@@ -544,10 +543,10 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
         .await?
         .try_collect()
         .await?;
-    let new_existing_ids: HashSet<_> = entries
+    let new_existing_ids: HashSet<i64> = entries
         .iter()
         .filter(|entry| entry.data.kind.is_some())
-        .map(|entry| entry.entry_id.0)
+        .map(|entry| entry.entry_id.into())
         .collect();
     let mut affected_paths = 0;
 
@@ -567,7 +566,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
                     content_hash = NULL,
                     unix_mode = NULL
                 WHERE id = $4",
-                ctx.source_id.0,
+                ctx.source_id.to_db(),
                 RecordTrigger::Reset as i32,
                 EntryKind::NOT_EXISTS,
                 id,
@@ -611,7 +610,7 @@ pub async fn check_integrity(
     )
     .fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
-        let hash = EncryptedContentHash(
+        let hash = EncryptedContentHash::from_encrypted(
             row.content_hash
                 .ok_or_else(|| anyhow!("expected hash to exist in query output"))?,
         );
@@ -651,7 +650,7 @@ pub async fn get_sources(ctx: Context, _request: GetSources) -> Result<Response<
     let mut rows = query!("SELECT id, name FROM sources ORDER BY id").fetch(&ctx.db_pool);
     while let Some(row) = rows.try_next().await? {
         sources.push(SourceInfo {
-            id: SourceId(row.id),
+            id: row.id.into(),
             name: row.name,
         });
     }

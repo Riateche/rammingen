@@ -82,7 +82,7 @@ impl<W> HashingWriter<W> {
         W: Write,
     {
         self.inner.flush()?;
-        let hash = ContentHash(self.hasher.finalize().to_vec());
+        let hash = ContentHash::new(self.hasher.finalize().into());
         Ok((self.inner, hash, self.size))
     }
 }
@@ -331,31 +331,31 @@ pub fn encrypt_content_hash(
     cipher: &Aes256SivAead,
 ) -> Result<EncryptedContentHash> {
     let ciphertext = cipher
-        .encrypt(&Nonce::default(), &value.0[..])
+        .encrypt(&Nonce::default(), value.as_slice())
         .map_err(|_| anyhow!("encryption failed"))?;
-    Ok(EncryptedContentHash(ciphertext))
+    Ok(EncryptedContentHash::from_encrypted(ciphertext))
 }
 
 pub fn decrypt_content_hash(
     value: &EncryptedContentHash,
     cipher: &Aes256SivAead,
 ) -> Result<ContentHash> {
-    let plaintext = cipher
-        .decrypt(&Nonce::default(), &value.0[..])
-        .map_err(|_| anyhow!("decryption failed for {:?}", value))?;
-    Ok(ContentHash(plaintext))
+    cipher
+        .decrypt(&Nonce::default(), value.as_slice())
+        .map_err(|_| anyhow!("decryption failed for {:?}", value))?
+        .try_into()
 }
 
 pub fn encrypt_size(value: u64, cipher: &Aes256SivAead) -> Result<EncryptedSize> {
     let ciphertext = cipher
         .encrypt(&Nonce::default(), &value.to_le_bytes()[..])
         .map_err(|_| anyhow!("encryption failed"))?;
-    Ok(EncryptedSize(ciphertext))
+    Ok(EncryptedSize::from_encrypted(ciphertext))
 }
 
 pub fn decrypt_size(value: &EncryptedSize, cipher: &Aes256SivAead) -> Result<u64> {
     let plaintext = cipher
-        .decrypt(&Nonce::default(), &value.0[..])
+        .decrypt(&Nonce::default(), value.as_slice())
         .map_err(|_| anyhow!("decryption failed for {:?}", value))?;
     if plaintext.len() != 8 {
         bail!(

@@ -97,7 +97,7 @@ struct CachedSources {
 async fn load_sources(db_pool: &PgPool) -> Result<HashMap<String, SourceId>> {
     query!("SELECT id, secret FROM sources")
         .fetch(db_pool)
-        .map_ok(|row| (row.secret, SourceId(row.id)))
+        .map_ok(|row| (row.secret, row.id.into()))
         .try_collect()
         .await
         .map_err(Into::into)

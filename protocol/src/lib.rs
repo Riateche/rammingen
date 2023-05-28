@@ -4,7 +4,7 @@ pub mod endpoints;
 mod path;
 pub mod util;
 
-pub use crate::path::ArchivePath;
+pub use crate::path::{ArchivePath, EncryptedArchivePath};
 use anyhow::bail;
 use anyhow::Result;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
@@ -17,24 +17,66 @@ use std::fmt;
 pub type DateTimeUtc = chrono::DateTime<Utc>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
-pub struct SourceId(pub i32);
+pub struct SourceId(i32);
+
+impl SourceId {
+    pub fn to_db(self) -> i32 {
+        self.0
+    }
+}
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, From, Into,
 )]
-pub struct EntryUpdateNumber(pub i64);
+pub struct EntryUpdateNumber(i64);
+
+impl EntryUpdateNumber {
+    pub fn to_db(self) -> i64 {
+        self.0
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
-pub struct SnapshotId(pub i32);
+pub struct SnapshotId(i32);
+
+impl SnapshotId {
+    pub fn to_db(self) -> i32 {
+        self.0
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
-pub struct EntryId(pub i64);
+pub struct EntryId(i64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
-pub struct VersionId(pub i64);
+impl EntryId {
+    pub fn to_db(self) -> i64 {
+        self.0
+    }
+}
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, From, Into)]
-pub struct ContentHash(pub Vec<u8>);
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Into)]
+pub struct ContentHash(Vec<u8>);
+
+impl ContentHash {
+    pub fn new(hash: [u8; 32]) -> Self {
+        Self(hash.into())
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl TryFrom<Vec<u8>> for ContentHash {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Vec<u8>) -> Result<Self> {
+        if value.len() != 32 {
+            bail!("invalid hash length");
+        }
+        Ok(Self(value))
+    }
+}
 
 impl fmt::Display for ContentHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -43,9 +85,13 @@ impl fmt::Display for ContentHash {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EncryptedContentHash(pub Vec<u8>);
+pub struct EncryptedContentHash(Vec<u8>);
 
 impl EncryptedContentHash {
+    pub fn from_encrypted(value: Vec<u8>) -> Self {
+        Self(value)
+    }
+
     pub fn to_url_safe(&self) -> String {
         BASE64_URL_SAFE_NO_PAD.encode(&self.0)
     }
@@ -54,10 +100,24 @@ impl EncryptedContentHash {
         let bytes = BASE64_URL_SAFE_NO_PAD.decode(s)?;
         Ok(Self(bytes))
     }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EncryptedSize(pub Vec<u8>);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Into)]
+pub struct EncryptedSize(Vec<u8>);
+
+impl EncryptedSize {
+    pub fn from_encrypted(value: Vec<u8>) -> Self {
+        Self(value)
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RecordTrigger {
@@ -110,15 +170,6 @@ pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EncryptedArchivePath(pub ArchivePath);
-
-impl fmt::Display for EncryptedArchivePath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "enar:{}", self.0 .0)
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntryVersionData {
     pub path: EncryptedArchivePath,
@@ -159,7 +210,6 @@ pub struct Entry {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntryVersion {
-    pub id: VersionId,
     pub entry_id: EntryId,
     pub snapshot_id: Option<SnapshotId>,
     pub data: EntryVersionData,

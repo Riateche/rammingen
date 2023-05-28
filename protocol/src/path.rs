@@ -150,3 +150,12 @@ fn check_path(path: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EncryptedArchivePath(pub ArchivePath);
+
+impl fmt::Display for EncryptedArchivePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "enar:{}", self.0 .0)
+    }
+}

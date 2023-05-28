@@ -121,7 +121,7 @@ fn basic() {
 
     let dir = TempDir::new().unwrap();
     let storage = Storage::new(dir.path().into()).unwrap();
-    let hash = EncryptedContentHash((0..64).collect());
+    let hash = EncryptedContentHash::from_encrypted((0..64).collect());
     let mut file = storage.create_file().unwrap();
     writeln!(file, "ok").unwrap();
     storage.commit_file(file, &hash).unwrap();
