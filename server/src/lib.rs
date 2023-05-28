@@ -3,7 +3,7 @@
 mod content_streaming;
 mod handler;
 mod snapshot;
-pub mod storage;
+mod storage;
 pub mod util;
 
 use std::{
@@ -20,6 +20,7 @@ use anyhow::{anyhow, Result};
 use bytes::{BufMut, BytesMut};
 use futures_util::{Future, StreamExt, TryStreamExt};
 use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
+use humantime_serde::re::humantime::parse_duration;
 use hyper::{
     body::{self, Bytes, Frame},
     header::AUTHORIZATION,
@@ -41,6 +42,8 @@ use storage::Storage;
 use stream_generator::{generate_stream, Yielder};
 use tokio::{
     net::TcpListener,
+    select,
+    signal::unix::{signal, SignalKind},
     sync::{
         mpsc::{self, Sender},
         Mutex,
@@ -49,6 +52,7 @@ use tokio::{
     time::interval,
 };
 use tracing::{error, info, warn};
+use util::default_config_dir;
 
 use crate::snapshot::make_snapshot;
 
@@ -64,10 +68,21 @@ pub struct Config {
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
 
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "humantime_serde", default = "default_snapshot_interval")]
     pub snapshot_interval: Duration,
-    #[serde(with = "humantime_serde")]
+    #[serde(
+        with = "humantime_serde",
+        default = "default_retain_detailed_history_for"
+    )]
     pub retain_detailed_history_for: Duration,
+}
+
+fn default_snapshot_interval() -> Duration {
+    parse_duration("1week").unwrap()
+}
+
+fn default_retain_detailed_history_for() -> Duration {
+    parse_duration("1week").unwrap()
 }
 
 impl Config {
@@ -104,7 +119,9 @@ async fn load_sources(db_pool: &PgPool) -> Result<HashMap<String, SourceId>> {
 }
 
 pub async fn run(config: Config) -> Result<()> {
+    info!("Connecting to database...");
     let db_pool = PgPool::connect(&config.database_url).await?;
+    info!("Connected to database.");
     let ctx = Context {
         config: config.clone(),
         storage: Arc::new(Storage::new(config.storage_path)?),
@@ -130,26 +147,39 @@ pub async fn run(config: Config) -> Result<()> {
         }
     });
 
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigint = signal(SignalKind::interrupt())?;
     loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                let ctx = ctx.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = http1::Builder::new()
-                        .keep_alive(true)
-                        .serve_connection(
-                            stream,
-                            service_fn(move |req| handle_request(ctx.clone(), req)),
-                        )
-                        .await
-                    {
-                        warn!(?err, "error while serving HTTP connection");
-                    }
-                });
+        select! {
+            _ = sigterm.recv() => {
+                info!("Got terminate signal, shutting down.");
+                break;
             }
-            Err(err) => warn!(?err, "failed to accept"),
+            _ = sigint.recv() => {
+                info!("Got interrupt signal, shutting down.");
+                break;
+            }
+            r = listener.accept() => match r {
+                Ok((stream, _)) => {
+                    let ctx = ctx.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = http1::Builder::new()
+                            .keep_alive(true)
+                            .serve_connection(
+                                stream,
+                                service_fn(move |req| handle_request(ctx.clone(), req)),
+                            )
+                            .await
+                        {
+                            warn!(?err, "error while serving HTTP connection");
+                        }
+                    });
+                }
+                Err(err) => warn!(?err, "failed to accept"),
+            }
         }
     }
+    Ok(())
 }
 
 async fn handle_request(
@@ -256,8 +286,6 @@ where
         + 'static,
     Fut: Future<Output = Result<()>> + Send,
 {
-    type ChunkData<'a, T> = Option<&'a [StreamingResponseItem<T>]>;
-
     let (tx, mut rx) = mpsc::channel(5);
     let request = parse_request::<T>(request).await?;
     tokio::spawn(async move {
@@ -363,4 +391,12 @@ async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<Source
         .get(secret)
         .copied()
         .ok_or_else(|| anyhow!("invalid bearer token"))
+}
+
+pub fn config_path(config: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = config {
+        Ok(path)
+    } else {
+        Ok(default_config_dir()?.join("rammingen-server.conf"))
+    }
 }

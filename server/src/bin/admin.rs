@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use rammingen_server::{
+    config_path,
     util::{add_source, generate_access_token, set_access_token, sources},
     Config,
 };
@@ -10,7 +11,7 @@ use sqlx::PgPool;
 #[derive(Debug, Parser)]
 pub struct Cli {
     #[clap(long)]
-    pub config: PathBuf,
+    pub config: Option<PathBuf>,
     #[clap(subcommand)]
     pub command: Command,
 }
@@ -25,7 +26,8 @@ pub enum Command {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config = Config::parse(&cli.config)?;
+    let config_path = config_path(cli.config)?;
+    let config = Config::parse(&config_path)?;
     let pool = PgPool::connect(&config.database_url).await?;
     match cli.command {
         Command::Sources => {

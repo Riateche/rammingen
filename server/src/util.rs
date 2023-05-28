@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use rand::{distributions::Alphanumeric, distributions::DistString, rngs::OsRng};
 use sqlx::{query, query_scalar, PgPool};
+use std::path::PathBuf;
 
 pub async fn sources(db: &PgPool) -> Result<Vec<String>> {
     query_scalar!("SELECT name FROM sources ORDER BY name")
@@ -43,4 +44,16 @@ pub fn generate_access_token() -> String {
 pub async fn migrate(db: &PgPool) -> Result<()> {
     sqlx::migrate!().run(db).await?;
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub fn default_config_dir() -> Result<PathBuf> {
+    Ok("/etc".into())
+}
+
+// Windows: %APPDATA% (%USERPROFILE%\AppData\Roaming);
+// macOS: $HOME/Library/Application Support
+#[cfg(not(target_os = "linux"))]
+pub fn default_config_dir() -> Result<PathBuf> {
+    dirs::config_dir().ok_or_else(|| anyhow::anyhow!("failed to get config dir"))
 }

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use rammingen_protocol::util::log_writer;
-use rammingen_server::Config;
+use rammingen_server::{config_path, Config};
 use std::{path::PathBuf, sync::Mutex};
 use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
 
@@ -14,11 +14,7 @@ pub struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let config_path = if let Some(path) = cli.config {
-        path
-    } else {
-        default_config_dir()?.join("rammingen-server.conf")
-    };
+    let config_path = config_path(cli.config)?;
     let config = Config::parse(config_path)?;
 
     tracing_subscriber::fmt()
@@ -28,16 +24,4 @@ async fn main() -> Result<()> {
         .init();
     rammingen_server::run(config).await?;
     Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn default_config_dir() -> Result<PathBuf> {
-    Ok("/etc".into())
-}
-
-// Windows: %APPDATA% (%USERPROFILE%\AppData\Roaming);
-// macOS: $HOME/Library/Application Support
-#[cfg(not(target_os = "linux"))]
-fn default_config_dir() -> Result<PathBuf> {
-    dirs::config_dir().ok_or_else(|| anyhow::anyhow!("failed to get config dir"))
 }

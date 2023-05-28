@@ -1,20 +1,20 @@
 #![allow(clippy::collapsible_if)]
 
 pub mod cli;
-pub mod client;
+mod client;
 pub mod config;
-pub mod counters;
-pub mod data;
-pub mod db;
-pub mod download;
-pub mod encryption;
-pub mod info;
+mod counters;
+mod data;
+mod db;
+mod download;
+mod encryption;
+mod info;
 pub mod path;
-pub mod pull_updates;
+mod pull_updates;
 pub mod rules;
-pub mod sync;
+mod sync;
 pub mod term;
-pub mod upload;
+mod upload;
 
 use crate::{
     info::{local_status, ls},
