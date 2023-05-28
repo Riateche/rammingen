@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde::{de::Error, Deserialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-pub struct ArchivePath(pub String);
+pub struct ArchivePath(String);
 
 impl ArchivePath {
     pub fn from_str_without_prefix(path: &str) -> Result<Self> {
@@ -152,7 +152,29 @@ fn check_path(path: &str) -> Result<()> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EncryptedArchivePath(pub ArchivePath);
+pub struct EncryptedArchivePath(ArchivePath);
+
+impl EncryptedArchivePath {
+    pub fn from_encrypted_without_prefix(path: &str) -> Result<Self> {
+        ArchivePath::from_str_without_prefix(path).map(Self)
+    }
+
+    pub fn to_str_without_prefix(&self) -> &str {
+        self.0.to_str_without_prefix()
+    }
+
+    pub fn parent(&self) -> Option<EncryptedArchivePath> {
+        self.0.parent().map(Self)
+    }
+
+    pub fn strip_prefix(&self, base: &EncryptedArchivePath) -> Option<&str> {
+        self.0.strip_prefix(&base.0)
+    }
+
+    pub fn join_multiple(&self, relative_archive_path: &str) -> Result<EncryptedArchivePath> {
+        self.0.join_multiple(relative_archive_path).map(Self)
+    }
+}
 
 impl fmt::Display for EncryptedArchivePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

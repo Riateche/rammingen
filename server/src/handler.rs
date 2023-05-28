@@ -11,9 +11,9 @@ use rammingen_protocol::endpoints::{
     SourceInfo, StreamingResponseItem,
 };
 use rammingen_protocol::{
-    entry_kind_from_db, entry_kind_to_db, ArchivePath, DateTimeUtc, EncryptedArchivePath,
-    EncryptedContentHash, EncryptedSize, Entry, EntryKind, EntryVersion, EntryVersionData,
-    FileContent, RecordTrigger, SourceId,
+    entry_kind_from_db, entry_kind_to_db, DateTimeUtc, EncryptedArchivePath, EncryptedContentHash,
+    EncryptedSize, Entry, EntryKind, EntryVersion, EntryVersionData, FileContent, RecordTrigger,
+    SourceId,
 };
 use sqlx::{query, query_scalar, types::time::OffsetDateTime, PgPool, Postgres, Transaction};
 use tokio::sync::mpsc::Sender;
@@ -55,7 +55,7 @@ macro_rules! convert_version_data {
         let row = $row;
         let kind = entry_kind_from_db(row.kind)?;
         EntryVersionData {
-            path: EncryptedArchivePath(ArchivePath(row.path)),
+            path: EncryptedArchivePath::from_encrypted_without_prefix(&row.path)?,
             recorded_at: row.recorded_at.from_db(),
             source_id: row.source_id.into(),
             record_trigger: row.record_trigger.try_into()?,
@@ -96,18 +96,16 @@ fn get_parent_dir<'a>(
     request: &'a AddVersion,
 ) -> BoxFuture<'a, Result<Option<i64>>> {
     Box::pin(async move {
-        let Some(parent) = path.0.parent() else { return Ok(None) };
-        let parent = EncryptedArchivePath(parent);
-        let entry = query!("SELECT id, kind FROM entries WHERE path = $1", parent.0 .0)
-            .fetch_optional(&mut *tx)
-            .await?;
+        let Some(parent) = path.parent() else { return Ok(None) };
+        let entry = query!(
+            "SELECT id, kind FROM entries WHERE path = $1",
+            parent.to_str_without_prefix()
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
         let entry_id = if let Some(entry) = entry {
             if entry.kind == EntryKind::File as i32 {
-                bail!(
-                    "cannot save entry {} because {} is a file",
-                    path.0,
-                    parent.0
-                );
+                bail!("cannot save entry {} because {} is a file", path, parent);
             }
             if request.kind.is_some() && entry.kind == EntryKind::NOT_EXISTS {
                 // Make sure parent's parent is also marked as existing.
@@ -163,7 +161,7 @@ fn get_parent_dir<'a>(
                 ) RETURNING id",
                 kind,
                 parent_of_parent,
-                parent.0 .0,
+                parent.to_str_without_prefix(),
                 ctx.source_id.to_db(),
                 request.record_trigger as i32,
             )
@@ -193,9 +191,12 @@ async fn add_version_inner<'a>(
             );
         }
     }
-    let entry = query!("SELECT * FROM entries WHERE path = $1", request.path.0 .0)
-        .fetch_optional(&mut *tx)
-        .await?;
+    let entry = query!(
+        "SELECT * FROM entries WHERE path = $1",
+        request.path.to_str_without_prefix()
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
     let original_size_db = request.content.as_ref().map(|c| c.original_size.as_slice());
     let encrypted_size_db = request
         .content
@@ -225,8 +226,8 @@ async fn add_version_inner<'a>(
             if child_count > 0 {
                 bail!(
                     "cannot mark {} as deleted because it has existing children (request: {:?})",
-                    request.path.0,
-                    request
+                    request.path,
+                    request,
                 );
             }
         }
@@ -291,7 +292,7 @@ async fn add_version_inner<'a>(
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
             ) RETURNING id",
             parent,
-            request.path.0 .0,
+            request.path.to_str_without_prefix(),
             ctx.source_id.to_db(),
             request.record_trigger as i32,
             entry_kind_to_db(request.kind),
@@ -335,10 +336,13 @@ pub async fn get_direct_child_entries(
     request: GetDirectChildEntries,
     tx: Sender<Result<StreamingResponseItem<GetDirectChildEntries>>>,
 ) -> Result<()> {
-    let main_entry_id = query_scalar!("SELECT id FROM entries WHERE path = $1", request.0 .0 .0)
-        .fetch_optional(&ctx.db_pool)
-        .await?
-        .ok_or_else(|| anyhow!("entry not found"))?;
+    let main_entry_id = query_scalar!(
+        "SELECT id FROM entries WHERE path = $1",
+        request.0.to_str_without_prefix()
+    )
+    .fetch_optional(&ctx.db_pool)
+    .await?
+    .ok_or_else(|| anyhow!("entry not found"))?;
 
     let mut rows = query!(
         "SELECT * FROM entries WHERE parent_dir = $1 ORDER BY path",
@@ -361,7 +365,7 @@ async fn get_versions_inner<'a>(
         FROM entry_versions
         WHERE (path = $1 OR path LIKE $2) AND recorded_at <= $3
         ORDER BY path, recorded_at DESC",
-        path.0 .0,
+        path.to_str_without_prefix(),
         starts_with(&path),
         recorded_at.to_db()?,
     )
@@ -398,7 +402,7 @@ pub async fn get_all_entry_versions(
             "SELECT * FROM entry_versions
             WHERE path = $1 OR path LIKE $2
             ORDER BY id",
-            request.path.0 .0,
+            request.path.to_str_without_prefix(),
             starts_with(&request.path)
         )
         .fetch(&ctx.db_pool);
@@ -408,7 +412,7 @@ pub async fn get_all_entry_versions(
     } else {
         let mut rows = query!(
             "SELECT * FROM entry_versions WHERE path = $1 ORDER BY id",
-            request.path.0 .0
+            request.path.to_str_without_prefix()
         )
         .fetch(&ctx.db_pool);
         while let Some(row) = rows.try_next().await? {
@@ -419,13 +423,12 @@ pub async fn get_all_entry_versions(
 }
 
 fn starts_with(path: &EncryptedArchivePath) -> String {
-    if path.0 .0 == "/" {
+    if path.to_str_without_prefix() == "/" {
         "/%".into()
     } else {
         format!(
             "{}/%",
-            path.0
-                 .0
+            path.to_str_without_prefix()
                 .replace('\\', r"\\")
                 .replace('%', r"\%")
                 .replace('_', r"\_")
@@ -455,7 +458,7 @@ async fn remove_entries_in_dir<'a>(
         ctx.source_id.to_db(),
         trigger as i32,
         EntryKind::NOT_EXISTS,
-        path.0 .0,
+        path.to_str_without_prefix(),
         starts_with(path),
     )
     .execute(&mut *tx)
@@ -469,7 +472,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
     {
         let count_existing = query_scalar!(
             "SELECT COUNT(*) FROM entries WHERE (path = $1 OR path LIKE $2) AND kind > 0",
-            request.new_path.0 .0,
+            request.new_path.to_str_without_prefix(),
             starts_with(&request.new_path)
         )
         .fetch_one(&mut tx)
@@ -482,7 +485,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
 
         let mut entries = query!(
             "SELECT * FROM entries WHERE (path = $1 OR path LIKE $2) AND kind > 0 ORDER BY path",
-            request.old_path.0 .0,
+            request.old_path.to_str_without_prefix(),
             starts_with(&request.old_path),
         )
         .fetch(&mut tx);
@@ -497,8 +500,8 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
     for entry in old_entries {
         let new_path = if entry.data.path == request.old_path {
             request.new_path.clone()
-        } else if let Some(relative) = entry.data.path.0.strip_prefix(&request.old_path.0) {
-            EncryptedArchivePath(request.new_path.0.join_multiple(relative)?)
+        } else if let Some(relative) = entry.data.path.strip_prefix(&request.old_path) {
+            request.new_path.join_multiple(relative)?
         } else {
             bail!("strip_prefix failed while processing entry: {:?}", entry);
         };
@@ -533,7 +536,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
         "SELECT id FROM entries
         WHERE (path = $1 OR path LIKE $2) AND kind > 0
         ORDER BY path DESC",
-        request.path.0 .0,
+        request.path.to_str_without_prefix(),
         starts_with(&request.path),
     )
     .fetch_all(&mut tx)

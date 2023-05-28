@@ -22,11 +22,15 @@ pub struct MountPoint {
 }
 
 #[derive(Clone)]
-pub struct EncryptionKey(pub GenericArray<u8, U64>);
+pub struct EncryptionKey(GenericArray<u8, U64>);
 
 impl EncryptionKey {
     pub fn generate() -> Self {
         Self(Aes256SivAead::generate_key(&mut OsRng))
+    }
+
+    pub fn get(&self) -> &GenericArray<u8, U64> {
+        &self.0
     }
 }
 

@@ -40,7 +40,10 @@ impl Db {
         &self,
         path: &ArchivePath,
     ) -> Result<Option<DecryptedEntryVersionData>> {
-        if let Some(value) = self.archive_entries.get(path.0.as_bytes())? {
+        if let Some(value) = self
+            .archive_entries
+            .get(path.to_str_without_prefix().as_bytes())?
+        {
             Ok(Some(bincode::deserialize::<DecryptedEntryVersionData>(
                 &value,
             )?))
@@ -56,7 +59,7 @@ impl Db {
         let root_entry = (|| {
             let value = self
                 .archive_entries
-                .get(path.0.as_bytes())?
+                .get(path.to_str_without_prefix().as_bytes())?
                 .ok_or_else(|| anyhow!("no such archive path: {}", path))?;
             anyhow::Ok(bincode::deserialize::<DecryptedEntryVersionData>(&value)?)
         })();
@@ -64,7 +67,7 @@ impl Db {
             .as_ref()
             .map_or(false, |entry| entry.kind == Some(EntryKind::Directory))
         {
-            let mut prefix = path.0.clone();
+            let mut prefix = path.to_str_without_prefix().to_owned();
             prefix.push('/');
             Some(
                 self.archive_entries
@@ -97,7 +100,7 @@ impl Db {
         (&*self.db, &self.archive_entries).transaction(|(db, archive_entries)| {
             for update in updates {
                 archive_entries.insert(
-                    update.path.0.as_bytes(),
+                    update.path.to_str_without_prefix().as_bytes(),
                     bincode::serialize(update).map_err(into_abort_err)?,
                 )?;
             }

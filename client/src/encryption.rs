@@ -296,7 +296,7 @@ pub fn decrypt_str(value: &str, cipher: &Aes256SivAead) -> Result<String> {
 
 pub fn encrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<EncryptedArchivePath> {
     let parts = value
-        .0
+        .to_str_without_prefix()
         .split('/')
         .map(|part| {
             if part.is_empty() {
@@ -306,14 +306,12 @@ pub fn encrypt_path(value: &ArchivePath, cipher: &Aes256SivAead) -> Result<Encry
             }
         })
         .collect::<Result<Vec<String>>>()?;
-    let path = ArchivePath::from_str_without_prefix(&parts.join("/"))?;
-    Ok(EncryptedArchivePath(path))
+    EncryptedArchivePath::from_encrypted_without_prefix(&parts.join("/"))
 }
 
 pub fn decrypt_path(value: &EncryptedArchivePath, cipher: &Aes256SivAead) -> Result<ArchivePath> {
     let parts = value
-        .0
-         .0
+        .to_str_without_prefix()
         .split('/')
         .map(|part| {
             if part.is_empty() {
@@ -387,7 +385,10 @@ pub fn path_roundtrip() {
     let cipher = Aes256SivAead::new(&key);
     let value: ArchivePath = "ar:/ab/cd/ef".parse().unwrap();
     let encrypted = encrypt_path(&value, &cipher).unwrap();
-    assert_ne!(value, encrypted.0);
+    assert_ne!(
+        value.to_str_without_prefix(),
+        encrypted.to_str_without_prefix()
+    );
     let decrypted = decrypt_path(&encrypted, &cipher).unwrap();
     assert_eq!(value, decrypted);
 }

@@ -19,7 +19,7 @@ async fn try_main() -> Result<()> {
     let cli = Cli::parse();
     if cli.command == Command::GenerateEncryptionKey {
         let key = EncryptionKey::generate();
-        println!("{}", BASE64_URL_SAFE_NO_PAD.encode(key.0));
+        println!("{}", BASE64_URL_SAFE_NO_PAD.encode(key.get()));
         return Ok(());
     }
 
