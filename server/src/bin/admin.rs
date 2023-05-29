@@ -9,7 +9,18 @@ use rammingen_server::{
 use sqlx::PgPool;
 
 #[derive(Debug, Parser)]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(about = "File sync and backup utility")]
 pub struct Cli {
+    /// Path to server config.
+    ///
+    /// If omitted, default path is used:
+    ///
+    /// - /etc/rammingen-server.conf on Linux
+    ///
+    /// - $HOME/Library/Application Support/rammingen-server.conf on macOS
+    ///
+    /// - %APPDATA%\rammingen-server.conf on Windows
     #[clap(long)]
     pub config: Option<PathBuf>,
     #[clap(subcommand)]
@@ -18,9 +29,13 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
+    /// Displays names of all sources.
     Sources,
+    /// Creates a new source.
     AddSource { name: String },
+    /// Changes access token of an existing source.
     UpdateAccessToken { name: String },
+    /// Intializes or updates database structure.
     Migrate,
 }
 

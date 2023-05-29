@@ -6,7 +6,18 @@ use std::{path::PathBuf, sync::Mutex};
 use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
 
 #[derive(Debug, Parser)]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(about = "File sync and backup utility")]
 pub struct Cli {
+    /// Path to config.
+    ///
+    /// If omitted, default path is used:
+    ///
+    /// - /etc/rammingen-server.conf on Linux
+    ///
+    /// - $HOME/Library/Application Support/rammingen-server.conf on macOS
+    ///
+    /// - %APPDATA%\rammingen-server.conf on Windows
     #[clap(long)]
     pub config: Option<PathBuf>,
 }
