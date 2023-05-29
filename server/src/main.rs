@@ -7,7 +7,7 @@ use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
 
 #[derive(Debug, Parser)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "File sync and backup utility")]
+#[command(about = "File sync and backup server")]
 pub struct Cli {
     /// Path to config.
     ///
