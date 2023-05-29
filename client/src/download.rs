@@ -109,14 +109,6 @@ pub async fn download(
     versions: impl Stream<Item = Result<DecryptedEntryVersionData>>,
 ) -> Result<bool> {
     tokio::pin!(versions);
-    // TODO: better way to select tmp path?
-    let tmp_path = root_local_path
-        .parent()?
-        .ok_or_else(|| anyhow!("failed to get parent for local path"))?
-        .join("__rammingen_tmp")?;
-    if try_exists(&tmp_path)? {
-        remove_file(&tmp_path)?;
-    }
     if is_mount {
         let _status = set_status("Checking for files deleted remotely");
         for entry in ctx.db.get_archive_entries(root_archive_path).rev() {
@@ -207,6 +199,18 @@ pub async fn download(
                 let mut content = entry
                     .content
                     .ok_or_else(|| anyhow!("missing content info for existing file"))?;
+
+                let file_name = entry_local_path
+                    .file_name()
+                    .ok_or_else(|| anyhow!("failed to get file name for local file path"))?;
+                let tmp_path = entry_local_path
+                    .parent()?
+                    .ok_or_else(|| anyhow!("failed to get parent for local path"))?
+                    .join(format!(".{file_name}.rammingen.part"))?;
+                let _tmp_guard = TmpGuard(tmp_path.clone());
+                if try_exists(&tmp_path)? {
+                    remove_file(&tmp_path)?;
+                }
                 ctx.client
                     .download_and_decrypt(&content, &tmp_path, &ctx.cipher)
                     .await?;
@@ -250,4 +254,23 @@ pub async fn download(
         info!("Downloaded {}", entry_local_path);
     }
     Ok(found_any)
+}
+
+struct TmpGuard(SanitizedLocalPath);
+
+impl TmpGuard {
+    fn clean(&mut self) -> Result<()> {
+        if try_exists(&self.0)? {
+            remove_file(&self.0)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for TmpGuard {
+    fn drop(&mut self) {
+        if let Err(err) = self.clean() {
+            warn!(?err, "failed to clean up temporary file");
+        }
+    }
 }

@@ -41,6 +41,12 @@ impl Rules {
         if path == &self.root {
             return Ok(false);
         }
+        if path
+            .file_name()
+            .map_or(false, |name| name.ends_with(".rammingen.part"))
+        {
+            return Ok(true);
+        }
         if let Some(parent) = path.parent()? {
             if self.matches(&parent)? {
                 return Ok(true);
