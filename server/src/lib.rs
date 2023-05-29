@@ -110,9 +110,9 @@ struct CachedSources {
 }
 
 async fn load_sources(db_pool: &PgPool) -> Result<HashMap<String, SourceId>> {
-    query!("SELECT id, secret FROM sources")
+    query!("SELECT id, access_token FROM sources")
         .fetch(db_pool)
-        .map_ok(|row| (row.secret, row.id.into()))
+        .map_ok(|row| (row.access_token, row.id.into()))
         .try_collect()
         .await
         .map_err(Into::into)
@@ -378,7 +378,7 @@ async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<Source
         .get(AUTHORIZATION)
         .ok_or_else(|| anyhow!("missing authorization header"))?
         .to_str()?;
-    let secret = auth
+    let access_token = auth
         .strip_prefix("Bearer ")
         .ok_or_else(|| anyhow!("authorization header is not Bearer"))?;
     let mut sources = ctx.sources.lock().await;
@@ -388,7 +388,7 @@ async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<Source
     }
     sources
         .sources
-        .get(secret)
+        .get(access_token)
         .copied()
         .ok_or_else(|| anyhow!("invalid bearer token"))
 }

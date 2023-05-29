@@ -12,7 +12,7 @@ pub async fn sources(db: &PgPool) -> Result<Vec<String>> {
 
 pub async fn add_source(db: &PgPool, name: &str, access_token: &str) -> Result<()> {
     query!(
-        "INSERT INTO sources (name, secret) VALUES ($1, $2)",
+        "INSERT INTO sources (name, access_token) VALUES ($1, $2)",
         name,
         access_token
     )
@@ -23,7 +23,7 @@ pub async fn add_source(db: &PgPool, name: &str, access_token: &str) -> Result<(
 
 pub async fn set_access_token(db: &PgPool, name: &str, access_token: &str) -> Result<()> {
     let rows = query!(
-        "UPDATE sources SET secret = $1 WHERE name = $2",
+        "UPDATE sources SET access_token = $1 WHERE name = $2",
         access_token,
         name,
     )

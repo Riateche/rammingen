@@ -236,19 +236,6 @@
     },
     "query": "SELECT * FROM entry_versions\n            WHERE path = $1 OR path LIKE $2\n            ORDER BY id"
   },
-  "400a8aa60e4025b0b932de2c0517fd152191b9fb45dd36d93969c07934fe06fc": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Varchar",
-          "Varchar"
-        ]
-      }
-    },
-    "query": "INSERT INTO sources (name, secret) VALUES ($1, $2)"
-  },
   "4434ec55fe50b6d17c0bb8fc0ae7322c76016f3d48f044b25497e48a98c7576f": {
     "describe": {
       "columns": [
@@ -780,19 +767,6 @@
     },
     "query": "SELECT * FROM entries WHERE parent_dir = $1 ORDER BY path"
   },
-  "91295c28aa477ee14dc55de5481824ca6d11cc31dce4e913ca5415536d59058a": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Varchar",
-          "Text"
-        ]
-      }
-    },
-    "query": "UPDATE sources SET secret = $1 WHERE name = $2"
-  },
   "93f2f96d0a5b1247557cc869e02c14b6b17630eeac13136cd3ec5dfa5d51ac09": {
     "describe": {
       "columns": [],
@@ -808,7 +782,7 @@
     },
     "query": "UPDATE entries SET\n                        update_number = nextval('entry_update_numbers'),\n                        recorded_at = now(),\n                        kind = $1,\n                        source_id = $2,\n                        record_trigger = $3\n                    WHERE id = $4"
   },
-  "96f4791e4c98af9f2f4b833adc02acdac0ebf6a1a6790dff65a30f6255c4bafa": {
+  "9832cbbf18ce28befe15397b74e4973ac9ba7f40bc1261e2e2f33339a1d181f2": {
     "describe": {
       "columns": [
         {
@@ -817,7 +791,7 @@
           "type_info": "Int4"
         },
         {
-          "name": "secret",
+          "name": "access_token",
           "ordinal": 1,
           "type_info": "Varchar"
         }
@@ -830,7 +804,7 @@
         "Left": []
       }
     },
-    "query": "SELECT id, secret FROM sources"
+    "query": "SELECT id, access_token FROM sources"
   },
   "9a4ef30f7740f66c305054d97c61f5280a1efdd13b16cd971bbff9923a116afc": {
     "describe": {
@@ -851,6 +825,19 @@
       }
     },
     "query": "DELETE FROM entry_versions\n            WHERE recorded_at <= $1 AND snapshot_id IS NULL\n            RETURNING content_hash"
+  },
+  "a0e86571e3f348bbf9027c4ef38625fac59bda26eabffecc09b9088ac9c50b0d": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Varchar",
+          "Text"
+        ]
+      }
+    },
+    "query": "UPDATE sources SET access_token = $1 WHERE name = $2"
   },
   "ad1e724fbcfd0087189153bf35b3eb9ea912c45f595299c961cadb4b2ec0fc6d": {
     "describe": {
@@ -1029,6 +1016,19 @@
       }
     },
     "query": "UPDATE entries\n                SET update_number = nextval('entry_update_numbers'),\n                    recorded_at = now(),\n                    source_id = $1,\n                    record_trigger = $2,\n                    kind = $3,\n                    original_size = NULL,\n                    encrypted_size = NULL,\n                    modified_at = NULL,\n                    content_hash = NULL,\n                    unix_mode = NULL\n                WHERE id = $4"
+  },
+  "c85715568956da899d6b8284d4200dc3591c68765060db8c84eb8e48e3752dc8": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Varchar",
+          "Varchar"
+        ]
+      }
+    },
+    "query": "INSERT INTO sources (name, access_token) VALUES ($1, $2)"
   },
   "ccc9ced9afb4d73a28809e37e53d3220da17df524cad83fb0ffa9c7a56d7b540": {
     "describe": {

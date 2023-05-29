@@ -23,6 +23,7 @@ pub enum Command {
     UpdateAccessToken { name: String },
     Migrate,
 }
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();

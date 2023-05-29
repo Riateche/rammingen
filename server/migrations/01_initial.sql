@@ -1,13 +1,14 @@
 CREATE TABLE sources (
     id SERIAL PRIMARY KEY,
     name VARCHAR NOT NULL UNIQUE,
-    secret VARCHAR NOT NULL UNIQUE
+    access_token VARCHAR NOT NULL UNIQUE
 );
 
 CREATE TABLE snapshots (
     id SERIAL PRIMARY KEY,
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL
 );
+CREATE INDEX idx_snapshots_timestamp ON snapshots (timestamp);
 
 CREATE SEQUENCE entry_update_numbers;
 
@@ -30,6 +31,8 @@ CREATE TABLE entries (
 CREATE INDEX idx_entries_update_number ON entries (update_number);
 CREATE INDEX idx_entries_path ON entries (path varchar_pattern_ops);
 CREATE INDEX idx_entries_parent_dir ON entries (parent_dir);
+CREATE INDEX idx_entries_recorded_at ON entries (recorded_at);
+CREATE INDEX idx_entries_content_hash ON entries (content_hash);
 
 CREATE TABLE entry_versions (
     id BIGSERIAL PRIMARY KEY,
@@ -49,7 +52,11 @@ CREATE TABLE entry_versions (
     unix_mode BIGINT
 );
 CREATE INDEX idx_entry_versions_entry_id ON entry_versions (entry_id);
+CREATE INDEX idx_entry_versions_update_number ON entry_versions (update_number);
+CREATE INDEX idx_entry_versions_snapshot_id ON entry_versions (snapshot_id);
 CREATE INDEX idx_entry_versions_path ON entry_versions (path varchar_pattern_ops);
+CREATE INDEX idx_entry_versions_recorded_at ON entry_versions (recorded_at);
+CREATE INDEX idx_entry_versions_content_hash ON entry_versions (content_hash);
 
 CREATE FUNCTION on_entry_update()
    RETURNS TRIGGER
