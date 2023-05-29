@@ -156,13 +156,13 @@ fn edit(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn change_mode(dir: &Path) -> Result<()> {
+fn change_mode(_dir: &Path) -> Result<()> {
     #[cfg(target_family = "unix")]
     {
         use std::fs::Permissions;
         use std::os::unix::prelude::PermissionsExt;
 
-        let Some(path) = choose_path(dir, true, false, false, true)? else {
+        let Some(path) = choose_path(_dir, true, false, false, true)? else {
             return Ok(());
         };
         let mode = [0o777, 0o774, 0o744, 0o700, 0o666, 0o664, 0o644, 0o600]

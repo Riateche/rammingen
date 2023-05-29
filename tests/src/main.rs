@@ -14,6 +14,7 @@ use diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files};
 use fs_err::{
     copy, create_dir, create_dir_all, read_dir, remove_dir_all, remove_file, rename, write,
 };
+use futures::future::pending;
 use portpicker::pick_unused_port;
 use rammingen::{
     config::{EncryptionKey, MountPoint},
@@ -23,8 +24,9 @@ use rammingen::{
     term::clear_status,
 };
 use rammingen_protocol::{util::native_to_archive_relative_path, ArchivePath, DateTimeUtc};
-use rammingen_server::util::{add_source, generate_access_token, migrate};
+use rammingen_server::util::{add_source, migrate};
 use rand::{seq::SliceRandom, thread_rng, Rng};
+use reqwest::Url;
 use shuffle::{choose_path, random_content, random_name, shuffle};
 use sqlx::PgPool;
 use tempfile::TempDir;
@@ -54,7 +56,11 @@ async fn main() {
 #[derive(Debug, Parser)]
 pub struct Cli {
     #[clap(long)]
-    pub database_url: String,
+    pub database_url: Option<String>,
+    #[clap(long)]
+    pub bind_addr: Option<SocketAddr>,
+    #[clap(long)]
+    pub server_url: Option<Url>,
     #[clap(subcommand)]
     pub command: Command,
 }
@@ -63,6 +69,7 @@ pub struct Cli {
 pub enum Command {
     Random,
     Snapshot,
+    ServerOnly,
 }
 
 async fn try_main() -> Result<()> {
@@ -75,33 +82,60 @@ async fn try_main() -> Result<()> {
         "info,sqlx=warn,rammingen_server=debug".into(),
     )?;
 
-    let db_pool = PgPool::connect(&cli.database_url).await?;
-    migrate(&db_pool).await?;
+    let server_url = if let Some(database_url) = cli.database_url {
+        let db_pool = PgPool::connect(&database_url).await?;
+        migrate(&db_pool).await?;
 
-    debug!("dir: {}", dir.display());
-    let storage_path = dir.join("storage");
-    create_dir_all(&storage_path)?;
+        debug!("dir: {}", dir.display());
+        let storage_path = dir.join("storage");
+        create_dir_all(&storage_path)?;
 
-    let port = pick_unused_port().expect("failed to pick port");
-    let server_config = rammingen_server::Config {
-        bind_addr: SocketAddr::new("127.0.0.1".parse()?, port),
-        database_url: cli.database_url.clone(),
-        storage_path,
-        log_file: None,
-        log_filter: String::new(),
-        retain_detailed_history_for: match &cli.command {
-            Command::Random => Duration::from_secs(3600),
-            Command::Snapshot => Duration::from_secs(10),
-        },
-        snapshot_interval: match &cli.command {
-            Command::Random => Duration::from_secs(3600),
-            Command::Snapshot => Duration::from_secs(5),
-        },
+        let bind_addr = if let Some(bind_addr) = cli.bind_addr {
+            bind_addr
+        } else {
+            let port = pick_unused_port().expect("failed to pick port");
+            SocketAddr::new("127.0.0.1".parse()?, port)
+        };
+        let server_config = rammingen_server::Config {
+            bind_addr,
+            database_url: database_url.clone(),
+            storage_path,
+            log_file: None,
+            log_filter: String::new(),
+            retain_detailed_history_for: match &cli.command {
+                Command::Random | Command::ServerOnly => Duration::from_secs(3600),
+                Command::Snapshot => Duration::from_secs(10),
+            },
+            snapshot_interval: match &cli.command {
+                Command::Random | Command::ServerOnly => Duration::from_secs(3600),
+                Command::Snapshot => Duration::from_secs(5),
+            },
+        };
+        write(
+            &dir.join("rammingen-server.conf"),
+            json5::to_string(&server_config)?,
+        )?;
+        for client_index in 0..3 {
+            add_source(
+                &db_pool,
+                &format!("client{client_index}"),
+                &access_token(client_index),
+            )
+            .await?;
+        }
+        tokio::spawn(async move {
+            if let Err(err) = rammingen_server::run(server_config).await {
+                clear_status();
+                error!("server failed: {err:?}");
+                std::process::exit(1);
+            }
+        });
+        format!("http://{bind_addr}/").parse()?
+    } else if let Some(server_url) = cli.server_url {
+        server_url
+    } else {
+        bail!("required to specify either database_url or server_url");
     };
-    write(
-        &dir.join("rammingen-server.conf"),
-        json5::to_string(&server_config)?,
-    )?;
 
     let encryption_key = EncryptionKey::generate();
     let mut clients = Vec::new();
@@ -110,7 +144,6 @@ async fn try_main() -> Result<()> {
         let client_dir = dir.join(format!("client{client_index}"));
         let mount_dir = client_dir.join("mount1");
         create_dir_all(&mount_dir)?;
-        let access_token = generate_access_token();
         let config = rammingen::config::Config {
             always_exclude: vec![
                 Rule::NameEquals("target".into()),
@@ -122,8 +155,8 @@ async fn try_main() -> Result<()> {
                 exclude: vec![],
             }],
             encryption_key: encryption_key.clone(),
-            server_url: format!("http://127.0.0.1:{port}/").parse()?,
-            access_token: access_token.clone(),
+            server_url: server_url.clone(),
+            access_token: access_token(client_index),
             local_db_path: Some(client_dir.join("db")),
             log_file: None,
             log_filter: String::new(),
@@ -131,18 +164,7 @@ async fn try_main() -> Result<()> {
         let config_path = client_dir.join("rammingen.conf");
         write(&config_path, json5::to_string(&config)?)?;
         clients.push(ClientData { config, mount_dir });
-
-        add_source(&db_pool, &format!("client{client_index}"), &access_token).await?;
     }
-    drop(db_pool);
-
-    tokio::spawn(async move {
-        if let Err(err) = rammingen_server::run(server_config).await {
-            clear_status();
-            error!("server failed: {err:?}");
-            std::process::exit(1);
-        }
-    });
 
     let ctx = Context {
         clients,
@@ -152,7 +174,15 @@ async fn try_main() -> Result<()> {
     match cli.command {
         Command::Random => test_random(ctx).await,
         Command::Snapshot => test_snapshot(ctx).await,
+        Command::ServerOnly => {
+            info!("started server at {server_url}");
+            pending().await
+        }
     }
+}
+
+fn access_token(index: usize) -> String {
+    format!("access_token{index}")
 }
 
 struct Context {

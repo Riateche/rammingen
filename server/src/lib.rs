@@ -43,7 +43,7 @@ use stream_generator::{generate_stream, Yielder};
 use tokio::{
     net::TcpListener,
     select,
-    signal::unix::{signal, SignalKind},
+    signal::ctrl_c,
     sync::{
         mpsc::{self, Sender},
         Mutex,
@@ -147,15 +147,17 @@ pub async fn run(config: Config) -> Result<()> {
         }
     });
 
-    let mut sigterm = signal(SignalKind::terminate())?;
-    let mut sigint = signal(SignalKind::interrupt())?;
+    let sigterm = sigterm()?;
+    tokio::pin!(sigterm);
+    let sigint = ctrl_c();
+    tokio::pin!(sigint);
     loop {
         select! {
-            _ = sigterm.recv() => {
+            _ = &mut sigterm => {
                 info!("Got terminate signal, shutting down.");
                 break;
             }
-            _ = sigint.recv() => {
+            _ = &mut sigint => {
                 info!("Got interrupt signal, shutting down.");
                 break;
             }
@@ -180,6 +182,20 @@ pub async fn run(config: Config) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(target_family = "unix")]
+fn sigterm() -> Result<impl Future<Output = ()>> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut sigterm = signal(SignalKind::terminate())?;
+    Ok(async move {
+        sigterm.recv().await;
+    })
+}
+
+#[cfg(not(target_family = "unix"))]
+fn sigterm() -> Result<impl Future<Output = ()>> {
+    Ok(futures_util::future::pending())
 }
 
 async fn handle_request(

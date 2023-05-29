@@ -774,6 +774,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
+name = "dunce"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56ce8c6da7551ec6c462cbaf3bfbc75131ebbfa1c944aeaa9dab51ca1c5f0c3b"
+
+[[package]]
 name = "either"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1873,6 +1879,7 @@ dependencies = [
  "derivative",
  "derive_more",
  "dirs 4.0.0",
+ "dunce",
  "fs-err",
  "futures",
  "generic-array",
@@ -1956,12 +1963,14 @@ dependencies = [
  "chrono",
  "clap 4.3.0",
  "fs-err",
+ "futures",
  "json5",
  "portpicker",
  "rammingen",
  "rammingen_protocol",
  "rammingen_server",
  "rand",
+ "reqwest",
  "sqlx",
  "tempfile",
  "tokio",

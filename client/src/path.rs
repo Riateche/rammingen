@@ -35,7 +35,7 @@ impl AsRef<[u8]> for SanitizedLocalPath {
 
 impl Display for SanitizedLocalPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.display())
+        write!(f, "{}", dunce::simplified(&self.0).display())
     }
 }
 

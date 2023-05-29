@@ -37,6 +37,7 @@ use rammingen_protocol::{
     util::log_writer,
 };
 use rules::Rules;
+use std::fs::Metadata;
 use std::{
     collections::HashSet,
     path::PathBuf,
@@ -175,7 +176,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
 }
 
 #[cfg(target_family = "unix")]
-pub fn unix_mode(metadata: &std::fs::Metadata) -> Option<u32> {
+pub fn unix_mode(metadata: &Metadata) -> Option<u32> {
     use std::os::unix::prelude::PermissionsExt;
 
     Some(metadata.permissions().mode())
