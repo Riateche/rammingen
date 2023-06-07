@@ -29,6 +29,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
+    /// Show what will happen on sync.
+    DryRun,
     /// Sync all mount point with the server.
     Sync,
     /// Upload a file or directory to the server.

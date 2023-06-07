@@ -174,7 +174,6 @@ impl Client {
         if content.original_size != actual_original_size {
             bail!("original size mismatch");
         }
-
         Ok(())
     }
 }

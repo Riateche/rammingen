@@ -373,6 +373,12 @@ async fn test_random(ctx: Context) -> Result<()> {
                         remove_dir_all(&before_sync_snapshot)?;
                     }
                     copy_dir_all(&client.mount_dir, &before_sync_snapshot)?;
+
+                    if thread_rng().gen_bool(0.2) {
+                        client.dry_run().await?;
+                        diff(&client.mount_dir, &before_sync_snapshot)?;
+                    }
+
                     client.sync().await?;
                     diff_ignored(&client.mount_dir, &before_sync_snapshot)?;
                 }
@@ -531,6 +537,18 @@ impl ClientData {
         )
         .await
     }
+
+    async fn dry_run(&self) -> Result<()> {
+        rammingen::run(
+            rammingen::cli::Cli {
+                config: None,
+                command: rammingen::cli::Command::DryRun,
+            },
+            self.config.clone(),
+        )
+        .await
+    }
+
     async fn download(
         &self,
         archive_path: ArchivePath,
@@ -550,6 +568,7 @@ impl ClientData {
         )
         .await
     }
+
     async fn upload(
         &self,
         local_path: SanitizedLocalPath,
@@ -567,6 +586,7 @@ impl ClientData {
         )
         .await
     }
+
     async fn move_path(
         &self,
         archive_path: ArchivePath,
@@ -584,6 +604,7 @@ impl ClientData {
         )
         .await
     }
+
     async fn remove_path(&self, archive_path: ArchivePath) -> Result<()> {
         rammingen::run(
             rammingen::cli::Cli {
@@ -594,6 +615,7 @@ impl ClientData {
         )
         .await
     }
+
     async fn reset(&self, archive_path: ArchivePath, version: DateTime<FixedOffset>) -> Result<()> {
         rammingen::run(
             rammingen::cli::Cli {
@@ -607,6 +629,7 @@ impl ClientData {
         )
         .await
     }
+
     async fn check_integrity(&self) -> Result<()> {
         rammingen::run(
             rammingen::cli::Cli {

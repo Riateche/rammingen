@@ -2,29 +2,62 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::info;
 
+use crate::info::pretty_size;
+
 #[derive(Debug, Default)]
 pub struct Counters {
-    pub scanned_entries: AtomicU64,
-    pub modified_files: AtomicU64,
-    pub sent_to_server: AtomicU64,
-    pub updated_on_server: AtomicU64,
+    pub deleted_entries: AtomicU64,
+    pub downloaded_entries: AtomicU64,
+    pub downloaded_bytes: AtomicU64,
+    pub uploaded_entries: AtomicU64,
+    pub uploaded_bytes: AtomicU64,
 }
 
 impl Counters {
-    pub fn report(&self) {
-        let scanned_entries = self.scanned_entries.load(Ordering::Relaxed);
-        let modified_files = self.modified_files.load(Ordering::Relaxed);
-        let sent_to_server = self.sent_to_server.load(Ordering::Relaxed);
-        let updated_on_server = self.updated_on_server.load(Ordering::Relaxed);
-        info!("scanned {} entries", scanned_entries);
-        if modified_files > 0 {
-            info!("found {} modified files", modified_files);
+    pub fn report(&self, dry_run: bool) {
+        let downloaded_entries = self.downloaded_entries.load(Ordering::Relaxed);
+        let downloaded_bytes = self.downloaded_bytes.load(Ordering::Relaxed);
+        if downloaded_entries > 0 || downloaded_bytes > 0 {
+            if dry_run {
+                info!(
+                    "Would download {} entries ({})",
+                    downloaded_entries,
+                    pretty_size(downloaded_bytes)
+                );
+            } else {
+                info!(
+                    "Downloaded {} entries ({})",
+                    downloaded_entries,
+                    pretty_size(downloaded_bytes)
+                );
+            }
         }
-        if sent_to_server > 0 {
-            info!("sent {} entries to server", sent_to_server);
+
+        let deleted_entries = self.deleted_entries.load(Ordering::Relaxed);
+        if deleted_entries > 0 {
+            if dry_run {
+                info!("Would delete {} entries", deleted_entries);
+            } else {
+                info!("Deleted {} entries", deleted_entries);
+            }
         }
-        if updated_on_server > 0 {
-            info!("updated {} entries on server", updated_on_server);
+
+        let uploaded_entries = self.uploaded_entries.load(Ordering::Relaxed);
+        let uploaded_bytes = self.uploaded_bytes.load(Ordering::Relaxed);
+        if uploaded_entries > 0 || uploaded_bytes > 0 {
+            if dry_run {
+                info!(
+                    "Would upload {} entries ({})",
+                    uploaded_entries,
+                    pretty_size(uploaded_bytes)
+                );
+            } else {
+                info!(
+                    "Uploaded {} entries ({})",
+                    uploaded_entries,
+                    pretty_size(uploaded_bytes)
+                );
+            }
         }
     }
 }

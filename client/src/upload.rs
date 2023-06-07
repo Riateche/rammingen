@@ -73,6 +73,7 @@ pub async fn find_local_deletions<'a>(
     ctx: &'a Ctx,
     mount_points: &'a mut [(&MountPoint, Rules)],
     existing_paths: &'a HashSet<SanitizedLocalPath>,
+    dry_run: bool,
 ) -> Result<()> {
     let _status = set_status("Checking for files deleted locally");
     for entry in ctx.db.get_all_local_entries().rev() {
@@ -89,22 +90,29 @@ pub async fn find_local_deletions<'a>(
         if rules.matches(&local_path)? {
             continue;
         }
-        let response = ctx
-            .client
-            .request(&AddVersion {
-                path: encrypt_path(&archive_path, &ctx.cipher)?,
-                record_trigger: RecordTrigger::Sync,
-                kind: None,
-                content: None,
-            })
-            .await?;
-        if response.added {
+        if dry_run {
+            info!("Would record deletion of {}", local_path);
             ctx.counters
-                .updated_on_server
+                .uploaded_entries
                 .fetch_add(1, Ordering::Relaxed);
-            info!("Recorded deletion of {}", local_path);
+        } else {
+            let response = ctx
+                .client
+                .request(&AddVersion {
+                    path: encrypt_path(&archive_path, &ctx.cipher)?,
+                    record_trigger: RecordTrigger::Sync,
+                    kind: None,
+                    content: None,
+                })
+                .await?;
+            if response.added {
+                ctx.counters
+                    .uploaded_entries
+                    .fetch_add(1, Ordering::Relaxed);
+                info!("Recorded deletion of {}", local_path);
+            }
+            ctx.db.remove_local_entry(&local_path)?;
         }
-        ctx.db.remove_local_entry(&local_path)?;
     }
     Ok(())
 }
@@ -116,6 +124,7 @@ pub fn upload<'a>(
     rules: &'a mut Rules,
     is_mount: bool,
     existing_paths: &'a mut HashSet<SanitizedLocalPath>,
+    dry_run: bool,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
         let _status = set_status(format!("Scanning local files: {}", local_path));
@@ -129,7 +138,6 @@ pub fn upload<'a>(
             debug!("ignored: {}", local_path);
             return Ok(());
         }
-        ctx.counters.scanned_entries.fetch_add(1, Ordering::Relaxed);
         let is_dir = metadata.is_dir();
         let kind = if is_dir {
             EntryKind::Directory
@@ -208,7 +216,12 @@ pub fn upload<'a>(
                         .request(&ContentHashExists(encrypted_hash.clone()))
                         .await?
                 {
-                    ctx.client.upload(&encrypted_hash, file_data.file).await?;
+                    if !dry_run {
+                        ctx.client.upload(&encrypted_hash, file_data.file).await?;
+                    }
+                    ctx.counters
+                        .uploaded_bytes
+                        .fetch_add(file_data.encrypted_size, Ordering::SeqCst);
                 }
 
                 content = Some(current_content);
@@ -219,32 +232,38 @@ pub fn upload<'a>(
         };
 
         if changed {
-            let add_version = AddVersion {
-                path: encrypt_path(archive_path, &ctx.cipher)?,
-                record_trigger: RecordTrigger::Upload,
-                kind: Some(kind),
-                content: if let Some(content) = &content {
-                    Some(FileContent {
-                        modified_at: content.modified_at,
-                        original_size: encrypt_size(content.original_size, &ctx.cipher)?,
-                        encrypted_size: content.encrypted_size,
-                        hash: encrypt_content_hash(&content.hash, &ctx.cipher)?,
-                        unix_mode: content.unix_mode,
-                    })
-                } else {
-                    None
-                },
-            };
-            ctx.counters.sent_to_server.fetch_add(1, Ordering::Relaxed);
-            if ctx.client.request(&add_version).await?.added {
+            if dry_run {
+                info!("Would upload {}", local_path);
                 ctx.counters
-                    .updated_on_server
+                    .uploaded_entries
                     .fetch_add(1, Ordering::Relaxed);
-                info!("Uploaded {}", local_path);
-            }
-            if is_mount {
-                ctx.db
-                    .set_local_entry(local_path, &LocalEntryInfo { kind, content })?;
+            } else {
+                let add_version = AddVersion {
+                    path: encrypt_path(archive_path, &ctx.cipher)?,
+                    record_trigger: RecordTrigger::Upload,
+                    kind: Some(kind),
+                    content: if let Some(content) = &content {
+                        Some(FileContent {
+                            modified_at: content.modified_at,
+                            original_size: encrypt_size(content.original_size, &ctx.cipher)?,
+                            encrypted_size: content.encrypted_size,
+                            hash: encrypt_content_hash(&content.hash, &ctx.cipher)?,
+                            unix_mode: content.unix_mode,
+                        })
+                    } else {
+                        None
+                    },
+                };
+                if ctx.client.request(&add_version).await?.added {
+                    ctx.counters
+                        .uploaded_entries
+                        .fetch_add(1, Ordering::Relaxed);
+                    info!("Uploaded {}", local_path);
+                }
+                if is_mount {
+                    ctx.db
+                        .set_local_entry(local_path, &LocalEntryInfo { kind, content })?;
+                }
             }
         }
         if is_dir {
@@ -269,6 +288,7 @@ pub fn upload<'a>(
                     rules,
                     is_mount,
                     existing_paths,
+                    dry_run,
                 )
                 .await
                 .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry.path(), err))?;

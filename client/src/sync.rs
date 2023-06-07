@@ -10,7 +10,7 @@ use crate::{
 use anyhow::Result;
 use itertools::Itertools;
 
-pub async fn sync(ctx: &Ctx) -> Result<()> {
+pub async fn sync(ctx: &Ctx, dry_run: bool) -> Result<()> {
     let mut existing_paths = HashSet::new();
     let mut mount_points = ctx
         .config
@@ -33,10 +33,11 @@ pub async fn sync(ctx: &Ctx) -> Result<()> {
             rules,
             true,
             &mut existing_paths,
+            dry_run,
         )
         .await?;
     }
-    find_local_deletions(ctx, &mut mount_points, &existing_paths).await?;
+    find_local_deletions(ctx, &mut mount_points, &existing_paths, dry_run).await?;
     pull_updates(ctx).await?;
     for mount_point in &ctx.config.mount_points {
         download_latest(
@@ -48,6 +49,7 @@ pub async fn sync(ctx: &Ctx) -> Result<()> {
                 mount_point.local_path.clone(),
             ),
             true,
+            dry_run,
         )
         .await?;
     }

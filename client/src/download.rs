@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::atomic::Ordering};
 
 use anyhow::{anyhow, bail, Result};
 use fs_err::{create_dir, remove_dir, remove_file, rename};
@@ -77,6 +77,7 @@ pub async fn download_version(
         &mut Rules::new(&[&ctx.config.always_exclude], root_local_path.clone()),
         false,
         stream,
+        false,
     )
     .await
 }
@@ -87,6 +88,7 @@ pub async fn download_latest(
     root_local_path: &SanitizedLocalPath,
     rules: &mut Rules,
     is_mount: bool,
+    dry_run: bool,
 ) -> Result<bool> {
     let data = stream::iter(ctx.db.get_archive_entries(root_archive_path));
     download(
@@ -96,6 +98,7 @@ pub async fn download_latest(
         rules,
         is_mount,
         data,
+        dry_run,
     )
     .await
 }
@@ -107,6 +110,7 @@ pub async fn download(
     rules: &mut Rules,
     is_mount: bool,
     versions: impl Stream<Item = Result<DecryptedEntryVersionData>>,
+    dry_run: bool,
 ) -> Result<bool> {
     tokio::pin!(versions);
     if is_mount {
@@ -125,20 +129,27 @@ pub async fn download(
                 continue;
             };
             if try_exists(entry_local_path.as_path())? {
-                match db_data.kind {
-                    EntryKind::File => {
-                        remove_file(&entry_local_path)?;
-                    }
-                    EntryKind::Directory => {
-                        if let Err(err) = remove_dir(&entry_local_path) {
-                            warn!("Cannot remove directory {}: {}", entry_local_path, err);
-                            continue;
+                if dry_run {
+                    info!("Would delete {}", entry_local_path);
+                } else {
+                    match db_data.kind {
+                        EntryKind::File => {
+                            remove_file(&entry_local_path)?;
+                        }
+                        EntryKind::Directory => {
+                            if let Err(err) = remove_dir(&entry_local_path) {
+                                warn!("Cannot remove directory {}: {}", entry_local_path, err);
+                                continue;
+                            }
                         }
                     }
+                    info!("Deleted {}", entry_local_path);
                 }
+                ctx.counters.deleted_entries.fetch_add(1, Ordering::SeqCst);
             }
-            ctx.db.remove_local_entry(&entry_local_path)?;
-            info!("Removed {}", entry_local_path);
+            if !dry_run {
+                ctx.db.remove_local_entry(&entry_local_path)?;
+            }
         }
     }
     let mut found_any = false;
@@ -163,7 +174,7 @@ pub async fn download(
             if db_data.is_same_as_entry(&entry) {
                 continue;
             }
-            if !db_data.matches_real(&entry_local_path)? {
+            if !dry_run && !db_data.matches_real(&entry_local_path)? {
                 bail!(
                     "local db data doesn't match local file at {:?}",
                     entry_local_path
@@ -171,7 +182,7 @@ pub async fn download(
             }
             must_delete = true;
         }
-        if !must_delete && try_exists(entry_local_path.as_path())? {
+        if !dry_run && !must_delete && try_exists(entry_local_path.as_path())? {
             bail!(
                 "local entry already exists at {:?} (while processing entry: {:?}",
                 entry_local_path,
@@ -179,79 +190,97 @@ pub async fn download(
             );
         }
 
-        match kind {
-            EntryKind::Directory => {
-                if must_delete {
-                    if !remove_dir_or_file(&entry_local_path)? {
-                        continue;
-                    }
-                }
-                create_dir(&entry_local_path)?;
-                ctx.db.set_local_entry(
-                    &entry_local_path,
-                    &LocalEntryInfo {
-                        kind,
-                        content: None,
-                    },
-                )?;
+        if dry_run {
+            info!("Would download {}", entry_local_path);
+            if let Some(content) = &entry.content {
+                ctx.counters
+                    .downloaded_bytes
+                    .fetch_add(content.encrypted_size, Ordering::SeqCst);
             }
-            EntryKind::File => {
-                let mut content = entry
-                    .content
-                    .ok_or_else(|| anyhow!("missing content info for existing file"))?;
-
-                let file_name = entry_local_path
-                    .file_name()
-                    .ok_or_else(|| anyhow!("failed to get file name for local file path"))?;
-                let tmp_path = entry_local_path
-                    .parent()?
-                    .ok_or_else(|| anyhow!("failed to get parent for local path"))?
-                    .join(format!(".{file_name}.rammingen.part"))?;
-                let _tmp_guard = TmpGuard(tmp_path.clone());
-                if try_exists(&tmp_path)? {
-                    remove_file(&tmp_path)?;
-                }
-                ctx.client
-                    .download_and_decrypt(&content, &tmp_path, &ctx.cipher)
-                    .await?;
-                if let Some(db_data) = &db_data {
-                    // Check again just in case.
-                    if !db_data.matches_real(&entry_local_path)? {
-                        bail!(
-                            "local db data doesn't match local file at {:?}",
-                            entry_local_path
-                        );
+        } else {
+            match kind {
+                EntryKind::Directory => {
+                    if must_delete {
+                        if !remove_dir_or_file(&entry_local_path)? {
+                            continue;
+                        }
                     }
+                    create_dir(&entry_local_path)?;
+                    ctx.db.set_local_entry(
+                        &entry_local_path,
+                        &LocalEntryInfo {
+                            kind,
+                            content: None,
+                        },
+                    )?;
                 }
-                if must_delete {
-                    if !remove_dir_or_file(&entry_local_path)? {
-                        continue;
+                EntryKind::File => {
+                    let mut content = entry
+                        .content
+                        .ok_or_else(|| anyhow!("missing content info for existing file"))?;
+
+                    let file_name = entry_local_path
+                        .file_name()
+                        .ok_or_else(|| anyhow!("failed to get file name for local file path"))?;
+                    let tmp_path = entry_local_path
+                        .parent()?
+                        .ok_or_else(|| anyhow!("failed to get parent for local path"))?
+                        .join(format!(".{file_name}.rammingen.part"))?;
+                    let _tmp_guard = TmpGuard(tmp_path.clone());
+                    if try_exists(&tmp_path)? {
+                        remove_file(&tmp_path)?;
                     }
-                }
-                rename(&tmp_path, &entry_local_path)?;
-
-                #[cfg(target_family = "unix")]
-                {
-                    use std::fs::Permissions;
-                    use std::os::unix::prelude::PermissionsExt;
-
-                    if let Some(mode) = content.unix_mode {
-                        fs_err::set_permissions(&entry_local_path, Permissions::from_mode(mode))?;
+                    ctx.client
+                        .download_and_decrypt(&content, &tmp_path, &ctx.cipher)
+                        .await?;
+                    if let Some(db_data) = &db_data {
+                        // Check again just in case.
+                        if !db_data.matches_real(&entry_local_path)? {
+                            bail!(
+                                "local db data doesn't match local file at {:?}",
+                                entry_local_path
+                            );
+                        }
                     }
-                }
+                    if must_delete {
+                        if !remove_dir_or_file(&entry_local_path)? {
+                            continue;
+                        }
+                    }
+                    rename(&tmp_path, &entry_local_path)?;
 
-                content.modified_at = fs_err::metadata(&entry_local_path)?.modified()?.into();
-                ctx.db.set_local_entry(
-                    &entry_local_path,
-                    &LocalEntryInfo {
-                        kind,
-                        content: Some(content),
-                    },
-                )?;
+                    #[cfg(target_family = "unix")]
+                    {
+                        use std::fs::Permissions;
+                        use std::os::unix::prelude::PermissionsExt;
+
+                        if let Some(mode) = content.unix_mode {
+                            fs_err::set_permissions(
+                                &entry_local_path,
+                                Permissions::from_mode(mode),
+                            )?;
+                        }
+                    }
+
+                    content.modified_at = fs_err::metadata(&entry_local_path)?.modified()?.into();
+                    ctx.counters
+                        .downloaded_bytes
+                        .fetch_add(content.encrypted_size, Ordering::SeqCst);
+                    ctx.db.set_local_entry(
+                        &entry_local_path,
+                        &LocalEntryInfo {
+                            kind,
+                            content: Some(content),
+                        },
+                    )?;
+                }
             }
+            info!("Downloaded {}", entry_local_path);
         }
+        ctx.counters
+            .downloaded_entries
+            .fetch_add(1, Ordering::SeqCst);
         found_any = true;
-        info!("Downloaded {}", entry_local_path);
     }
     Ok(found_any)
 }

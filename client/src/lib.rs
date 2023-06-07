@@ -31,7 +31,6 @@ use derivative::Derivative;
 use download::{download_latest, download_version};
 use encryption::encrypt_path;
 use info::{list_versions, pretty_size};
-use path::SanitizedLocalPath;
 use rammingen_protocol::{
     endpoints::{CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion},
     util::log_writer,
@@ -45,7 +44,7 @@ use std::{
 };
 use sync::sync;
 use term::TermLayer;
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
 };
@@ -74,29 +73,35 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         db: crate::db::Db::open(&local_db_path)?,
         counters: Counters::default(),
     });
-    #[allow(unused_variables)]
+
+    let dry_run = cli.command == cli::Command::DryRun;
+    let result = handle_command(cli, &ctx).await;
+    ctx.counters.report(dry_run);
+    result
+}
+
+async fn handle_command(cli: Cli, ctx: &Ctx) -> Result<()> {
     match cli.command {
+        cli::Command::DryRun => {
+            sync(ctx, true).await?;
+        }
         cli::Command::Sync => {
-            sync(&ctx).await?;
+            sync(ctx, false).await?;
         }
         cli::Command::Upload {
             local_path,
             archive_path,
         } => {
-            let local_path = SanitizedLocalPath::new(&local_path)?;
-            if let Err(err) = upload(
-                &ctx,
+            upload(
+                ctx,
                 &local_path,
                 &archive_path,
                 &mut Rules::new(&[&ctx.config.always_exclude], local_path.clone()),
                 false,
                 &mut HashSet::new(),
+                false,
             )
-            .await
-            {
-                error!("Failed to process {:?}: {:?}", local_path, err);
-            }
-            ctx.counters.report();
+            .await?;
         }
         cli::Command::Download {
             archive_path,
@@ -104,14 +109,15 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             version,
         } => {
             let found_any = if let Some(version) = version {
-                download_version(&ctx, &archive_path, &local_path, version.0).await?
+                download_version(ctx, &archive_path, &local_path, version.0).await?
             } else {
-                pull_updates(&ctx).await?;
+                pull_updates(ctx).await?;
                 download_latest(
-                    &ctx,
+                    ctx,
                     &archive_path,
                     &local_path,
                     &mut Rules::new(&[&ctx.config.always_exclude], local_path.clone()),
+                    false,
                     false,
                 )
                 .await?
@@ -120,8 +126,8 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
                 bail!("no matching entries found");
             }
         }
-        cli::Command::LocalStatus { path } => local_status(&ctx, &path).await?,
-        cli::Command::Ls { path, deleted } => ls(&ctx, &path, deleted).await?,
+        cli::Command::LocalStatus { path } => local_status(ctx, &path).await?,
+        cli::Command::Ls { path, deleted } => ls(ctx, &path, deleted).await?,
         cli::Command::Reset {
             archive_path,
             version,
@@ -155,7 +161,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             info!("{:?}", stats);
         }
         cli::Command::History { path, recursive } => {
-            list_versions(&ctx, &path, recursive).await?;
+            list_versions(ctx, &path, recursive).await?;
         }
         cli::Command::Status => {
             let status = ctx.client.request(&GetServerStatus).await?;
@@ -170,8 +176,6 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         }
         cli::Command::GenerateEncryptionKey => unreachable!(),
     }
-
-    #[allow(unreachable_code)]
     Ok(())
 }
 
