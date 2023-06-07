@@ -81,6 +81,25 @@ impl ArchivePath {
     }
 }
 
+pub mod with_prefix {
+    use super::*;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<ArchivePath, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        s.parse().map_err(D::Error::custom)
+    }
+
+    pub fn serialize<S>(value: &ArchivePath, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        value.to_string().serialize(serializer)
+    }
+}
+
 #[test]
 fn parent_path() {
     assert_eq!(ArchivePath::from_str("ar:/").unwrap().parent(), None);

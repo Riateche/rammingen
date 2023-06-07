@@ -4,7 +4,7 @@ pub mod endpoints;
 mod path;
 pub mod util;
 
-pub use crate::path::{ArchivePath, EncryptedArchivePath};
+pub use crate::path::{with_prefix as serde_path_with_prefix, ArchivePath, EncryptedArchivePath};
 use anyhow::bail;
 use anyhow::Result;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};

@@ -11,7 +11,7 @@ use tracing::error;
 #[tokio::main]
 async fn main() {
     if let Err(err) = try_main().await {
-        error!("{err:?}");
+        println!("{err:?}");
     }
 }
 
@@ -31,6 +31,8 @@ async fn try_main() -> Result<()> {
     };
     let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
     setup_logger(config.log_file.clone(), config.log_filter.clone())?;
-    rammingen::run(cli, config).await?;
+    if let Err(err) = rammingen::run(cli, config).await {
+        error!("{err:?}");
+    }
     Ok(())
 }

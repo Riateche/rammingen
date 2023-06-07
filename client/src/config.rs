@@ -4,7 +4,7 @@ use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use core::fmt;
 use derivative::Derivative;
 use generic_array::GenericArray;
-use rammingen_protocol::ArchivePath;
+use rammingen_protocol::{serde_path_with_prefix, ArchivePath};
 use reqwest::Url;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,9 @@ use crate::rules::Rule;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountPoint {
     pub local_path: SanitizedLocalPath,
+    #[serde(with = "serde_path_with_prefix")]
     pub archive_path: ArchivePath,
+    #[serde(default)]
     pub exclude: Vec<Rule>,
 }
 
