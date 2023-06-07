@@ -14,6 +14,7 @@ use crate::{
     config::MountPoint,
     data::{DecryptedFileContent, LocalEntryInfo},
     encryption::{self, encrypt_content_hash, encrypt_path, encrypt_size},
+    info::pretty_size,
     path::SanitizedLocalPath,
     rules::Rules,
     term::set_status,
@@ -216,6 +217,24 @@ pub fn upload<'a>(
                         .request(&ContentHashExists(encrypted_hash.clone()))
                         .await?
                 {
+                    if file_data.encrypted_size
+                        > ctx.config.warn_about_files_larger_than.get_bytes()
+                    {
+                        if dry_run {
+                            warn!(
+                                "Would upload {} file: {}",
+                                pretty_size(file_data.encrypted_size),
+                                local_path
+                            );
+                        } else {
+                            warn!(
+                                "Uploading {} file: {}",
+                                pretty_size(file_data.encrypted_size),
+                                local_path
+                            );
+                        }
+                    }
+
                     if !dry_run {
                         ctx.client.upload(&encrypted_hash, file_data.file).await?;
                     }

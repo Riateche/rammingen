@@ -202,7 +202,7 @@ fn pretty_status(data: &DecryptedEntryVersionData) -> Result<String> {
 }
 
 pub fn pretty_size(size: u64) -> impl Display {
-    Byte::from_bytes(size.into())
+    Byte::from_bytes(size)
         .get_appropriate_unit(false)
         .to_string()
 }

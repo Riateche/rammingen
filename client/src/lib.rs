@@ -76,7 +76,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
 
     let dry_run = cli.command == cli::Command::DryRun;
     let result = handle_command(cli, &ctx).await;
-    ctx.counters.report(dry_run);
+    ctx.counters.report(dry_run, &ctx);
     result
 }
 

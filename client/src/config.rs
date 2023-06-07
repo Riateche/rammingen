@@ -1,6 +1,7 @@
 use aes_siv::aead::OsRng;
 use aes_siv::{Aes256SivAead, KeyInit};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+use byte_unit::Byte;
 use core::fmt;
 use derivative::Derivative;
 use generic_array::GenericArray;
@@ -85,8 +86,15 @@ pub struct Config {
     pub log_file: Option<PathBuf>,
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
+
+    #[serde(default = "default_warn_about_files_larger_than")]
+    pub warn_about_files_larger_than: Byte,
 }
 
 fn default_log_filter() -> String {
     "info".into()
+}
+
+fn default_warn_about_files_larger_than() -> Byte {
+    "50 MB".parse().unwrap()
 }

@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tracing::info;
+use tracing::{info, warn};
 
-use crate::info::pretty_size;
+use crate::{info::pretty_size, Ctx};
 
 #[derive(Debug, Default)]
 pub struct Counters {
@@ -10,11 +10,28 @@ pub struct Counters {
     pub downloaded_entries: AtomicU64,
     pub downloaded_bytes: AtomicU64,
     pub uploaded_entries: AtomicU64,
+    pub uploaded_large_files: AtomicU64,
     pub uploaded_bytes: AtomicU64,
 }
 
 impl Counters {
-    pub fn report(&self, dry_run: bool) {
+    pub fn report(&self, dry_run: bool, ctx: &Ctx) {
+        let uploaded_large_files = self.uploaded_large_files.load(Ordering::Relaxed);
+        if uploaded_large_files > 0 {
+            let size = pretty_size(ctx.config.warn_about_files_larger_than.get_bytes());
+            if dry_run {
+                warn!(
+                    "Would upload {} files larger than {}",
+                    uploaded_large_files, size,
+                );
+            } else {
+                warn!(
+                    "Uploaded {} files larger than {}",
+                    uploaded_large_files, size,
+                );
+            }
+        }
+
         let downloaded_entries = self.downloaded_entries.load(Ordering::Relaxed);
         let downloaded_bytes = self.downloaded_bytes.load(Ordering::Relaxed);
         if downloaded_entries > 0 || downloaded_bytes > 0 {

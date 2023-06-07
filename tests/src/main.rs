@@ -160,6 +160,7 @@ async fn try_main() -> Result<()> {
             local_db_path: Some(client_dir.join("db")),
             log_file: None,
             log_filter: String::new(),
+            warn_about_files_larger_than: "50 MB".parse().unwrap(),
         };
         let config_path = client_dir.join("rammingen.conf");
         write(&config_path, json5::to_string(&config)?)?;

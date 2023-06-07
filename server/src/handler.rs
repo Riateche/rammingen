@@ -582,7 +582,6 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
 
     for entry in entries {
         if entry.data.kind.is_some() {
-            tracing::debug!("reset_version: updating {:?}", entry);
             let r = add_version_inner(
                 &ctx,
                 AddVersion {
