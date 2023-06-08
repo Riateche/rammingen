@@ -26,7 +26,11 @@ impl ArchivePath {
         if file_name.contains('/') {
             bail!("file name cannot contain '/'");
         }
-        let s = format!("{}/{}", self.0, file_name);
+        let s = if self.0 == "/" {
+            format!("{}{}", self.0, file_name)
+        } else {
+            format!("{}/{}", self.0, file_name)
+        };
         check_path(&s)?;
         Ok(Self(s))
     }
@@ -45,7 +49,11 @@ impl ArchivePath {
             bail!("relative_archive_path must not end with '/'");
         }
 
-        let s = format!("{}/{}", self.0, relative_archive_path);
+        let s = if self.0 == "/" {
+            format!("{}{}", self.0, relative_archive_path)
+        } else {
+            format!("{}/{}", self.0, relative_archive_path)
+        };
         check_path(&s)?;
         Ok(Self(s))
     }
