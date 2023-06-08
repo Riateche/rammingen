@@ -39,7 +39,7 @@ impl Client {
             server_url,
             token: token.into(),
             reqwest: reqwest::Client::builder()
-                .timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(600))
                 .build()
                 .unwrap(),
         }
