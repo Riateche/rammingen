@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use fs::symlink_metadata;
 use fs_err as fs;
 use futures::future::BoxFuture;
 use rammingen_protocol::{
@@ -288,15 +289,20 @@ pub fn upload<'a>(
         if is_dir {
             for entry in fs::read_dir(local_path)? {
                 let entry = entry?;
+                let entry_path = entry.path();
+                if symlink_metadata(&entry_path)?.is_symlink() {
+                    warn!("skipping symlink: {:?}", entry_path);
+                    continue;
+                }
                 let file_name = entry.file_name();
                 let file_name_str = file_name
                     .to_str()
-                    .ok_or_else(|| anyhow!("Unsupported file name: {:?}", entry.path()))?;
+                    .ok_or_else(|| anyhow!("Unsupported file name: {:?}", entry_path))?;
                 let entry_local_path = local_path.join(file_name_str)?;
                 let entry_archive_path = archive_path.join_one(file_name_str).map_err(|err| {
                     anyhow!(
                         "Failed to construct archive path for {:?}: {:?}",
-                        entry.path(),
+                        entry_path,
                         err
                     )
                 })?;
@@ -310,7 +316,7 @@ pub fn upload<'a>(
                     dry_run,
                 )
                 .await
-                .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry.path(), err))?;
+                .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry_path, err))?;
             }
         }
         Ok(())

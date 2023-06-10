@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use fs_err::symlink_metadata;
 use serde::{de::Error, Deserialize, Serialize};
 use std::{
     fmt::Display,
@@ -43,6 +44,9 @@ fn canonicalize(path: &Path) -> Result<PathBuf> {
     // We intentionally ignore I/O errors on `exists()` because
     // it can fail with a "not a directory" error if a parent path is a file.
     if path.exists() {
+        if symlink_metadata(path)?.is_symlink() {
+            bail!("symlinks are not allowed");
+        }
         return Ok(fs_err::canonicalize(path)?);
     }
 
