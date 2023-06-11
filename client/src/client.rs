@@ -245,11 +245,15 @@ impl Client {
         if actual_encrypted_size != header_len {
             bail!("content length mismatch");
         }
+        if content.original_size != actual_original_size {
+            bail!(
+                "original size mismatch (expected {}, got {})",
+                content.original_size,
+                actual_original_size
+            );
+        }
         if content.hash != actual_hash {
             bail!("content hash mismatch");
-        }
-        if content.original_size != actual_original_size {
-            bail!("original size mismatch");
         }
         Ok(())
     }

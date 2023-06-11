@@ -90,8 +90,8 @@ impl<W> HashingWriter<W> {
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let len = self.inner.write(buf)?;
-        self.hasher.update(buf);
-        self.size += buf.len() as u64;
+        self.hasher.update(&buf[..len]);
+        self.size += len as u64;
         Ok(len)
     }
 
@@ -239,10 +239,12 @@ impl<'a, W: Write> Decryptor<'a, W> {
         let len: usize = LE::read_u32(&self.buf)
             .try_into()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        if len > BLOCK_SIZE {
+        let nonce_size = nonce_size();
+        let max_block_size = BLOCK_SIZE + nonce_size + 16;
+        if len > max_block_size {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
-                "block size is too large",
+                format!("block size is too large (expected {max_block_size}, got {len})"),
             ));
         }
         let rest_of_data = &self.buf[4..];
@@ -251,7 +253,6 @@ impl<'a, W: Write> Decryptor<'a, W> {
         }
         let chunk_data = &rest_of_data[..len];
 
-        let nonce_size = nonce_size();
         let nonce = chunk_data
             .get(..nonce_size)
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "chunk data is too short"))?;
@@ -403,21 +404,22 @@ pub fn file_roundtrip() {
     let cipher = Aes256SivAead::new(&key);
 
     let mut file = NamedTempFile::new().unwrap();
-    for _ in 0..10 {
-        let input: Vec<u8> = (0..3000).map(|_| rand::random::<u8>()).collect();
+    for _ in 0..20000 {
+        let input: Vec<u8> = (0..1000).map(|_| rand::random::<u8>()).collect();
         file.write_all(&input).unwrap();
     }
     file.flush().unwrap();
 
-    let mut encrypted_file = encrypt_file(file.path(), &cipher).unwrap().file;
+    let mut encrypted_file = encrypt_file(file.path(), &cipher).unwrap();
+    assert_eq!(encrypted_file.original_size, 20000000);
     println!(
         "encrypted size {}",
-        encrypted_file.seek(SeekFrom::End(0)).unwrap()
+        encrypted_file.file.seek(SeekFrom::End(0)).unwrap()
     );
-    encrypted_file.rewind().unwrap();
+    encrypted_file.file.rewind().unwrap();
     let mut decrypted_file = NamedTempFile::new().unwrap();
     let mut decryptor = Decryptor::new(&cipher, &mut decrypted_file);
-    io::copy(&mut encrypted_file, &mut decryptor).unwrap();
+    io::copy(&mut encrypted_file.file, &mut decryptor).unwrap();
     decryptor.finish().unwrap();
     decrypted_file.flush().unwrap();
 

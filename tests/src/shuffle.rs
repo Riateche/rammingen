@@ -61,7 +61,7 @@ pub fn random_name(allow_ignored: bool) -> String {
 }
 
 pub fn random_content() -> String {
-    let content_len = thread_rng().gen_range(0..=30_000);
+    let content_len = thread_rng().gen_range(0..=3_000_000);
     Alphanumeric.sample_string(&mut thread_rng(), content_len)
 }
 
