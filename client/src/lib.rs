@@ -80,7 +80,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
     result
 }
 
-async fn handle_command(cli: Cli, ctx: &Ctx) -> Result<()> {
+async fn handle_command(cli: Cli, ctx: &Arc<Ctx>) -> Result<()> {
     match cli.command {
         cli::Command::DryRun => {
             sync(ctx, true).await?;

@@ -1,22 +1,30 @@
 use std::{
     borrow::Cow,
+    future::Future,
     io::{stdout, ErrorKind, Read, Write},
     path::{self, Path, MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
+    sync::Arc,
 };
 
 use anyhow::{anyhow, bail, Result};
 use bytes::Bytes;
 use fs_err::OpenOptions;
+use futures::future;
 use itertools::Itertools;
-use tokio::{sync::mpsc, task::block_in_place};
+use tokio::{
+    pin, select,
+    sync::{mpsc, Mutex},
+    task::block_in_place,
+};
 use tokio_stream::{wrappers::ReceiverStream, Stream};
 use tracing::warn;
 
 const CONTENT_CHUNK_LEN: usize = 1024;
 
-pub fn stream_file(mut file: impl Read + Send + 'static) -> impl Stream<Item = Bytes> {
+pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<Item = Bytes> {
     let (tx, rx) = mpsc::channel(5);
     tokio::spawn(async move {
+        let mut file = file.lock().await;
         let mut buf = vec![0u8; CONTENT_CHUNK_LEN];
         loop {
             match block_in_place(|| file.read(&mut buf)) {
@@ -82,5 +90,45 @@ pub fn log_writer(log_file: Option<&Path>) -> Result<Box<dyn Write + Send + Sync
         ))
     } else {
         Ok(Box::new(stdout()))
+    }
+}
+
+#[derive(Clone)]
+pub struct ErrorSender(mpsc::Sender<anyhow::Error>);
+
+impl ErrorSender {
+    pub async fn notify(&self, err: impl Into<anyhow::Error>) {
+        let _ = self.0.send(err.into()).await;
+    }
+
+    pub async fn unwrap_or_notify<T, E>(&self, value: Result<T, E>) -> T
+    where
+        E: Into<anyhow::Error>,
+    {
+        match value {
+            Ok(value) => value,
+            Err(err) => {
+                self.notify(err).await;
+                future::pending().await
+            }
+        }
+    }
+}
+
+pub async fn interrupt_on_error<F, R, Fut>(f: F) -> Result<R>
+where
+    F: FnOnce(ErrorSender) -> Fut,
+    Fut: Future<Output = Result<R>>,
+{
+    let (sender, mut receiver) = mpsc::channel(10);
+    let fut = f(ErrorSender(sender));
+    pin!(fut);
+    select! {
+        err = receiver.recv() => if let Some(err) = err {
+            Err(err)
+        } else {
+            fut.await
+        },
+        r = &mut fut => r,
     }
 }

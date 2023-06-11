@@ -3,22 +3,30 @@ use fs::symlink_metadata;
 use fs_err as fs;
 use futures::future::BoxFuture;
 use rammingen_protocol::{
-    endpoints::{AddVersion, ContentHashExists},
-    util::native_to_archive_relative_path,
-    ArchivePath, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
+    endpoints::{AddVersion, AddVersions, ContentHashExists},
+    util::{interrupt_on_error, native_to_archive_relative_path, ErrorSender},
+    ArchivePath, ContentHash, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
 };
-use std::{collections::HashSet, sync::atomic::Ordering, time::Duration};
-use tokio::{task::block_in_place, time::sleep};
+use std::{
+    collections::HashSet,
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+};
+use tokio::{
+    sync::{mpsc, oneshot, Semaphore},
+    task::{self, block_in_place},
+    time::sleep,
+};
 use tracing::{debug, info, warn};
 
 use crate::{
     config::MountPoint,
     data::{DecryptedFileContent, LocalEntryInfo},
-    encryption::{self, encrypt_content_hash, encrypt_path, encrypt_size},
+    encryption::{self, encrypt_content_hash, encrypt_path, encrypt_size, EncryptedFileData},
     info::pretty_size,
     path::SanitizedLocalPath,
     rules::Rules,
-    term::set_status,
+    term::{set_status, set_status_updater},
     unix_mode, Ctx,
 };
 
@@ -40,35 +48,6 @@ pub fn to_archive_path<'a>(
         }
     }
     Ok(None)
-
-    // if let Some(value) = cache.get(local_path) {
-    //     return value.clone();
-    // }
-    // let output = if let Some(mount_point) = mount_points.iter().find(|mp| &mp.local == local_path) {
-    //     if mount_point.rules.eval(local_path) {
-    //         Some((mount_point.archive.clone(), &mount_point.rules))
-    //     } else {
-    //         None
-    //     }
-    // } else if let Some(parent) = local_path.parent()? {
-    //     if let Some((archive_parent, rules)) = to_archive_path(&parent, mount_points, cache) {
-    //         if rules.eval(local_path) {
-    //             let new_archive_path = archive_parent
-    //                 .join(local_path.file_name())
-    //                 .expect("failed to join archive path");
-    //             Some((new_archive_path, rules))
-    //         } else {
-    //             None
-    //         }
-    //     } else {
-    //         None
-    //     }
-    // } else {
-    //     None
-    // };
-
-    // cache.insert(local_path.clone(), output.clone());
-    // output
 }
 
 pub async fn find_local_deletions<'a>(
@@ -100,14 +79,14 @@ pub async fn find_local_deletions<'a>(
         } else {
             let response = ctx
                 .client
-                .request(&AddVersion {
+                .request(&AddVersions(vec![AddVersion {
                     path: encrypt_path(&archive_path, &ctx.cipher)?,
                     record_trigger: RecordTrigger::Sync,
                     kind: None,
                     content: None,
-                })
+                }]))
                 .await?;
-            if response.added {
+            if response.get(0).map_or(false, |r| r.added) {
                 ctx.counters
                     .uploaded_entries
                     .fetch_add(1, Ordering::Relaxed);
@@ -119,24 +98,82 @@ pub async fn find_local_deletions<'a>(
     Ok(())
 }
 
-pub fn upload<'a>(
+pub async fn upload(
+    ctx: &Arc<Ctx>,
+    local_path: &SanitizedLocalPath,
+    archive_path: &ArchivePath,
+    rules: &mut Rules,
+    is_mount: bool,
+    existing_paths: &mut HashSet<SanitizedLocalPath>,
+    dry_run: bool,
+) -> Result<()> {
+    interrupt_on_error(|error_sender| async move {
+        let ctx2 = ctx.clone();
+        let (content_sender, content_receiver) = mpsc::channel(100_000);
+
+        let content_upload_task = task::spawn(content_upload_task(
+            ctx.clone(),
+            content_receiver,
+            error_sender.clone(),
+        ));
+
+        let (versions_sender, versions_receiver) = mpsc::channel(100_000);
+        let versions_task = task::spawn(add_versions_task(
+            ctx.clone(),
+            versions_receiver,
+            error_sender,
+        ));
+
+        let mut ctx = UploadContext {
+            ctx,
+            rules,
+            is_mount,
+            existing_paths,
+            dry_run,
+            content_upload_sender: content_sender,
+            add_versions_sender: versions_sender,
+        };
+        upload_inner(&mut ctx, local_path, archive_path).await?;
+        drop(ctx);
+        let _status = set_status_updater(move || {
+            let queued = ctx2.counters.queued_upload_entries.load(Ordering::Relaxed);
+            let unqueued = ctx2
+                .counters
+                .unqueued_upload_entries
+                .load(Ordering::Relaxed);
+            format!("Uploading ({} / {} entries)", unqueued, queued)
+        });
+        content_upload_task.await?;
+        versions_task.await?;
+        Ok(())
+    })
+    .await
+}
+
+struct UploadContext<'a> {
     ctx: &'a Ctx,
-    local_path: &'a SanitizedLocalPath,
-    archive_path: &'a ArchivePath,
     rules: &'a mut Rules,
     is_mount: bool,
     existing_paths: &'a mut HashSet<SanitizedLocalPath>,
     dry_run: bool,
+    content_upload_sender: mpsc::Sender<ContentUploadTaskItem>,
+    add_versions_sender: mpsc::Sender<(AddVersionsTaskItem, Option<oneshot::Receiver<()>>)>,
+}
+
+fn upload_inner<'a>(
+    ctx: &'a mut UploadContext<'_>,
+    local_path: &'a SanitizedLocalPath,
+    archive_path: &'a ArchivePath,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
         let _status = set_status(format!("Scanning local files: {}", local_path));
-        existing_paths.insert(local_path.clone());
+        ctx.existing_paths.insert(local_path.clone());
         let mut metadata = fs::symlink_metadata(local_path)?;
         if metadata.is_symlink() {
             warn!("skipping symlink: {}", local_path);
             return Ok(());
         }
-        if rules.matches(local_path)? {
+        if ctx.rules.matches(local_path)? {
             debug!("ignored: {}", local_path);
             return Ok(());
         }
@@ -146,16 +183,18 @@ pub fn upload<'a>(
         } else {
             EntryKind::File
         };
-        let db_data = ctx.db.get_local_entry(local_path)?;
+        let db_data = ctx.ctx.db.get_local_entry(local_path)?;
 
         let changed;
         let content;
+        let oneshot_receiver;
 
         if is_dir {
             changed = db_data
                 .as_ref()
                 .map_or(true, |db_data| db_data.kind != kind);
             content = None;
+            oneshot_receiver = None;
         } else {
             let mut modified = None;
             for _ in 0..5 {
@@ -184,7 +223,7 @@ pub fn upload<'a>(
 
             if maybe_changed {
                 let file_data =
-                    block_in_place(|| encryption::encrypt_file(local_path, &ctx.cipher))?;
+                    block_in_place(|| encryption::encrypt_file(local_path, &ctx.ctx.cipher))?;
 
                 let final_modified = fs::symlink_metadata(local_path)?.modified()?;
                 if final_modified != modified {
@@ -198,7 +237,7 @@ pub fn upload<'a>(
                     modified_at: modified_datetime,
                     original_size: file_data.original_size,
                     encrypted_size: file_data.encrypted_size,
-                    hash: file_data.hash,
+                    hash: file_data.hash.clone(),
                     unix_mode,
                 };
 
@@ -211,79 +250,83 @@ pub fn upload<'a>(
                     }
                 });
 
-                let encrypted_hash = encrypt_content_hash(&current_content.hash, &ctx.cipher)?;
-                if changed
-                    && !ctx
-                        .client
-                        .request(&ContentHashExists(encrypted_hash.clone()))
-                        .await?
-                {
-                    if file_data.encrypted_size
-                        > ctx.config.warn_about_files_larger_than.get_bytes()
-                    {
-                        if dry_run {
+                if changed {
+                    if ctx.dry_run {
+                        if file_data.encrypted_size
+                            > ctx.ctx.config.warn_about_files_larger_than.get_bytes()
+                        {
                             warn!(
                                 "Would upload {} file: {}",
                                 pretty_size(file_data.encrypted_size),
                                 local_path
                             );
-                        } else {
-                            warn!(
-                                "Uploading {} file: {}",
-                                pretty_size(file_data.encrypted_size),
-                                local_path
-                            );
                         }
+                        oneshot_receiver = None;
+                    } else {
+                        let (sender, receiver) = oneshot::channel();
+                        ctx.content_upload_sender
+                            .send(ContentUploadTaskItem {
+                                hash: current_content.hash.clone(),
+                                local_path: local_path.clone(),
+                                file_data,
+                                sender,
+                            })
+                            .await
+                            .map_err(|_| anyhow!("failed to send item to content upload task"))?;
+                        oneshot_receiver = Some(receiver);
                     }
-
-                    if !dry_run {
-                        ctx.client.upload(&encrypted_hash, file_data.file).await?;
-                    }
-                    ctx.counters
-                        .uploaded_bytes
-                        .fetch_add(file_data.encrypted_size, Ordering::SeqCst);
+                } else {
+                    oneshot_receiver = None;
                 }
 
                 content = Some(current_content);
             } else {
                 changed = false;
                 content = None;
+                oneshot_receiver = None;
             }
         };
 
         if changed {
-            if dry_run {
+            if ctx.dry_run {
                 info!("Would upload {}", local_path);
-                ctx.counters
+                ctx.ctx
+                    .counters
                     .uploaded_entries
                     .fetch_add(1, Ordering::Relaxed);
             } else {
-                let add_version = AddVersion {
-                    path: encrypt_path(archive_path, &ctx.cipher)?,
-                    record_trigger: RecordTrigger::Upload,
-                    kind: Some(kind),
-                    content: if let Some(content) = &content {
-                        Some(FileContent {
-                            modified_at: content.modified_at,
-                            original_size: encrypt_size(content.original_size, &ctx.cipher)?,
-                            encrypted_size: content.encrypted_size,
-                            hash: encrypt_content_hash(&content.hash, &ctx.cipher)?,
-                            unix_mode: content.unix_mode,
-                        })
-                    } else {
-                        None
+                let item = AddVersionsTaskItem {
+                    is_mount: ctx.is_mount,
+                    version: AddVersion {
+                        path: encrypt_path(archive_path, &ctx.ctx.cipher)?,
+                        record_trigger: RecordTrigger::Upload,
+                        kind: Some(kind),
+                        content: if let Some(content) = &content {
+                            Some(FileContent {
+                                modified_at: content.modified_at,
+                                original_size: encrypt_size(
+                                    content.original_size,
+                                    &ctx.ctx.cipher,
+                                )?,
+                                encrypted_size: content.encrypted_size,
+                                hash: encrypt_content_hash(&content.hash, &ctx.ctx.cipher)?,
+                                unix_mode: content.unix_mode,
+                            })
+                        } else {
+                            None
+                        },
                     },
+                    local_path: local_path.clone(),
+                    local_entry_info: LocalEntryInfo { kind, content },
                 };
-                if ctx.client.request(&add_version).await?.added {
-                    ctx.counters
-                        .uploaded_entries
-                        .fetch_add(1, Ordering::Relaxed);
-                    info!("Uploaded {}", local_path);
-                }
-                if is_mount {
-                    ctx.db
-                        .set_local_entry(local_path, &LocalEntryInfo { kind, content })?;
-                }
+                ctx.add_versions_sender
+                    .send((item, oneshot_receiver))
+                    .await
+                    .map_err(|_| anyhow!("failed to send item to add version task"))?;
+                ctx.ctx
+                    .counters
+                    .queued_upload_entries
+                    .fetch_add(1, Ordering::Relaxed);
             }
         }
         if is_dir {
@@ -306,19 +349,128 @@ pub fn upload<'a>(
                         err
                     )
                 })?;
-                upload(
-                    ctx,
-                    &entry_local_path,
-                    &entry_archive_path,
-                    rules,
-                    is_mount,
-                    existing_paths,
-                    dry_run,
-                )
-                .await
-                .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry_path, err))?;
+                upload_inner(&mut *ctx, &entry_local_path, &entry_archive_path)
+                    .await
+                    .map_err(|err| anyhow!("Failed to process {:?}: {:?}", entry_path, err))?;
             }
         }
         Ok(())
     })
+}
+
+struct ContentUploadTaskItem {
+    hash: ContentHash,
+    local_path: SanitizedLocalPath,
+    file_data: EncryptedFileData,
+    sender: oneshot::Sender<()>,
+}
+
+async fn content_upload_task(
+    ctx: Arc<Ctx>,
+    mut receiver: mpsc::Receiver<ContentUploadTaskItem>,
+    error_sender: ErrorSender,
+) {
+    let semaphore = Arc::new(Semaphore::new(8));
+    while let Some(item) = receiver.recv().await {
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let ctx = ctx.clone();
+        let error_sender = error_sender.clone();
+        task::spawn(async move {
+            let _permit = permit;
+            let r = content_upload_item_task(ctx, item).await;
+            error_sender.unwrap_or_notify(r).await;
+        });
+    }
+}
+
+async fn content_upload_item_task(ctx: Arc<Ctx>, item: ContentUploadTaskItem) -> Result<()> {
+    let encrypted_hash = encrypt_content_hash(&item.hash, &ctx.cipher)?;
+    let exists = ctx
+        .client
+        .request(&ContentHashExists(encrypted_hash.clone()))
+        .await?;
+    if exists {
+        let _ = item.sender.send(());
+        return Ok(());
+    }
+
+    if item.file_data.encrypted_size > ctx.config.warn_about_files_larger_than.get_bytes() {
+        warn!(
+            "Uploading {} file: {}",
+            pretty_size(item.file_data.encrypted_size),
+            item.local_path
+        );
+    }
+
+    ctx.client
+        .upload(&encrypted_hash, item.file_data.file)
+        .await?;
+    ctx.counters
+        .uploaded_bytes
+        .fetch_add(item.file_data.encrypted_size, Ordering::SeqCst);
+    let _ = item.sender.send(());
+    Ok(())
+}
+
+struct AddVersionsTaskItem {
+    is_mount: bool,
+    version: AddVersion,
+    local_path: SanitizedLocalPath,
+    local_entry_info: LocalEntryInfo,
+}
+
+async fn add_versions_task(
+    ctx: Arc<Ctx>,
+    mut receiver: mpsc::Receiver<(AddVersionsTaskItem, Option<oneshot::Receiver<()>>)>,
+    error_sender: ErrorSender,
+) {
+    let r = async move {
+        const BATCH_SIZE: usize = 128;
+
+        let mut versions = Vec::new();
+        while let Some((item, receiver)) = receiver.recv().await {
+            if let Some(receiver) = receiver {
+                receiver.await?;
+            }
+            versions.push(item);
+            if versions.len() >= BATCH_SIZE {
+                add_versions_batch(&ctx, versions.drain(..).collect()).await?;
+            }
+        }
+        add_versions_batch(&ctx, versions.drain(..).collect()).await?;
+        anyhow::Ok(())
+    }
+    .await;
+    error_sender.unwrap_or_notify(r).await;
+}
+
+async fn add_versions_batch(ctx: &Ctx, items: Vec<AddVersionsTaskItem>) -> Result<()> {
+    let results = ctx
+        .client
+        .request(&AddVersions(
+            items.iter().map(|item| item.version.clone()).collect(),
+        ))
+        .await?;
+
+    if results.len() != items.len() {
+        bail!("invalid item count in AddVersions response");
+    }
+
+    ctx.counters
+        .unqueued_upload_entries
+        .fetch_add(items.len() as u64, Ordering::Relaxed);
+
+    for (result, item) in results.into_iter().zip(items) {
+        if result.added {
+            ctx.counters
+                .uploaded_entries
+                .fetch_add(1, Ordering::Relaxed);
+            info!("Uploaded {}", item.local_path);
+        }
+        if item.is_mount {
+            ctx.db
+                .set_local_entry(&item.local_path, &item.local_entry_info)?;
+        }
+    }
+    Ok(())
 }

@@ -1,4 +1,4 @@
-use std::{convert::Infallible, io::Write};
+use std::{convert::Infallible, io::Write, sync::Arc};
 
 use futures_util::StreamExt;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, StreamBody};
@@ -8,7 +8,7 @@ use hyper::{
     Request, Response, StatusCode,
 };
 use rammingen_protocol::{util::stream_file, EncryptedContentHash};
-use tokio::task::block_in_place;
+use tokio::{sync::Mutex, task::block_in_place};
 use tracing::warn;
 
 use crate::handler;
@@ -89,7 +89,7 @@ pub async fn download(
     Ok(Response::builder()
         .header(CONTENT_LENGTH, len)
         .body(BodyExt::boxed(StreamBody::new(
-            stream_file(file).map(|bytes| Ok(Frame::data(bytes))),
+            stream_file(Arc::new(Mutex::new(file))).map(|bytes| Ok(Frame::data(bytes))),
         )))
         .expect("response builder failed"))
 }

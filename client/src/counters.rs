@@ -12,6 +12,9 @@ pub struct Counters {
     pub uploaded_entries: AtomicU64,
     pub uploaded_large_files: AtomicU64,
     pub uploaded_bytes: AtomicU64,
+
+    pub queued_upload_entries: AtomicU64,
+    pub unqueued_upload_entries: AtomicU64,
 }
 
 impl Counters {

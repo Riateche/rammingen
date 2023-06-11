@@ -9,10 +9,16 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::{
     io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
+    sync::Arc,
     time::Duration,
 };
 use stream_generator::generate_try_stream;
-use tokio::task::block_in_place;
+use tokio::{
+    sync::Mutex,
+    task::block_in_place,
+    time::{sleep, timeout},
+};
+use tracing::warn;
 
 use rammingen_protocol::{
     endpoints::{RequestToResponse, RequestToStreamingResponse},
@@ -33,16 +39,76 @@ pub struct Client {
     token: String,
 }
 
+pub const NUM_RETRIES: usize = 5;
+pub const RETRY_INTERVAL: Duration = Duration::from_secs(10);
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+pub fn upload_timeout(upload_size: u64) -> Duration {
+    DEFAULT_TIMEOUT + Duration::from_micros(upload_size)
+}
+
 impl Client {
     pub fn new(server_url: Url, token: &str) -> Self {
         Self {
             server_url,
             token: token.into(),
             reqwest: reqwest::Client::builder()
-                .timeout(Duration::from_secs(600))
+                .timeout(DEFAULT_TIMEOUT)
                 .build()
                 .unwrap(),
         }
+    }
+
+    pub async fn request_with_timeout<R>(
+        &self,
+        request: &R,
+        timeout: Option<Duration>,
+    ) -> Result<R::Response>
+    where
+        R: RequestToResponse + Serialize,
+        R::Response: DeserializeOwned,
+    {
+        let mut i = 0;
+        loop {
+            i += 1;
+
+            let result = self.request_with_timeout_once(request, timeout).await;
+            match result {
+                Ok(r) => return Ok(r),
+                Err(err) => {
+                    if i == NUM_RETRIES {
+                        return Err(err);
+                    } else {
+                        warn!(?err, "request failed, will retry");
+                        sleep(RETRY_INTERVAL).await;
+                    }
+                }
+            }
+        }
+    }
+
+    async fn request_with_timeout_once<R>(
+        &self,
+        request: &R,
+        timeout: Option<Duration>,
+    ) -> Result<R::Response>
+    where
+        R: RequestToResponse + Serialize,
+        R::Response: DeserializeOwned,
+    {
+        let mut request = self
+            .reqwest
+            .request(Method::POST, self.server_url.join(R::PATH)?)
+            .bearer_auth(&self.token)
+            .body(bincode::serialize(&request)?);
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
+
+        let response = request.send().await?.error_for_status()?.bytes().await?;
+
+        bincode::deserialize::<Result<R::Response, String>>(&response)?
+            .map_err(|msg| anyhow!("server error: {msg}"))
     }
 
     pub async fn request<R>(&self, request: &R) -> Result<R::Response>
@@ -50,19 +116,7 @@ impl Client {
         R: RequestToResponse + Serialize,
         R::Response: DeserializeOwned,
     {
-        let response = self
-            .reqwest
-            .request(Method::POST, self.server_url.join(R::PATH)?)
-            .bearer_auth(&self.token)
-            .body(bincode::serialize(&request)?)
-            .send()
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?;
-
-        bincode::deserialize::<Result<R::Response, String>>(&response)?
-            .map_err(|msg| anyhow!("server error: {msg}"))
+        self.request_with_timeout(request, None).await
     }
 
     pub fn stream<R>(&self, request: &R) -> impl Stream<Item = Result<R::ResponseItem>>
@@ -73,16 +127,19 @@ impl Client {
         let this = self.clone();
         let request = bincode::serialize(&request);
         generate_try_stream(|mut y| async move {
-            let mut response = this
-                .reqwest
-                .request(Method::POST, this.server_url.join(R::PATH)?)
-                .bearer_auth(&this.token)
-                .body(request?)
-                .send()
-                .await?
-                .error_for_status()?;
+            let mut response = timeout(
+                DEFAULT_TIMEOUT,
+                this.reqwest
+                    .request(Method::POST, this.server_url.join(R::PATH)?)
+                    .timeout(Duration::from_secs(3600 * 24))
+                    .bearer_auth(&this.token)
+                    .body(request?)
+                    .send(),
+            )
+            .await??
+            .error_for_status()?;
             let mut buf = Vec::new();
-            while let Some(chunk) = response.chunk().await? {
+            while let Some(chunk) = timeout(DEFAULT_TIMEOUT, response.chunk()).await?? {
                 buf.extend_from_slice(&chunk);
                 while let Some((chunk, index)) = take_chunk(&buf) {
                     let data =
@@ -112,18 +169,35 @@ impl Client {
         mut encrypted_file: impl Read + Seek + Send + 'static,
     ) -> Result<()> {
         let size = encrypted_file.seek(SeekFrom::End(0))?;
-        encrypted_file.rewind()?;
-        self.reqwest
-            .put(format!("{}content/{}", self.server_url, hash.to_url_safe()))
-            .bearer_auth(&self.token)
-            .header(CONTENT_LENGTH, size)
-            .body(Body::wrap_stream(
-                stream_file(encrypted_file).map(io::Result::Ok),
-            ))
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(())
+        let encrypted_file = Arc::new(Mutex::new(encrypted_file));
+        let mut i = 0;
+        loop {
+            i += 1;
+            encrypted_file.lock().await.rewind()?;
+            let result = self
+                .reqwest
+                .put(format!("{}content/{}", self.server_url, hash.to_url_safe()))
+                .timeout(upload_timeout(size))
+                .bearer_auth(&self.token)
+                .header(CONTENT_LENGTH, size)
+                .body(Body::wrap_stream(
+                    stream_file(encrypted_file.clone()).map(io::Result::Ok),
+                ))
+                .send()
+                .await
+                .and_then(|r| r.error_for_status());
+            match result {
+                Ok(_) => return Ok(()),
+                Err(err) => {
+                    if i == NUM_RETRIES {
+                        return Err(err.into());
+                    } else {
+                        warn!(?err, "upload request failed, will retry");
+                        sleep(RETRY_INTERVAL).await;
+                    }
+                }
+            }
+        }
     }
 
     pub async fn download_and_decrypt(
@@ -133,17 +207,20 @@ impl Client {
         cipher: &Aes256SivAead,
     ) -> Result<()> {
         let encrypted_hash = encrypt_content_hash(&content.hash, cipher)?;
-        let mut response = self
-            .reqwest
-            .get(format!(
-                "{}content/{}",
-                self.server_url,
-                encrypted_hash.to_url_safe()
-            ))
-            .bearer_auth(&self.token)
-            .send()
-            .await?
-            .error_for_status()?;
+        let mut response = timeout(
+            DEFAULT_TIMEOUT,
+            self.reqwest
+                .get(format!(
+                    "{}content/{}",
+                    self.server_url,
+                    encrypted_hash.to_url_safe()
+                ))
+                .bearer_auth(&self.token)
+                .timeout(Duration::from_secs(3600 * 24))
+                .send(),
+        )
+        .await??
+        .error_for_status()?;
 
         let header_len: u64 = response
             .headers()
@@ -160,7 +237,7 @@ impl Client {
         let mut decryptor = Decryptor::new(cipher, file);
         let mut actual_encrypted_size = 0;
 
-        while let Some(chunk) = response.chunk().await? {
+        while let Some(chunk) = timeout(DEFAULT_TIMEOUT, response.chunk()).await?? {
             actual_encrypted_size += chunk.len() as u64;
             block_in_place(|| decryptor.write_all(&chunk))?;
         }

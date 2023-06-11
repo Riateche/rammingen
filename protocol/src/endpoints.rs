@@ -69,7 +69,15 @@ pub struct GetAllEntryVersions {
 }
 streaming_response_type!(GetAllEntryVersions, EntryVersion);
 
-/// Adds a new version of the specified path.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddVersion {
+    pub path: EncryptedArchivePath,
+    pub record_trigger: RecordTrigger,
+    pub kind: Option<EntryKind>,
+    pub content: Option<FileContent>,
+}
+
+/// Adds a new versions of the specified paths.
 /// If `kind` is `None`, records deletion of the path.
 /// `content` must be specified only if the entry is an existing file.
 /// If `unix_mode` is not specified in `content`, the previous `unix_mode`
@@ -78,13 +86,9 @@ streaming_response_type!(GetAllEntryVersions, EntryVersion);
 /// as the last version of this path (`record_trigger` and `modified_at`
 /// do not count as meaningful changes).
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AddVersion {
-    pub path: EncryptedArchivePath,
-    pub record_trigger: RecordTrigger,
-    pub kind: Option<EntryKind>,
-    pub content: Option<FileContent>,
-}
-response_type!(AddVersion, AddVersionResponse);
+pub struct AddVersions(pub Vec<AddVersion>);
+
+response_type!(AddVersions, Vec<AddVersionResponse>);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersionResponse {

@@ -30,7 +30,7 @@ use hyper::{
 };
 use rammingen_protocol::{
     endpoints::{
-        AddVersion, CheckIntegrity, ContentHashExists, GetAllEntryVersions, GetDirectChildEntries,
+        AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions, GetDirectChildEntries,
         GetEntryVersionsAtTime, GetNewEntries, GetServerStatus, GetSources, MovePath, RemovePath,
         RequestToResponse, RequestToStreamingResponse, ResetVersion, StreamingResponseItem,
     },
@@ -248,8 +248,8 @@ async fn try_handle_request(
         wrap_stream(ctx, request, handler::get_entry_versions_at_time).await
     } else if path == GetAllEntryVersions::PATH {
         wrap_stream(ctx, request, handler::get_all_entry_versions).await
-    } else if path == AddVersion::PATH {
-        wrap_request(ctx, request, handler::add_version).await
+    } else if path == AddVersions::PATH {
+        wrap_request(ctx, request, handler::add_versions).await
     } else if path == MovePath::PATH {
         wrap_request(ctx, request, handler::move_path).await
     } else if path == RemovePath::PATH {

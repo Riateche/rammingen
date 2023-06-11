@@ -1916,6 +1916,7 @@ dependencies = [
  "chrono",
  "derive_more",
  "fs-err",
+ "futures",
  "hex",
  "itertools",
  "serde",

@@ -5,10 +5,10 @@ use anyhow::{anyhow, bail, Result};
 use chrono::{TimeZone, Utc};
 use futures_util::{future::BoxFuture, Stream, TryStreamExt};
 use rammingen_protocol::endpoints::{
-    AddVersion, AddVersionResponse, BulkActionStats, CheckIntegrity, ContentHashExists,
-    GetAllEntryVersions, GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries,
-    GetServerStatus, GetSources, MovePath, RemovePath, ResetVersion, Response, ServerStatus,
-    SourceInfo, StreamingResponseItem,
+    AddVersion, AddVersionResponse, AddVersions, BulkActionStats, CheckIntegrity,
+    ContentHashExists, GetAllEntryVersions, GetDirectChildEntries, GetEntryVersionsAtTime,
+    GetNewEntries, GetServerStatus, GetSources, MovePath, RemovePath, ResetVersion, Response,
+    ServerStatus, SourceInfo, StreamingResponseItem,
 };
 use rammingen_protocol::{
     entry_kind_from_db, entry_kind_to_db, DateTimeUtc, EncryptedArchivePath, EncryptedContentHash,
@@ -177,7 +177,7 @@ async fn add_version_inner<'a>(
     ctx: &'a Context,
     request: AddVersion,
     tx: &'a mut Transaction<'_, Postgres>,
-) -> Result<Response<AddVersion>> {
+) -> Result<AddVersionResponse> {
     if let Some(content) = &request.content {
         if !ctx.storage.exists(&content.hash)? {
             bail!("cannot add version: hash not found in storage");
@@ -308,11 +308,15 @@ async fn add_version_inner<'a>(
     Ok(AddVersionResponse { added: true })
 }
 
-pub async fn add_version(ctx: Context, request: AddVersion) -> Result<Response<AddVersion>> {
+pub async fn add_versions(ctx: Context, request: AddVersions) -> Result<Response<AddVersions>> {
     let mut tx = ctx.db_pool.begin().await?;
-    let r = add_version_inner(&ctx, request, &mut tx).await?;
+    let mut results = Vec::new();
+    for item in request.0 {
+        let r = add_version_inner(&ctx, item, &mut tx).await?;
+        results.push(r);
+    }
     tx.commit().await?;
-    Ok(r)
+    Ok(results)
 }
 
 pub async fn get_new_entries(

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     download::download_latest,
@@ -10,7 +10,7 @@ use crate::{
 use anyhow::Result;
 use itertools::Itertools;
 
-pub async fn sync(ctx: &Ctx, dry_run: bool) -> Result<()> {
+pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     let mut existing_paths = HashSet::new();
     let mut mount_points = ctx
         .config

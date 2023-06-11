@@ -1,5 +1,6 @@
 use std::fmt::Write as _;
 use std::process;
+use std::time::Duration;
 use std::{
     fmt::Display,
     io::{Stdout, Write},
@@ -14,7 +15,9 @@ use crossterm::{
 use once_cell::sync::Lazy;
 use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
 use tokio::signal::ctrl_c;
-use tokio::task;
+use tokio::sync::oneshot;
+use tokio::time::interval;
+use tokio::{select, task};
 use tracing::{error, warn, Level};
 use tracing::{field::Visit, Subscriber};
 use tracing_subscriber::Layer;
@@ -31,6 +34,13 @@ fn term() -> ArcMutexGuard<RawMutex, Term> {
 
 #[must_use]
 pub struct StatusGuard;
+
+impl StatusGuard {
+    pub fn set(&self, status: impl Display) {
+        term().set_status(status);
+    }
+}
+
 impl Drop for StatusGuard {
     fn drop(&mut self) {
         clear_status()
@@ -44,6 +54,37 @@ pub fn set_status(status: impl Display) -> StatusGuard {
 
 pub fn clear_status() {
     term().clear_status()
+}
+
+pub struct StatusUpdaterGuard(Option<oneshot::Sender<()>>);
+
+impl Drop for StatusUpdaterGuard {
+    fn drop(&mut self) {
+        if let Some(sender) = self.0.take() {
+            let _ = sender.send(());
+        }
+    }
+}
+
+pub fn set_status_updater(
+    mut updater: impl FnMut() -> String + Send + 'static,
+) -> StatusUpdaterGuard {
+    let (sender, mut receiver) = oneshot::channel();
+
+    task::spawn(async move {
+        let mut interval = interval(Duration::from_secs(1));
+        let status = set_status(updater());
+        loop {
+            select! {
+                _ = interval.tick() => {
+                    status.set(updater());
+                }
+                _ = &mut receiver => break,
+            }
+        }
+    });
+
+    StatusUpdaterGuard(Some(sender))
 }
 
 impl Term {
