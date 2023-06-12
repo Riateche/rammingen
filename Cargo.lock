@@ -1883,6 +1883,7 @@ dependencies = [
  "fs-err",
  "futures",
  "generic-array",
+ "hex",
  "inflate",
  "itertools",
  "json5",

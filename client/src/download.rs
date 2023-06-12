@@ -1,18 +1,29 @@
-use std::{path::Path, sync::atomic::Ordering};
+use crate::term::set_status_updater;
+use rammingen_protocol::util::interrupt_on_error;
+use sha2::Digest;
+use sha2::Sha256;
+use std::{
+    path::Path,
+    sync::{atomic::Ordering, Arc},
+};
 
 use anyhow::{anyhow, bail, Result};
 use fs_err::{create_dir, remove_dir, remove_file, rename};
 use futures::{stream, Stream, TryStreamExt};
 use rammingen_protocol::{
     endpoints::GetEntryVersionsAtTime,
-    util::{archive_to_native_relative_path, try_exists},
+    util::{archive_to_native_relative_path, try_exists, ErrorSender},
     ArchivePath, DateTimeUtc, EntryKind,
 };
 use stream_generator::generate_try_stream;
+use tokio::{
+    sync::{mpsc, oneshot, Semaphore},
+    task,
+};
 use tracing::{info, warn};
 
 use crate::{
-    data::{DecryptedEntryVersionData, LocalEntryInfo},
+    data::{DecryptedEntryVersionData, DecryptedFileContent, LocalEntryInfo},
     encryption::encrypt_path,
     path::SanitizedLocalPath,
     rules::Rules,
@@ -49,7 +60,7 @@ fn remove_dir_or_file(path: impl AsRef<Path>) -> Result<bool> {
 }
 
 pub async fn download_version(
-    ctx: &Ctx,
+    ctx: &Arc<Ctx>,
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
     version: DateTimeUtc,
@@ -83,7 +94,7 @@ pub async fn download_version(
 }
 
 pub async fn download_latest(
-    ctx: &Ctx,
+    ctx: &Arc<Ctx>,
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
     rules: &mut Rules,
@@ -103,8 +114,19 @@ pub async fn download_latest(
     .await
 }
 
+struct DownloadContext<'a> {
+    ctx: &'a Arc<Ctx>,
+    root_archive_path: &'a ArchivePath,
+    root_local_path: &'a SanitizedLocalPath,
+    rules: &'a mut Rules,
+    is_mount: bool,
+    dry_run: bool,
+    file_download_sender: mpsc::Sender<DownloadFileTask>,
+    finalize_sender: mpsc::Sender<FinalizeDownloadTaskItem>,
+}
+
 pub async fn download(
-    ctx: &Ctx,
+    ctx: &Arc<Ctx>,
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
     rules: &mut Rules,
@@ -112,24 +134,72 @@ pub async fn download(
     versions: impl Stream<Item = Result<DecryptedEntryVersionData>>,
     dry_run: bool,
 ) -> Result<bool> {
+    interrupt_on_error(|error_sender| async move {
+        let ctx2 = ctx.clone();
+        let (file_download_sender, file_download_receiver) = mpsc::channel(100_000);
+
+        let content_upload_task = task::spawn(download_files_task(
+            ctx.clone(),
+            file_download_receiver,
+            error_sender.clone(),
+        ));
+
+        let (finalize_sender, finalize_receiver) = mpsc::channel(100_000);
+        let versions_task = task::spawn(finalize_download_task(
+            ctx.clone(),
+            finalize_receiver,
+            error_sender,
+        ));
+
+        let mut ctx = DownloadContext {
+            ctx,
+            root_archive_path,
+            root_local_path,
+            rules,
+            is_mount,
+            dry_run,
+            file_download_sender,
+            finalize_sender,
+        };
+        let r = download_inner(&mut ctx, versions).await?;
+        drop(ctx);
+        let _status = set_status_updater(move || {
+            let queued = ctx2
+                .counters
+                .queued_download_entries
+                .load(Ordering::Relaxed);
+            let unqueued = ctx2.counters.downloaded_entries.load(Ordering::Relaxed);
+            format!("Downloading ({} / {} entries)", unqueued, queued)
+        });
+        content_upload_task.await?;
+        versions_task.await?;
+        Ok(r)
+    })
+    .await
+}
+
+async fn download_inner(
+    ctx: &mut DownloadContext<'_>,
+    versions: impl Stream<Item = Result<DecryptedEntryVersionData>>,
+) -> Result<bool> {
     tokio::pin!(versions);
-    if is_mount {
+    if ctx.is_mount {
         let _status = set_status("Checking for files deleted remotely");
-        for entry in ctx.db.get_archive_entries(root_archive_path).rev() {
+        for entry in ctx.ctx.db.get_archive_entries(ctx.root_archive_path).rev() {
             let entry = entry?;
             if entry.kind.is_some() {
                 continue;
             }
             let entry_local_path =
-                archive_to_local_path(&entry.path, root_archive_path, root_local_path)?;
-            if rules.matches(&entry_local_path)? {
+                archive_to_local_path(&entry.path, ctx.root_archive_path, ctx.root_local_path)?;
+            if ctx.rules.matches(&entry_local_path)? {
                 continue;
             }
-            let Some(db_data) = ctx.db.get_local_entry(&entry_local_path)? else {
+            let Some(db_data) = ctx.ctx.db.get_local_entry(&entry_local_path)? else {
                 continue;
             };
             if try_exists(entry_local_path.as_path())? {
-                if dry_run {
+                if ctx.dry_run {
                     info!("Would delete {}", entry_local_path);
                 } else {
                     match db_data.kind {
@@ -145,10 +215,13 @@ pub async fn download(
                     }
                     info!("Deleted {}", entry_local_path);
                 }
-                ctx.counters.deleted_entries.fetch_add(1, Ordering::SeqCst);
+                ctx.ctx
+                    .counters
+                    .deleted_entries
+                    .fetch_add(1, Ordering::SeqCst);
             }
-            if !dry_run {
-                ctx.db.remove_local_entry(&entry_local_path)?;
+            if !ctx.dry_run {
+                ctx.ctx.db.remove_local_entry(&entry_local_path)?;
             }
         }
     }
@@ -158,15 +231,15 @@ pub async fn download(
             continue;
         };
         let entry_local_path =
-            archive_to_local_path(&entry.path, root_archive_path, root_local_path)?;
-        if rules.matches(&entry_local_path)? {
+            archive_to_local_path(&entry.path, ctx.root_archive_path, ctx.root_local_path)?;
+        if ctx.rules.matches(&entry_local_path)? {
             continue;
         }
-        let _status = set_status(format!("Scanning remote files: {}", root_local_path));
+        let _status = set_status(format!("Scanning remote files: {}", ctx.root_local_path));
 
         let mut must_delete = false;
-        let db_data = if is_mount {
-            ctx.db.get_local_entry(&entry_local_path)?
+        let db_data = if ctx.is_mount {
+            ctx.ctx.db.get_local_entry(&entry_local_path)?
         } else {
             None
         };
@@ -174,7 +247,7 @@ pub async fn download(
             if db_data.is_same_as_entry(&entry) {
                 continue;
             }
-            if !dry_run && !db_data.matches_real(&entry_local_path)? {
+            if !ctx.dry_run && !db_data.matches_real(&entry_local_path)? {
                 bail!(
                     "local db data doesn't match local file at {:?}",
                     entry_local_path
@@ -182,7 +255,7 @@ pub async fn download(
             }
             must_delete = true;
         }
-        if !dry_run && !must_delete && try_exists(entry_local_path.as_path())? {
+        if !ctx.dry_run && !must_delete && try_exists(entry_local_path.as_path())? {
             bail!(
                 "local entry already exists at {:?} (while processing entry: {:?}",
                 entry_local_path,
@@ -190,96 +263,53 @@ pub async fn download(
             );
         }
 
-        if dry_run {
+        if ctx.dry_run {
             info!("Would download {}", entry_local_path);
             if let Some(content) = &entry.content {
-                ctx.counters
+                ctx.ctx
+                    .counters
                     .downloaded_bytes
                     .fetch_add(content.encrypted_size, Ordering::SeqCst);
             }
         } else {
+            let file_receiver;
             match kind {
                 EntryKind::Directory => {
-                    if must_delete {
-                        if !remove_dir_or_file(&entry_local_path)? {
-                            continue;
-                        }
-                    }
-                    create_dir(&entry_local_path)?;
-                    ctx.db.set_local_entry(
-                        &entry_local_path,
-                        &LocalEntryInfo {
-                            kind,
-                            content: None,
-                        },
-                    )?;
+                    file_receiver = None;
                 }
                 EntryKind::File => {
-                    let mut content = entry
+                    let content = entry
                         .content
+                        .clone()
                         .ok_or_else(|| anyhow!("missing content info for existing file"))?;
-
-                    let file_name = entry_local_path
-                        .file_name()
-                        .ok_or_else(|| anyhow!("failed to get file name for local file path"))?;
-                    let tmp_path = entry_local_path
-                        .parent()?
-                        .ok_or_else(|| anyhow!("failed to get parent for local path"))?
-                        .join(format!(".{file_name}.rammingen.part"))?;
-                    let _tmp_guard = TmpGuard(tmp_path.clone());
-                    if try_exists(&tmp_path)? {
-                        remove_file(&tmp_path)?;
-                    }
-                    ctx.client
-                        .download_and_decrypt(&content, &tmp_path, &ctx.cipher)
-                        .await?;
-                    if let Some(db_data) = &db_data {
-                        // Check again just in case.
-                        if !db_data.matches_real(&entry_local_path)? {
-                            bail!(
-                                "local db data doesn't match local file at {:?}",
-                                entry_local_path
-                            );
-                        }
-                    }
-                    if must_delete {
-                        if !remove_dir_or_file(&entry_local_path)? {
-                            continue;
-                        }
-                    }
-                    rename(&tmp_path, &entry_local_path)?;
-
-                    #[cfg(target_family = "unix")]
-                    {
-                        use std::fs::Permissions;
-                        use std::os::unix::prelude::PermissionsExt;
-
-                        if let Some(mode) = content.unix_mode {
-                            fs_err::set_permissions(
-                                &entry_local_path,
-                                Permissions::from_mode(mode),
-                            )?;
-                        }
-                    }
-
-                    content.modified_at = fs_err::metadata(&entry_local_path)?.modified()?.into();
-                    ctx.counters
-                        .downloaded_bytes
-                        .fetch_add(content.encrypted_size, Ordering::SeqCst);
-                    ctx.db.set_local_entry(
-                        &entry_local_path,
-                        &LocalEntryInfo {
-                            kind,
-                            content: Some(content),
-                        },
-                    )?;
+                    let (sender, receiver) = oneshot::channel();
+                    file_receiver = Some(receiver);
+                    let _ = ctx
+                        .file_download_sender
+                        .send(DownloadFileTask {
+                            local_path: entry_local_path.clone(),
+                            content,
+                            sender,
+                        })
+                        .await;
                 }
             }
-            info!("Downloaded {}", entry_local_path);
+            let _ = ctx
+                .finalize_sender
+                .send(FinalizeDownloadTaskItem {
+                    entry,
+                    db_data,
+                    local_path: entry_local_path,
+                    must_delete,
+                    file_receiver,
+                })
+                .await;
+            ctx.ctx
+                .counters
+                .queued_download_entries
+                .fetch_add(1, Ordering::SeqCst);
         }
-        ctx.counters
-            .downloaded_entries
-            .fetch_add(1, Ordering::SeqCst);
+
         found_any = true;
     }
     Ok(found_any)
@@ -288,6 +318,9 @@ pub async fn download(
 struct TmpGuard(SanitizedLocalPath);
 
 impl TmpGuard {
+    fn path(&self) -> &SanitizedLocalPath {
+        &self.0
+    }
     fn clean(&mut self) -> Result<()> {
         if try_exists(&self.0)? {
             remove_file(&self.0)?;
@@ -302,4 +335,164 @@ impl Drop for TmpGuard {
             warn!(?err, "failed to clean up temporary file");
         }
     }
+}
+
+struct DownloadFileTask {
+    local_path: SanitizedLocalPath,
+    content: DecryptedFileContent,
+    sender: oneshot::Sender<TmpGuard>,
+}
+
+async fn download_files_task(
+    ctx: Arc<Ctx>,
+    mut receiver: mpsc::Receiver<DownloadFileTask>,
+    error_sender: ErrorSender,
+) {
+    let semaphore = Arc::new(Semaphore::new(8));
+    while let Some(item) = receiver.recv().await {
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let ctx = ctx.clone();
+        let error_sender = error_sender.clone();
+        task::spawn(async move {
+            let _permit = permit;
+            let r = download_file_task(&ctx, item).await;
+            error_sender.unwrap_or_notify(r).await;
+        });
+    }
+}
+
+async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
+    let mut parent = item
+        .local_path
+        .parent()?
+        .ok_or_else(|| anyhow!("failed to get parent for {}", item.local_path))?;
+    while !parent.as_path().exists() {
+        parent = parent
+            .parent()?
+            .ok_or_else(|| anyhow!("failed to get parent for {}", parent))?;
+    }
+    let tmp_path = parent.join(format!(
+        ".{}.rammingen.part",
+        &path_hash(&item.local_path)[..32]
+    ))?;
+    let tmp_guard = TmpGuard(tmp_path.clone());
+    if try_exists(&tmp_path)? {
+        remove_file(&tmp_path)?;
+    }
+    ctx.client
+        .download_and_decrypt(&item.content, &tmp_path, &ctx.cipher)
+        .await?;
+    let _ = item.sender.send(tmp_guard);
+    Ok(())
+}
+
+fn path_hash(path: &SanitizedLocalPath) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(path.as_str());
+    let hash = hasher.finalize();
+    hex::encode(hash)
+}
+
+async fn finalize_download_task(
+    ctx: Arc<Ctx>,
+    mut receiver: mpsc::Receiver<FinalizeDownloadTaskItem>,
+    error_sender: ErrorSender,
+) {
+    while let Some(item) = receiver.recv().await {
+        let r = finalize_item_download(&ctx, item).await;
+        error_sender.unwrap_or_notify(r).await;
+    }
+}
+
+struct FinalizeDownloadTaskItem {
+    entry: DecryptedEntryVersionData,
+    db_data: Option<LocalEntryInfo>,
+    local_path: SanitizedLocalPath,
+    must_delete: bool,
+    file_receiver: Option<oneshot::Receiver<TmpGuard>>,
+}
+
+async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Result<()> {
+    let kind = item
+        .entry
+        .kind
+        .ok_or_else(|| anyhow!("missing kind in finalize_item_download"))?;
+    match kind {
+        EntryKind::Directory => {
+            if let Some(db_data) = &item.db_data {
+                // Check again just in case.
+                if !db_data.matches_real(&item.local_path)? {
+                    bail!(
+                        "local db data doesn't match local file at {:?}",
+                        item.local_path
+                    );
+                }
+            }
+            if item.must_delete {
+                if !remove_dir_or_file(&item.local_path)? {
+                    return Ok(());
+                }
+            }
+            create_dir(&item.local_path)?;
+            ctx.db.set_local_entry(
+                &item.local_path,
+                &LocalEntryInfo {
+                    kind,
+                    content: None,
+                },
+            )?;
+        }
+        EntryKind::File => {
+            let mut content = item
+                .entry
+                .content
+                .ok_or_else(|| anyhow!("missing content info for existing file"))?;
+            let file_receiver = item
+                .file_receiver
+                .ok_or_else(|| anyhow!("missing file_receiver for existing file"))?;
+            let tmp_file = file_receiver.await?;
+            if let Some(db_data) = &item.db_data {
+                // Check again just in case.
+                if !db_data.matches_real(&item.local_path)? {
+                    bail!(
+                        "local db data doesn't match local file at {:?}",
+                        item.local_path
+                    );
+                }
+            }
+            if item.must_delete {
+                if !remove_dir_or_file(&item.local_path)? {
+                    return Ok(());
+                }
+            }
+            rename(tmp_file.path(), &item.local_path)?;
+
+            #[cfg(target_family = "unix")]
+            {
+                use std::fs::Permissions;
+                use std::os::unix::prelude::PermissionsExt;
+
+                if let Some(mode) = content.unix_mode {
+                    fs_err::set_permissions(&item.local_path, Permissions::from_mode(mode))?;
+                }
+            }
+
+            content.modified_at = fs_err::metadata(&item.local_path)?.modified()?.into();
+            ctx.counters
+                .downloaded_bytes
+                .fetch_add(content.encrypted_size, Ordering::SeqCst);
+            ctx.db.set_local_entry(
+                &item.local_path,
+                &LocalEntryInfo {
+                    kind,
+                    content: Some(content),
+                },
+            )?;
+        }
+    }
+    info!("Downloaded {}", item.local_path);
+    ctx.counters
+        .downloaded_entries
+        .fetch_add(1, Ordering::SeqCst);
+    Ok(())
 }

@@ -206,6 +206,33 @@ impl Client {
         path: impl AsRef<Path>,
         cipher: &Aes256SivAead,
     ) -> Result<()> {
+        let mut i = 0;
+        loop {
+            i += 1;
+
+            let result = self
+                .download_and_decrypt_once(content, path.as_ref(), cipher)
+                .await;
+            match result {
+                Ok(r) => return Ok(r),
+                Err(err) => {
+                    if i == NUM_RETRIES {
+                        return Err(err);
+                    } else {
+                        warn!(?err, "request failed, will retry");
+                        sleep(RETRY_INTERVAL).await;
+                    }
+                }
+            }
+        }
+    }
+
+    async fn download_and_decrypt_once(
+        &self,
+        content: &DecryptedFileContent,
+        path: impl AsRef<Path>,
+        cipher: &Aes256SivAead,
+    ) -> Result<()> {
         let encrypted_hash = encrypt_content_hash(&content.hash, cipher)?;
         let mut response = timeout(
             DEFAULT_TIMEOUT,
