@@ -1,4 +1,5 @@
 use crate::term::set_status_updater;
+use fs_err::metadata;
 use rammingen_protocol::util::interrupt_on_error;
 use sha2::Digest;
 use sha2::Sha256;
@@ -255,13 +256,6 @@ async fn download_inner(
             }
             must_delete = true;
         }
-        if !ctx.dry_run && !must_delete && try_exists(entry_local_path.as_path())? {
-            bail!(
-                "local entry already exists at {:?} (while processing entry: {:?}",
-                entry_local_path,
-                entry
-            );
-        }
 
         if ctx.dry_run {
             info!("Would download {}", entry_local_path);
@@ -288,6 +282,7 @@ async fn download_inner(
                         .file_download_sender
                         .send(DownloadFileTask {
                             local_path: entry_local_path.clone(),
+                            root_local_path: ctx.root_local_path.clone(),
                             content,
                             sender,
                         })
@@ -339,6 +334,7 @@ impl Drop for TmpGuard {
 
 struct DownloadFileTask {
     local_path: SanitizedLocalPath,
+    root_local_path: SanitizedLocalPath,
     content: DecryptedFileContent,
     sender: oneshot::Sender<TmpGuard>,
 }
@@ -362,19 +358,18 @@ async fn download_files_task(
 }
 
 async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
-    let mut parent = item
-        .local_path
-        .parent()?
-        .ok_or_else(|| anyhow!("failed to get parent for {}", item.local_path))?;
-    while !parent.as_path().exists() {
-        parent = parent
-            .parent()?
-            .ok_or_else(|| anyhow!("failed to get parent for {}", parent))?;
-    }
-    let tmp_path = parent.join(format!(
-        ".{}.rammingen.part",
-        &path_hash(&item.local_path)[..32]
-    ))?;
+    let tmp_parent_dir = if metadata(&item.root_local_path).map_or(false, |m| m.is_dir()) {
+        item.root_local_path.clone()
+    } else {
+        item.root_local_path.parent()?.ok_or_else(|| {
+            anyhow!(
+                "failed to get tmp parent dir (root: {})",
+                item.root_local_path
+            )
+        })?
+    };
+    let tmp_path =
+        tmp_parent_dir.join(format!(".{}.rammingen.part", path_hash(&item.local_path)))?;
     let tmp_guard = TmpGuard(tmp_path.clone());
     if try_exists(&tmp_path)? {
         remove_file(&tmp_path)?;
@@ -413,6 +408,14 @@ struct FinalizeDownloadTaskItem {
 }
 
 async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Result<()> {
+    if !item.must_delete && try_exists(&item.local_path)? {
+        bail!(
+            "local entry already exists at {:?} (while processing entry: {:?})",
+            item.local_path,
+            item.entry
+        );
+    }
+
     let kind = item
         .entry
         .kind

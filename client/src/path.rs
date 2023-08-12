@@ -69,11 +69,15 @@ impl SanitizedLocalPath {
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = canonicalize(path.as_ref())?;
 
-        if path.to_str().is_none() {
-            bail!("unsupported path (not valid unicode): {:?}", path);
+        Self::new_without_canonicalize(path)
+    }
+
+    fn new_without_canonicalize(path: impl AsRef<Path>) -> Result<Self> {
+        if path.as_ref().to_str().is_none() {
+            bail!("unsupported path (not valid unicode): {:?}", path.as_ref());
         }
 
-        Ok(Self(path))
+        Ok(Self(path.as_ref().into()))
     }
 
     pub fn join(&self, relative_path: impl AsRef<Path>) -> Result<Self> {
@@ -90,7 +94,7 @@ impl SanitizedLocalPath {
                 relative_path
             );
         }
-        Self::new(self.0.join(relative_path))
+        Self::new_without_canonicalize(self.0.join(relative_path))
     }
 
     pub fn file_name(&self) -> Option<&str> {
@@ -102,7 +106,7 @@ impl SanitizedLocalPath {
 
     pub fn parent(&self) -> Result<Option<Self>> {
         if let Some(parent) = self.0.parent() {
-            Ok(Some(Self::new(parent)?))
+            Ok(Some(Self::new_without_canonicalize(parent)?))
         } else {
             Ok(None)
         }
