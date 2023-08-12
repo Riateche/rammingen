@@ -9,6 +9,7 @@ use rammingen_protocol::{
 };
 use std::{
     collections::HashSet,
+    mem,
     sync::{atomic::Ordering, Arc},
     time::Duration,
 };
@@ -31,6 +32,7 @@ use crate::{
 };
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_millis(100);
+const BATCH_SIZE: usize = 128;
 
 pub fn to_archive_path<'a>(
     local_path: &SanitizedLocalPath,
@@ -57,6 +59,9 @@ pub async fn find_local_deletions<'a>(
     dry_run: bool,
 ) -> Result<()> {
     let _status = set_status("Checking for files deleted locally");
+    let mut new_versions = Vec::new();
+    let mut local_paths = Vec::new();
+
     for entry in ctx.db.get_all_local_entries().rev() {
         let (local_path, _data) = entry?;
         if existing_paths.contains(&local_path) {
@@ -77,23 +82,45 @@ pub async fn find_local_deletions<'a>(
                 .uploaded_entries
                 .fetch_add(1, Ordering::Relaxed);
         } else {
-            let response = ctx
-                .client
-                .request(&AddVersions(vec![AddVersion {
-                    path: encrypt_path(&archive_path, &ctx.cipher)?,
-                    record_trigger: RecordTrigger::Sync,
-                    kind: None,
-                    content: None,
-                }]))
-                .await?;
-            if response.get(0).map_or(false, |r| r.added) {
-                ctx.counters
-                    .uploaded_entries
-                    .fetch_add(1, Ordering::Relaxed);
-                info!("Recorded deletion of {}", local_path);
+            new_versions.push(AddVersion {
+                path: encrypt_path(&archive_path, &ctx.cipher)?,
+                record_trigger: RecordTrigger::Sync,
+                kind: None,
+                content: None,
+            });
+            local_paths.push(local_path);
+            if new_versions.len() >= BATCH_SIZE {
+                record_deletion_batch(ctx, &mut new_versions, &mut local_paths).await?;
             }
-            ctx.db.remove_local_entry(&local_path)?;
         }
+    }
+    record_deletion_batch(ctx, &mut new_versions, &mut local_paths).await?;
+    Ok(())
+}
+
+async fn record_deletion_batch(
+    ctx: &Ctx,
+    new_versions: &mut Vec<AddVersion>,
+    local_paths: &mut Vec<SanitizedLocalPath>,
+) -> Result<()> {
+    if new_versions.is_empty() {
+        return Ok(());
+    }
+    let results = ctx
+        .client
+        .request(&AddVersions(mem::take(new_versions)))
+        .await?;
+    if results.len() != local_paths.len() {
+        bail!("invalid item count in AddVersions response");
+    }
+    for (local_path, response) in local_paths.drain(..).zip(results) {
+        if response.added {
+            ctx.counters
+                .uploaded_entries
+                .fetch_add(1, Ordering::Relaxed);
+            info!("Recorded deletion of {}", local_path);
+        }
+        ctx.db.remove_local_entry(&local_path)?;
     }
     Ok(())
 }
@@ -425,8 +452,6 @@ async fn add_versions_task(
     error_sender: ErrorSender,
 ) {
     let r = async move {
-        const BATCH_SIZE: usize = 128;
-
         let mut versions = Vec::new();
         while let Some((item, receiver)) = receiver.recv().await {
             if let Some(receiver) = receiver {
