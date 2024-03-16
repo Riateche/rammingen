@@ -1,5 +1,5 @@
-target
-Dockerfile
 .dockerignore
 .git
 .gitignore
+etc
+target

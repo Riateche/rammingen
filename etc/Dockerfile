@@ -1,9 +1,11 @@
-FROM rust:1.69.0-buster AS builder
+FROM rust:1.80.1-bookworm AS builder
 COPY . /
 RUN cargo build --release --bin rammingen-server --bin rammingen-admin
 
-FROM debian:buster-20230522
-RUN apt-get update && apt-get install -y openssl
+FROM debian:bookworm-20240812
+RUN apt-get update && \
+    apt-get install -y openssl && \
+    rm -rf /var/lib/apt/lists/*
 COPY --from=builder target/release/rammingen-server /sbin/
 COPY --from=builder target/release/rammingen-admin /sbin/
 ENV RUST_BACKTRACE=1
