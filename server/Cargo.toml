@@ -15,6 +15,7 @@ path = "src/bin/admin.rs"
 
 [dependencies]
 rammingen_protocol = { path = "../protocol" }
+rammingen_sdk = { path = "../sdk" }
 
 anyhow.workspace = true
 bincode.workspace = true
