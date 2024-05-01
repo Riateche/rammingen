@@ -12,6 +12,7 @@ use std::{
     convert::Infallible,
     net::SocketAddr,
     path::{Path, PathBuf},
+    pin::pin,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -44,7 +45,6 @@ use stream_generator::{generate_stream, Yielder};
 use tokio::{
     net::TcpListener,
     select,
-    signal::ctrl_c,
     sync::{
         mpsc::{self, Sender},
         Mutex,
@@ -53,9 +53,11 @@ use tokio::{
     time::interval,
 };
 use tracing::{error, info, warn};
-use util::default_config_dir;
+
+use rammingen_sdk::signal::shutdown_signal;
 
 use crate::snapshot::make_snapshot;
+use util::default_config_dir;
 
 const SOURCES_CACHE_INTERVAL: Duration = Duration::from_secs(10);
 
@@ -149,20 +151,9 @@ pub async fn run(config: Config) -> Result<()> {
         }
     });
 
-    let sigterm = sigterm()?;
-    tokio::pin!(sigterm);
-    let sigint = ctrl_c();
-    tokio::pin!(sigint);
+    let mut shutdown = pin!(shutdown_signal());
     loop {
         select! {
-            _ = &mut sigterm => {
-                info!("Got terminate signal, shutting down.");
-                break;
-            }
-            _ = &mut sigint => {
-                info!("Got interrupt signal, shutting down.");
-                break;
-            }
             r = listener.accept() => match r {
                 Ok((io, _client_addr)) => {
                     let ctx = ctx.clone();
@@ -180,24 +171,14 @@ pub async fn run(config: Config) -> Result<()> {
                     });
                 }
                 Err(err) => warn!(?err, "failed to accept"),
-            }
+            },
+            signal = &mut shutdown => {
+                info!(signal = %signal?, "shutting down");
+                break;
+            },
         }
     }
     Ok(())
-}
-
-#[cfg(target_family = "unix")]
-fn sigterm() -> Result<impl Future<Output = ()>> {
-    use tokio::signal::unix::{signal, SignalKind};
-    let mut sigterm = signal(SignalKind::terminate())?;
-    Ok(async move {
-        sigterm.recv().await;
-    })
-}
-
-#[cfg(not(target_family = "unix"))]
-fn sigterm() -> Result<impl Future<Output = ()>> {
-    Ok(futures_util::future::pending())
 }
 
 async fn handle_request(
