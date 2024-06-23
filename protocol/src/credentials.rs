@@ -1,13 +1,39 @@
 use std::{borrow::Cow, fmt::Display, str::FromStr};
 
-use aes_siv::aead::OsRng;
 use aes_siv::{Aes256SivAead, KeyInit};
-use anyhow::{format_err, Error};
+use anyhow::{ensure, format_err, Error};
 use base64::display::Base64Display;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use derivative::Derivative;
+use derive_more::AsRef;
 use generic_array::{typenum::U64, GenericArray};
+use rand::{distributions::Alphanumeric, distributions::DistString, rngs::OsRng};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
+#[derive(Clone, AsRef, Derivative, Deserialize, Serialize)]
+#[derivative(Debug)]
+pub struct AccessToken(#[derivative(Debug = "ignore")] String);
+
+const ACCESS_TOKEN_LENGTH: usize = 64;
+
+impl AccessToken {
+    pub fn generate() -> Self {
+        Self(Alphanumeric.sample_string(&mut OsRng, ACCESS_TOKEN_LENGTH))
+    }
+}
+
+impl FromStr for AccessToken {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        ensure!(
+            s.len() == ACCESS_TOKEN_LENGTH,
+            "invalid length; got {}, expected {ACCESS_TOKEN_LENGTH}",
+            s.len(),
+        );
+        Ok(Self(s.to_owned()))
+    }
+}
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]

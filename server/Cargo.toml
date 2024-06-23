@@ -23,7 +23,6 @@ chrono = { workspace = true, features = ["std", "clock", "serde"] }
 futures.workspace = true
 hyper = { version = "1.4.1", features = ["server", "http1"] }
 hyper-util = { version = "0.1.7", features = ["tokio"] }
-rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 stream_generator.workspace = true
 tempfile.workspace = true

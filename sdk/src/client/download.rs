@@ -58,7 +58,7 @@ impl Client {
                     self.server_url,
                     encrypted_hash.to_url_safe()
                 ))
-                .bearer_auth(&self.token)
+                .bearer_auth(self.token.as_ref())
                 .timeout(Duration::from_secs(3600 * 24))
                 .send(),
         )

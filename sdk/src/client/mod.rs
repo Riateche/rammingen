@@ -2,7 +2,6 @@ mod download;
 
 use anyhow::{anyhow, bail, Result};
 use byteorder::{ByteOrder, LE};
-use derivative::Derivative;
 use futures::{Stream, StreamExt};
 use reqwest::{header::CONTENT_LENGTH, Body, Method, Url};
 use serde::{de::DeserializeOwned, Serialize};
@@ -19,17 +18,17 @@ use tokio::{
 use tracing::warn;
 
 use rammingen_protocol::{
+    credentials::AccessToken,
     endpoints::{RequestToResponse, RequestToStreamingResponse},
     util::stream_file,
     EncryptedContentHash,
 };
 
-#[derive(Derivative, Clone)]
+#[derive(Clone)]
 pub struct Client {
     reqwest: reqwest::Client,
     server_url: Url,
-    #[derivative(Debug = "ignore")]
-    token: String,
+    token: AccessToken,
 }
 
 pub const NUM_RETRIES: usize = 5;
@@ -41,10 +40,10 @@ pub fn upload_timeout(upload_size: u64) -> Duration {
 }
 
 impl Client {
-    pub fn new(server_url: Url, token: &str) -> Self {
+    pub fn new(server_url: Url, token: AccessToken) -> Self {
         Self {
             server_url,
-            token: token.into(),
+            token,
             reqwest: reqwest::Client::builder()
                 .timeout(DEFAULT_TIMEOUT)
                 .build()
@@ -92,7 +91,7 @@ impl Client {
         let mut request = self
             .reqwest
             .request(Method::POST, self.server_url.join(R::PATH)?)
-            .bearer_auth(&self.token)
+            .bearer_auth(self.token.as_ref())
             .body(bincode::serialize(&request)?);
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
@@ -125,7 +124,7 @@ impl Client {
                 this.reqwest
                     .request(Method::POST, this.server_url.join(R::PATH)?)
                     .timeout(Duration::from_secs(3600 * 24))
-                    .bearer_auth(&this.token)
+                    .bearer_auth(this.token.as_ref())
                     .body(request?)
                     .send(),
             )
@@ -171,7 +170,7 @@ impl Client {
                 .reqwest
                 .put(format!("{}content/{}", self.server_url, hash.to_url_safe()))
                 .timeout(upload_timeout(size))
-                .bearer_auth(&self.token)
+                .bearer_auth(self.token.as_ref())
                 .header(CONTENT_LENGTH, size)
                 .body(Body::wrap_stream(
                     stream_file(encrypted_file.clone()).map(io::Result::Ok),

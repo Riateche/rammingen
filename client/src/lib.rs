@@ -63,7 +63,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         data_dir.join("rammingen.db")
     };
     let ctx = Arc::new(Ctx {
-        client: Client::new(config.server_url.clone(), &config.access_token),
+        client: Client::new(config.server_url.clone(), config.access_token.clone()),
         cipher: Cipher::new(&config.encryption_key),
         config,
         db: crate::db::Db::open(&local_db_path)?,
