@@ -29,7 +29,9 @@ use rammingen::{
     config::MountPoint, path::SanitizedLocalPath, rules::Rule, setup_logger, term::clear_status,
 };
 use rammingen_protocol::{
-    credentials::EncryptionKey, util::native_to_archive_relative_path, ArchivePath, DateTimeUtc,
+    credentials::{AccessToken, EncryptionKey},
+    util::native_to_archive_relative_path,
+    ArchivePath, DateTimeUtc,
 };
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
@@ -181,8 +183,8 @@ async fn try_main() -> Result<()> {
     }
 }
 
-fn access_token(index: usize) -> String {
-    format!("access_token{index}")
+fn access_token(index: usize) -> AccessToken {
+    format!("access_token{index:0>52}").parse().unwrap()
 }
 
 struct Context {

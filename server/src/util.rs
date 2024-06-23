@@ -1,7 +1,8 @@
 use anyhow::{bail, Result};
-use rand::{distributions::Alphanumeric, distributions::DistString, rngs::OsRng};
 use sqlx::{query, query_scalar, PgPool};
 use std::path::PathBuf;
+
+use rammingen_protocol::credentials::AccessToken;
 
 pub async fn sources(db: &PgPool) -> Result<Vec<String>> {
     query_scalar!("SELECT name FROM sources ORDER BY name")
@@ -10,21 +11,21 @@ pub async fn sources(db: &PgPool) -> Result<Vec<String>> {
         .map_err(Into::into)
 }
 
-pub async fn add_source(db: &PgPool, name: &str, access_token: &str) -> Result<()> {
+pub async fn add_source(db: &PgPool, name: &str, access_token: &AccessToken) -> Result<()> {
     query!(
         "INSERT INTO sources (name, access_token) VALUES ($1, $2)",
         name,
-        access_token
+        access_token.as_ref(),
     )
     .execute(db)
     .await?;
     Ok(())
 }
 
-pub async fn set_access_token(db: &PgPool, name: &str, access_token: &str) -> Result<()> {
+pub async fn set_access_token(db: &PgPool, name: &str, access_token: &AccessToken) -> Result<()> {
     let rows = query!(
         "UPDATE sources SET access_token = $1 WHERE name = $2",
-        access_token,
+        access_token.as_ref(),
         name,
     )
     .execute(db)
@@ -35,10 +36,6 @@ pub async fn set_access_token(db: &PgPool, name: &str, access_token: &str) -> Re
         bail!("source not found");
     }
     Ok(())
-}
-
-pub fn generate_access_token() -> String {
-    Alphanumeric.sample_string(&mut OsRng, 64)
 }
 
 pub async fn migrate(db: &PgPool) -> Result<()> {

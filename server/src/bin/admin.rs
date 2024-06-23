@@ -1,12 +1,14 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use sqlx::PgPool;
+
+use rammingen_protocol::credentials::AccessToken;
 use rammingen_server::{
     config_path,
-    util::{add_source, generate_access_token, set_access_token, sources},
+    util::{add_source, set_access_token, sources},
     Config,
 };
-use sqlx::PgPool;
 
 #[derive(Debug, Parser)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
@@ -56,14 +58,20 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Command::AddSource { name } => {
-            let token = generate_access_token();
+            let token = AccessToken::generate();
             add_source(&pool, &name, &token).await?;
-            println!("Successfully added new source. New access token:\n{token}");
+            println!(
+                "Successfully added new source. New access token:\n{}",
+                token.as_ref(),
+            );
         }
         Command::UpdateAccessToken { name } => {
-            let token = generate_access_token();
+            let token = AccessToken::generate();
             set_access_token(&pool, &name, &token).await?;
-            println!("Successfully updated access token. New access token:\n{token}");
+            println!(
+                "Successfully updated access token. New access token:\n{}",
+                token.as_ref(),
+            );
         }
         Command::Migrate => {
             println!("Running migrations...");

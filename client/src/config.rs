@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
 use byte_unit::Byte;
-use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use rammingen_protocol::{credentials::EncryptionKey, serde_path_with_prefix, ArchivePath};
+use rammingen_protocol::{
+    credentials::{AccessToken, EncryptionKey},
+    serde_path_with_prefix, ArchivePath,
+};
 
 use crate::path::SanitizedLocalPath;
 use crate::rules::Rule;
@@ -19,15 +21,13 @@ pub struct MountPoint {
     pub exclude: Vec<Rule>,
 }
 
-#[derive(Derivative, Clone, Serialize, Deserialize)]
-#[derivative(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub always_exclude: Vec<Rule>,
     pub mount_points: Vec<MountPoint>,
     pub encryption_key: EncryptionKey,
     pub server_url: Url,
-    #[derivative(Debug = "ignore")]
-    pub access_token: String,
+    pub access_token: AccessToken,
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
     #[serde(default)]
