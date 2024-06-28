@@ -96,7 +96,9 @@ fn get_parent_dir<'a>(
     request: &'a AddVersion,
 ) -> BoxFuture<'a, Result<Option<i64>>> {
     Box::pin(async move {
-        let Some(parent) = path.parent() else { return Ok(None) };
+        let Some(parent) = path.parent() else {
+            return Ok(None);
+        };
         let entry = query!(
             "SELECT id, kind FROM entries WHERE path = $1",
             parent.to_str_without_prefix()
