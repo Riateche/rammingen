@@ -2004,6 +2004,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rammingen_sdk"
+version = "0.1.0"
+
+[[package]]
 name = "rammingen_server"
 version = "0.1.0"
 dependencies = [

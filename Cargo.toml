@@ -1,5 +1,11 @@
 [workspace]
-members = ["server", "client", "protocol", "tests"]
+members = [
+    "server",
+    "client",
+    "protocol",
+    "sdk",
+    "tests"
+]
 resolver = "2"
 
 [workspace.dependencies]
