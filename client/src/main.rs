@@ -1,12 +1,15 @@
 use anyhow::{anyhow, Result};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use clap::Parser;
+use tracing::error;
+
+use rammingen_protocol::credentials::EncryptionKey;
+
 use rammingen::{
     cli::{Cli, Command},
-    config::{Config, EncryptionKey},
+    config::Config,
     setup_logger,
 };
-use tracing::error;
 
 #[tokio::main]
 async fn main() {

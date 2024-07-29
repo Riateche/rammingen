@@ -1,5 +1,6 @@
 #![allow(clippy::collapsible_else_if)]
 
+pub mod credentials;
 pub mod endpoints;
 mod path;
 pub mod util;

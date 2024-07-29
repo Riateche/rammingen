@@ -64,7 +64,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
     };
     let ctx = Arc::new(Ctx {
         client: Client::new(config.server_url.clone(), &config.access_token),
-        cipher: Cipher::new(config.encryption_key.get()),
+        cipher: Cipher::new(&config.encryption_key),
         config,
         db: crate::db::Db::open(&local_db_path)?,
         counters: Counters::default(),

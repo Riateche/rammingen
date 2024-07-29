@@ -16,14 +16,6 @@ use fs_err::{
 };
 use futures::future::pending;
 use portpicker::pick_unused_port;
-use rammingen::{
-    config::{EncryptionKey, MountPoint},
-    path::SanitizedLocalPath,
-    rules::Rule,
-    setup_logger,
-    term::clear_status,
-};
-use rammingen_protocol::{util::native_to_archive_relative_path, ArchivePath, DateTimeUtc};
 use rammingen_server::util::{add_source, migrate};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use reqwest::Url;
@@ -32,6 +24,13 @@ use sqlx::PgPool;
 use tempfile::TempDir;
 use tokio::time::{interval, sleep};
 use tracing::{debug, error, info};
+
+use rammingen::{
+    config::MountPoint, path::SanitizedLocalPath, rules::Rule, setup_logger, term::clear_status,
+};
+use rammingen_protocol::{
+    credentials::EncryptionKey, util::native_to_archive_relative_path, ArchivePath, DateTimeUtc,
+};
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
     create_dir_all(&dst)?;

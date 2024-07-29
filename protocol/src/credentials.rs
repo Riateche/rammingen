@@ -1,31 +1,13 @@
 use aes_siv::aead::OsRng;
 use aes_siv::{Aes256SivAead, KeyInit};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use byte_unit::Byte;
-use core::fmt;
 use derivative::Derivative;
-use generic_array::GenericArray;
-use rammingen_protocol::{serde_path_with_prefix, ArchivePath};
-use reqwest::Url;
-use serde::de::Error;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use typenum::U64;
+use generic_array::{typenum::U64, GenericArray};
+use serde::{de::Error, Deserialize, Serialize};
 
-use crate::path::SanitizedLocalPath;
-use crate::rules::Rule;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MountPoint {
-    pub local_path: SanitizedLocalPath,
-    #[serde(with = "serde_path_with_prefix")]
-    pub archive_path: ArchivePath,
-    #[serde(default)]
-    pub exclude: Vec<Rule>,
-}
-
-#[derive(Clone)]
-pub struct EncryptionKey(GenericArray<u8, U64>);
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
+pub struct EncryptionKey(#[derivative(Debug = "ignore")] GenericArray<u8, U64>);
 
 impl EncryptionKey {
     pub fn generate() -> Self {
@@ -34,12 +16,6 @@ impl EncryptionKey {
 
     pub fn get(&self) -> &GenericArray<u8, U64> {
         &self.0
-    }
-}
-
-impl fmt::Debug for EncryptionKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EncryptionKey").finish()
     }
 }
 
@@ -69,32 +45,4 @@ impl Serialize for EncryptionKey {
     {
         BASE64_URL_SAFE_NO_PAD.encode(self.0).serialize(serializer)
     }
-}
-
-#[derive(Derivative, Clone, Serialize, Deserialize)]
-#[derivative(Debug)]
-pub struct Config {
-    pub always_exclude: Vec<Rule>,
-    pub mount_points: Vec<MountPoint>,
-    pub encryption_key: EncryptionKey,
-    pub server_url: Url,
-    #[derivative(Debug = "ignore")]
-    pub access_token: String,
-    #[serde(default)]
-    pub local_db_path: Option<PathBuf>,
-    #[serde(default)]
-    pub log_file: Option<PathBuf>,
-    #[serde(default = "default_log_filter")]
-    pub log_filter: String,
-
-    #[serde(default = "default_warn_about_files_larger_than")]
-    pub warn_about_files_larger_than: Byte,
-}
-
-fn default_log_filter() -> String {
-    "info".into()
-}
-
-fn default_warn_about_files_larger_than() -> Byte {
-    "50 MB".parse().unwrap()
 }

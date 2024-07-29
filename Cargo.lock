@@ -1941,7 +1941,6 @@ dependencies = [
 name = "rammingen"
 version = "0.1.0"
 dependencies = [
- "aes-siv",
  "anyhow",
  "base64 0.21.2",
  "bincode",
@@ -1983,13 +1982,16 @@ dependencies = [
 name = "rammingen_protocol"
 version = "0.1.0"
 dependencies = [
+ "aes-siv",
  "anyhow",
  "base64 0.21.2",
  "bytes",
  "chrono",
+ "derivative",
  "derive_more",
  "fs-err",
  "futures",
+ "generic-array",
  "hex",
  "itertools",
  "serde",
