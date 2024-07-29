@@ -6,10 +6,10 @@ use aes_siv::{
 };
 use anyhow::{ensure, Context, Result};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use generic_array::{typenum::U64, GenericArray};
 
 use rammingen_protocol::{
-    ArchivePath, ContentHash, EncryptedArchivePath, EncryptedContentHash, EncryptedSize,
+    credentials::EncryptionKey, ArchivePath, ContentHash, EncryptedArchivePath,
+    EncryptedContentHash, EncryptedSize,
 };
 
 pub struct Cipher {
@@ -17,9 +17,9 @@ pub struct Cipher {
 }
 
 impl Cipher {
-    pub fn new(key: &GenericArray<u8, U64>) -> Self {
+    pub fn new(key: &EncryptionKey) -> Self {
         Self {
-            inner: Aes256SivAead::new(key),
+            inner: Aes256SivAead::new(key.get()),
         }
     }
 
@@ -122,18 +122,16 @@ impl Cipher {
 
 #[cfg(test)]
 mod test {
-    use std::io::{self, Write};
+    use std::io::{self, Read, Seek, SeekFrom, Write};
 
-    use aes_siv::aead::OsRng;
+    use tempfile::NamedTempFile;
 
     use super::*;
     use crate::crypto::{encrypt_file, DecryptingWriter};
 
     #[test]
     pub fn str_roundtrip() {
-        use aes_siv::KeyInit;
-
-        let key = Aes256SivAead::generate_key(&mut OsRng);
+        let key = EncryptionKey::generate();
         let cipher = Cipher::new(&key);
         let value = "abcd1";
         let encrypted = cipher.encrypt_str(value).unwrap();
@@ -144,9 +142,7 @@ mod test {
 
     #[test]
     pub fn path_roundtrip() {
-        use aes_siv::KeyInit;
-
-        let key = Aes256SivAead::generate_key(&mut OsRng);
+        let key = EncryptionKey::generate();
         let cipher = Cipher::new(&key);
         let value: ArchivePath = "ar:/ab/cd/ef".parse().unwrap();
         let encrypted = cipher.encrypt_path(&value).unwrap();
@@ -160,11 +156,7 @@ mod test {
 
     #[test]
     pub fn file_roundtrip() {
-        use aes_siv::KeyInit;
-        use std::io::{Read, Seek, SeekFrom};
-        use tempfile::NamedTempFile;
-
-        let key = Aes256SivAead::generate_key(&mut OsRng);
+        let key = EncryptionKey::generate();
         let cipher = Cipher::new(&key);
 
         let mut file = NamedTempFile::new().unwrap();

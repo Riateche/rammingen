@@ -5,10 +5,13 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+aes-siv.workspace = true
 anyhow.workspace = true
 chrono = { workspace = true, features = ["std", "clock", "serde"] }
+derivative.workspace = true
 derive_more = { workspace = true, features = ["from", "into"] }
 futures.workspace = true
+generic-array.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-native-tls", "offline", "time"] }
 tokio = { workspace = true, features = ["full"] }
