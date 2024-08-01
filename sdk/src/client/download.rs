@@ -1,103 +1,102 @@
-use std::{io::Write, path::Path, time::Duration};
+use std::{fmt::Display, io::Write, path::Path};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{ensure, format_err, Context, Error, Result};
 use fs_err::File;
-use reqwest::header::CONTENT_LENGTH;
-use tokio::{
-    task::block_in_place,
-    time::{sleep, timeout},
-};
-use tracing::warn;
+use reqwest::{header::CONTENT_LENGTH, Response};
+use tokio::{task::block_in_place, time::timeout};
+use tracing::instrument;
 
-use super::{Client, DEFAULT_TIMEOUT, NUM_RETRIES, RETRY_INTERVAL};
+use super::{ok_or_retry, Client, RequestError, DEFAULT_TIMEOUT};
 use crate::{
     content::ContentHandle,
     crypto::{Cipher, DecryptingWriter},
 };
 
 impl Client {
+    #[instrument(skip_all, fields(%path, ?handle))]
     pub async fn download_and_decrypt(
         &self,
-        content: &ContentHandle,
-        path: impl AsRef<Path>,
+        handle: &ContentHandle,
+        path: impl AsRef<Path> + Display,
         cipher: &Cipher,
     ) -> Result<()> {
-        let mut i = 0;
-        loop {
-            i += 1;
+        let (actual_encrypted_size, decryptor) = ok_or_retry(|| async {
+            let mut encrypted_content = self.content(handle, cipher).await?;
+            let file = File::create(path.as_ref()).map_err(RequestError::application)?;
+            let mut decryptor = DecryptingWriter::new(cipher, file);
+            let mut actual_encrypted_size = 0;
 
-            let result = self
-                .download_and_decrypt_once(content, path.as_ref(), cipher)
-                .await;
-            match result {
-                Ok(r) => return Ok(r),
-                Err(err) => {
-                    if i == NUM_RETRIES {
-                        return Err(err);
-                    } else {
-                        warn!(?err, "request failed, will retry");
-                        sleep(RETRY_INTERVAL).await;
-                    }
-                }
+            while let Some(chunk) = timeout(DEFAULT_TIMEOUT, encrypted_content.chunk())
+                .await
+                .map_err(RequestError::transport)?
+                .map_err(RequestError::transport)?
+            {
+                actual_encrypted_size += chunk.len() as u64;
+                block_in_place(|| decryptor.write_all(&chunk))
+                    .map_err(RequestError::application)?;
             }
-        }
+            Ok((actual_encrypted_size, decryptor))
+        })
+        .await?;
+        ensure!(
+            actual_encrypted_size == handle.encrypted_size,
+            "encrypted size mismatch; actual {}, expected {}",
+            actual_encrypted_size,
+            handle.encrypted_size,
+        );
+        let (_, actual_hash, actual_size) = block_in_place(|| decryptor.finish())?;
+        ensure!(
+            actual_size == handle.original_size,
+            "content size mismatch; actual {actual_size}, expected {}",
+            handle.original_size,
+        );
+        ensure!(
+            actual_hash == handle.hash,
+            "content hash mismatch; actual {actual_hash}, expected {}",
+            handle.hash,
+        );
+        Ok(())
     }
 
-    async fn download_and_decrypt_once(
+    async fn content(
         &self,
-        content: &ContentHandle,
-        path: impl AsRef<Path>,
+        handle: &ContentHandle,
         cipher: &Cipher,
-    ) -> Result<()> {
-        let encrypted_hash = cipher.encrypt_content_hash(&content.hash)?;
-        let mut response = timeout(
+    ) -> Result<Response, RequestError> {
+        let url = cipher
+            .encrypt_content_hash(&handle.hash)
+            .and_then(|encrypted_hash| self.content_url(&encrypted_hash))
+            .map_err(RequestError::Application)?;
+        let response = timeout(
             DEFAULT_TIMEOUT,
             self.reqwest
-                .get(format!(
-                    "{}content/{}",
-                    self.server_url,
-                    encrypted_hash.to_url_safe()
-                ))
+                .get(url)
                 .bearer_auth(self.token.as_ref())
-                .timeout(Duration::from_secs(3600 * 24))
+                .timeout(DEFAULT_TIMEOUT)
                 .send(),
         )
-        .await??
-        .error_for_status()?;
-
-        let header_len: u64 = response
+        .await
+        .map_err(RequestError::transport)?
+        .map_err(RequestError::transport)?
+        .error_for_status()
+        .map_err(RequestError::application)?;
+        let declared_encrypted_size: u64 = response
             .headers()
             .get(CONTENT_LENGTH)
-            .ok_or_else(|| anyhow!("missing content length header"))?
-            .to_str()?
-            .parse()?;
-
-        if content.encrypted_size != header_len {
-            bail!("encrypted size mismatch");
+            .context("missing content length header")
+            .and_then(|len| {
+                len.to_str()
+                    .map_err(Error::from)
+                    .and_then(|len| Ok(len.parse()?))
+                    .context("failed content length parsing")
+            })
+            .map_err(RequestError::Application)?;
+        if declared_encrypted_size != handle.encrypted_size {
+            return Err(RequestError::Application(format_err!(
+                "encrypted size mismatch; declared {declared_encrypted_size}, expected {}",
+                handle.encrypted_size,
+            )));
         }
-
-        let file = File::create(path.as_ref())?;
-        let mut decryptor = DecryptingWriter::new(cipher, file);
-        let mut actual_encrypted_size = 0;
-
-        while let Some(chunk) = timeout(DEFAULT_TIMEOUT, response.chunk()).await?? {
-            actual_encrypted_size += chunk.len() as u64;
-            block_in_place(|| decryptor.write_all(&chunk))?;
-        }
-        let (_, actual_hash, actual_original_size) = block_in_place(|| decryptor.finish())?;
-        if actual_encrypted_size != header_len {
-            bail!("content length mismatch");
-        }
-        if content.original_size != actual_original_size {
-            bail!(
-                "original size mismatch (expected {}, got {})",
-                content.original_size,
-                actual_original_size
-            );
-        }
-        if content.hash != actual_hash {
-            bail!("content hash mismatch");
-        }
-        Ok(())
+        Ok(response)
     }
 }
