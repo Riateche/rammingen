@@ -1,21 +1,23 @@
 mod download;
 
-use anyhow::{anyhow, bail, Result};
-use byteorder::{ByteOrder, LE};
-use futures::{Stream, StreamExt};
-use reqwest::{header::CONTENT_LENGTH, Body, Method, Url};
-use serde::{de::DeserializeOwned, Serialize};
 use std::{
+    future::Future,
     io::{self, Read, Seek, SeekFrom},
     sync::Arc,
     time::Duration,
 };
+
+use anyhow::{bail, format_err, Error, Result};
+use byteorder::{ByteOrder, LE};
+use futures::{Stream, StreamExt};
+use reqwest::{header::CONTENT_LENGTH, Body, Method, Url};
+use serde::{de::DeserializeOwned, Serialize};
 use stream_generator::generate_try_stream;
 use tokio::{
     sync::Mutex,
     time::{sleep, timeout},
 };
-use tracing::warn;
+use tracing::{instrument, warn};
 
 use rammingen_protocol::{
     credentials::AccessToken,
@@ -24,6 +26,7 @@ use rammingen_protocol::{
     EncryptedContentHash,
 };
 
+/// Reuse created client or clone it in order to reuse a connection pool.
 #[derive(Clone)]
 pub struct Client {
     reqwest: reqwest::Client,
@@ -31,8 +34,6 @@ pub struct Client {
     token: AccessToken,
 }
 
-pub const NUM_RETRIES: usize = 5;
-pub const RETRY_INTERVAL: Duration = Duration::from_secs(10);
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub fn upload_timeout(upload_size: u64) -> Duration {
@@ -51,6 +52,7 @@ impl Client {
         }
     }
 
+    #[instrument(skip_all)]
     pub async fn request_with_timeout<R>(
         &self,
         request: &R,
@@ -60,47 +62,32 @@ impl Client {
         R: RequestToResponse + Serialize,
         R::Response: DeserializeOwned,
     {
-        let mut i = 0;
-        loop {
-            i += 1;
-
-            let result = self.request_with_timeout_once(request, timeout).await;
-            match result {
-                Ok(r) => return Ok(r),
-                Err(err) => {
-                    if i == NUM_RETRIES {
-                        return Err(err);
-                    } else {
-                        warn!(?err, "request failed, will retry");
-                        sleep(RETRY_INTERVAL).await;
-                    }
-                }
+        let url = self.server_url.join(R::PATH)?;
+        let body = bincode::serialize(&request)?;
+        ok_or_retry(|| async {
+            let mut request = self
+                .reqwest
+                .request(Method::POST, url.clone())
+                .bearer_auth(self.token.as_ref())
+                .body(body.clone());
+            if let Some(timeout) = timeout {
+                request = request.timeout(timeout);
             }
-        }
-    }
 
-    async fn request_with_timeout_once<R>(
-        &self,
-        request: &R,
-        timeout: Option<Duration>,
-    ) -> Result<R::Response>
-    where
-        R: RequestToResponse + Serialize,
-        R::Response: DeserializeOwned,
-    {
-        let mut request = self
-            .reqwest
-            .request(Method::POST, self.server_url.join(R::PATH)?)
-            .bearer_auth(self.token.as_ref())
-            .body(bincode::serialize(&request)?);
-        if let Some(timeout) = timeout {
-            request = request.timeout(timeout);
-        }
-
-        let response = request.send().await?.error_for_status()?.bytes().await?;
-
-        bincode::deserialize::<Result<R::Response, String>>(&response)?
-            .map_err(|msg| anyhow!("server error: {msg}"))
+            let response = request
+                .send()
+                .await
+                .map_err(RequestError::transport)?
+                .error_for_status()
+                .map_err(RequestError::application)?
+                .bytes()
+                .await
+                .map_err(RequestError::transport)?;
+            bincode::deserialize::<Result<R::Response, String>>(&response)
+                .map_err(RequestError::application)?
+                .map_err(|msg| RequestError::Application(format_err!("server error: {msg}")))
+        })
+        .await
     }
 
     pub async fn request<R>(&self, request: &R) -> Result<R::Response>
@@ -138,7 +125,7 @@ impl Client {
                         bincode::deserialize::<Result<Option<Vec<R::ResponseItem>>, String>>(
                             chunk,
                         )?
-                        .map_err(|msg| anyhow!("server error: {msg}"))?;
+                        .map_err(|msg| format_err!("server error: {msg}"))?;
 
                     buf.drain(..index);
                     if let Some(data) = data {
@@ -155,6 +142,7 @@ impl Client {
         .boxed()
     }
 
+    #[instrument(skip_all, fields(?hash))]
     pub async fn upload(
         &self,
         hash: &EncryptedContentHash,
@@ -162,13 +150,15 @@ impl Client {
     ) -> Result<()> {
         let size = encrypted_file.seek(SeekFrom::End(0))?;
         let encrypted_file = Arc::new(Mutex::new(encrypted_file));
-        let mut i = 0;
-        loop {
-            i += 1;
-            encrypted_file.lock().await.rewind()?;
-            let result = self
-                .reqwest
-                .put(format!("{}content/{}", self.server_url, hash.to_url_safe()))
+        let url = self.content_url(hash)?;
+        ok_or_retry(|| async {
+            encrypted_file
+                .lock()
+                .await
+                .rewind()
+                .map_err(RequestError::application)?;
+            self.reqwest
+                .put(url.clone())
                 .timeout(upload_timeout(size))
                 .bearer_auth(self.token.as_ref())
                 .header(CONTENT_LENGTH, size)
@@ -177,19 +167,21 @@ impl Client {
                 ))
                 .send()
                 .await
-                .and_then(|r| r.error_for_status());
-            match result {
-                Ok(_) => return Ok(()),
-                Err(err) => {
-                    if i == NUM_RETRIES {
-                        return Err(err.into());
-                    } else {
-                        warn!(?err, "upload request failed, will retry");
-                        sleep(RETRY_INTERVAL).await;
-                    }
-                }
-            }
-        }
+                .map_err(RequestError::transport)?
+                .error_for_status()
+                .map_err(RequestError::application)?;
+            Ok(())
+        })
+        .await
+    }
+
+    fn content_url(&self, hash: &EncryptedContentHash) -> Result<Url> {
+        let mut url = self.server_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| format_err!("failed server URL extension"))?
+            .push("content")
+            .push(&hash.to_url_safe());
+        Ok(url)
     }
 }
 
@@ -202,4 +194,50 @@ fn take_chunk(buf: &[u8]) -> Option<(&[u8], usize)> {
         return None;
     }
     Some((&buf[4..4 + len], 4 + len))
+}
+
+/// Retries the request if an error arises due to the transport.
+async fn ok_or_retry<T, F, Fut>(mut f: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, RequestError>>,
+{
+    const NUM_RETRIES: usize = 5;
+    const RETRY_PERIOD: Duration = Duration::from_secs(10);
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let err = match f().await {
+            Ok(x) => break Ok(x),
+            Err(RequestError::Application(err)) => break Err(err),
+            Err(RequestError::Transport(err)) if attempt >= NUM_RETRIES => break Err(err),
+            Err(RequestError::Transport(err)) => err,
+        };
+        warn!(error = %err, attempt, "transport failed, will retry");
+        sleep(RETRY_PERIOD).await;
+    }
+}
+
+enum RequestError {
+    Transport(Error),
+    Application(Error),
+}
+
+impl RequestError {
+    fn application(err: impl Into<Error>) -> Self {
+        Self::Application(err.into())
+    }
+
+    fn transport(err: impl Into<Error>) -> Self {
+        Self::Transport(err.into())
+    }
+}
+
+impl From<RequestError> for Error {
+    fn from(err: RequestError) -> Self {
+        match err {
+            RequestError::Transport(err) => err,
+            RequestError::Application(err) => err,
+        }
+    }
 }
