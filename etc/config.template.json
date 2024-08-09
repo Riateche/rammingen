@@ -1,0 +1,13 @@
+{
+    "always_exclude": [],
+    "mount_points": [
+        {
+            "local_path": "/root/source/",
+            "archive_path": "ar:/"
+        }
+    ],
+    "access_token": "${TOKEN}",
+    "server_url": "http://server:${PORT}",
+    "encryption_key": "${KEY}",
+    "log_file": "/var/rammingen.log"
+}

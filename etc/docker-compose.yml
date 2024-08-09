@@ -1,0 +1,38 @@
+name: rammingen
+services:
+
+  # Rammingen server
+  server:
+    image: riateche/rammingen
+    entrypoint: sh
+    command: >-
+      -c "
+      envsubst < /etc/config-server.template.json > /etc/rammingen-server.conf &&
+      /sbin/rammingen-admin add-source main ||
+        echo \"Failed to add access token. Perhaps you restarted the container and
+          there's already a \\"main\\" source in the DB?\" &&
+      echo 'New encryption key:' &&
+      /sbin/rammingen generate-encryption-key &&
+      /sbin/rammingen-server
+      "
+    environment:
+      SERVER_PORT: ${SERVER_PORT}
+      DB_URL: "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+    volumes:
+      - ./server-storage/:/app/storage/
+      - ./config-server.template.json:/etc/config-server.template.json:ro
+
+  # DB (Postgres)
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT}:${DB_PORT}"
+    environment:
+      POSTGRES_DB: "${DB_NAME}"
+      POSTGRES_USER: "${DB_USER}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - ./db/:/var/lib/postgresql/data/
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+      - ../server/migrations/:/migrations/:ro
