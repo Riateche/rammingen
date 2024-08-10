@@ -4,7 +4,7 @@ use anyhow::Result;
 use futures::TryStreamExt;
 
 use rammingen_protocol::endpoints::GetNewEntries;
-use rammingen_sdk::content::DecryptedEntryVersionData;
+use rammingen_sdk::content::EntryVersionHandle;
 
 use crate::{term::set_status, Ctx};
 
@@ -14,7 +14,7 @@ pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     let mut stream = ctx.client.stream(&GetNewEntries { last_update_number });
     let mut decrypted = Vec::new();
     while let Some(update) = stream.try_next().await? {
-        decrypted.push(DecryptedEntryVersionData::new(update.data, &ctx.cipher)?);
+        decrypted.push(EntryVersionHandle::new(update.data, &ctx.cipher)?);
         last_update_number = max(last_update_number, update.update_number);
     }
     ctx.db

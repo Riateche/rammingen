@@ -11,14 +11,14 @@ use tracing::warn;
 
 use super::{Client, DEFAULT_TIMEOUT, NUM_RETRIES, RETRY_INTERVAL};
 use crate::{
-    content::DecryptedFileContent,
+    content::ContentHandle,
     crypto::{Cipher, DecryptingWriter},
 };
 
 impl Client {
     pub async fn download_and_decrypt(
         &self,
-        content: &DecryptedFileContent,
+        content: &ContentHandle,
         path: impl AsRef<Path>,
         cipher: &Cipher,
     ) -> Result<()> {
@@ -45,7 +45,7 @@ impl Client {
 
     async fn download_and_decrypt_once(
         &self,
-        content: &DecryptedFileContent,
+        content: &ContentHandle,
         path: impl AsRef<Path>,
         cipher: &Cipher,
     ) -> Result<()> {
