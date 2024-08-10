@@ -4,7 +4,7 @@ use rammingen_protocol::{ArchivePath, EntryKind, EntryUpdateNumber};
 use sled::{transaction::ConflictableTransactionError, Transactional};
 use std::{fmt::Debug, io, iter, path::Path, str};
 
-use rammingen_sdk::content::{DecryptedEntryVersionData, LocalEntryInfo};
+use rammingen_sdk::content::{EntryVersionHandle, LocalEntryInfo};
 
 use crate::path::SanitizedLocalPath;
 
@@ -29,23 +29,18 @@ impl Db {
 
     pub fn get_all_archive_entries(
         &self,
-    ) -> impl DoubleEndedIterator<Item = Result<DecryptedEntryVersionData>> {
+    ) -> impl DoubleEndedIterator<Item = Result<EntryVersionHandle>> {
         self.archive_entries
             .iter()
-            .map(|pair| Ok(bincode::deserialize::<DecryptedEntryVersionData>(&pair?.1)?))
+            .map(|pair| Ok(bincode::deserialize::<EntryVersionHandle>(&pair?.1)?))
     }
 
-    pub fn get_archive_entry(
-        &self,
-        path: &ArchivePath,
-    ) -> Result<Option<DecryptedEntryVersionData>> {
+    pub fn get_archive_entry(&self, path: &ArchivePath) -> Result<Option<EntryVersionHandle>> {
         if let Some(value) = self
             .archive_entries
             .get(path.to_str_without_prefix().as_bytes())?
         {
-            Ok(Some(bincode::deserialize::<DecryptedEntryVersionData>(
-                &value,
-            )?))
+            Ok(Some(bincode::deserialize::<EntryVersionHandle>(&value)?))
         } else {
             Ok(None)
         }
@@ -54,13 +49,13 @@ impl Db {
     pub fn get_archive_entries(
         &self,
         path: &ArchivePath,
-    ) -> impl DoubleEndedIterator<Item = Result<DecryptedEntryVersionData>> {
+    ) -> impl DoubleEndedIterator<Item = Result<EntryVersionHandle>> {
         let root_entry = (|| {
             let value = self
                 .archive_entries
                 .get(path.to_str_without_prefix().as_bytes())?
                 .ok_or_else(|| anyhow!("no such archive path: {}", path))?;
-            anyhow::Ok(bincode::deserialize::<DecryptedEntryVersionData>(&value)?)
+            anyhow::Ok(bincode::deserialize::<EntryVersionHandle>(&value)?)
         })();
         let children = if root_entry
             .as_ref()
@@ -71,7 +66,7 @@ impl Db {
             Some(
                 self.archive_entries
                     .scan_prefix(prefix)
-                    .map(|pair| Ok(bincode::deserialize::<DecryptedEntryVersionData>(&pair?.1)?)),
+                    .map(|pair| Ok(bincode::deserialize::<EntryVersionHandle>(&pair?.1)?)),
             )
         } else {
             None
@@ -90,7 +85,7 @@ impl Db {
 
     pub fn update_archive_entries(
         &self,
-        updates: &[DecryptedEntryVersionData],
+        updates: &[EntryVersionHandle],
         update_number: EntryUpdateNumber,
     ) -> Result<()> {
         if updates.is_empty() {

@@ -21,7 +21,7 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use rammingen_sdk::{
-    content::{DecryptedFileContent, EncryptedFileData, LocalEntryInfo},
+    content::{ContentHandle, EncryptedFileData, LocalEntryInfo},
     crypto::encrypt_file,
 };
 
@@ -260,7 +260,7 @@ fn upload_inner<'a>(
                     );
                 }
 
-                let current_content = DecryptedFileContent {
+                let current_content = ContentHandle {
                     modified_at: modified_datetime,
                     original_size: file_data.original_size,
                     encrypted_size: file_data.encrypted_size,

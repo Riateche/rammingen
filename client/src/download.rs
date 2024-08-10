@@ -23,7 +23,7 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-use rammingen_sdk::content::{DecryptedEntryVersionData, DecryptedFileContent, LocalEntryInfo};
+use rammingen_sdk::content::{ContentHandle, EntryVersionHandle, LocalEntryInfo};
 
 use crate::{path::SanitizedLocalPath, rules::Rules, term::set_status, Ctx};
 
@@ -68,7 +68,7 @@ pub async fn download_version(
         });
         let mut any = false;
         while let Some(entry) = response_stream.try_next().await? {
-            let entry = DecryptedEntryVersionData::new(entry.data, &ctx.cipher)?;
+            let entry = EntryVersionHandle::new(entry.data, &ctx.cipher)?;
             any = true;
             y.send(Ok(entry)).await;
         }
@@ -127,7 +127,7 @@ pub async fn download(
     root_local_path: &SanitizedLocalPath,
     rules: &mut Rules,
     is_mount: bool,
-    versions: impl Stream<Item = Result<DecryptedEntryVersionData>>,
+    versions: impl Stream<Item = Result<EntryVersionHandle>>,
     dry_run: bool,
 ) -> Result<bool> {
     interrupt_on_error(|error_sender| async move {
@@ -176,7 +176,7 @@ pub async fn download(
 
 async fn download_inner(
     ctx: &mut DownloadContext<'_>,
-    versions: impl Stream<Item = Result<DecryptedEntryVersionData>>,
+    versions: impl Stream<Item = Result<EntryVersionHandle>>,
 ) -> Result<bool> {
     tokio::pin!(versions);
     if ctx.is_mount {
@@ -330,7 +330,7 @@ impl Drop for TmpGuard {
 struct DownloadFileTask {
     local_path: SanitizedLocalPath,
     root_local_path: SanitizedLocalPath,
-    content: DecryptedFileContent,
+    content: ContentHandle,
     sender: oneshot::Sender<TmpGuard>,
 }
 
@@ -395,7 +395,7 @@ async fn finalize_download_task(
 }
 
 struct FinalizeDownloadTaskItem {
-    entry: DecryptedEntryVersionData,
+    entry: EntryVersionHandle,
     db_data: Option<LocalEntryInfo>,
     local_path: SanitizedLocalPath,
     must_delete: bool,
