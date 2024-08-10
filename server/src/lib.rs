@@ -51,7 +51,10 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-use rammingen_sdk::{server::serve_connection, signal::shutdown_signal};
+use rammingen_sdk::{
+    server::{serve_connection, ShutdownWatcher},
+    signal::shutdown_signal,
+};
 
 use crate::snapshot::make_snapshot;
 use util::default_config_dir;
@@ -149,12 +152,13 @@ pub async fn run(config: Config) -> Result<()> {
     });
 
     let mut shutdown = pin!(shutdown_signal());
+    let shutdown_watcher = ShutdownWatcher::default();
     loop {
         select! {
             r = listener.accept() => match r {
                 Ok((io, _client_addr)) => {
                     let ctx = ctx.clone();
-                    tokio::spawn(serve_connection(io, move |request| {
+                    tokio::spawn(serve_connection(io, &shutdown_watcher, move |request| {
                         handle_request(ctx.clone(), request)
                     }));
                 }
@@ -166,19 +170,22 @@ pub async fn run(config: Config) -> Result<()> {
             },
         }
     }
+    shutdown_watcher.shutdown().await;
     Ok(())
 }
 
 async fn handle_request(
     ctx: Context,
     request: Request<body::Incoming>,
-) -> Result<Response<BoxBody<Bytes, Infallible>>, Infallible> {
-    try_handle_request(ctx, request).await.or_else(|code| {
-        Ok(Response::builder()
-            .status(code)
-            .body(Full::new(Bytes::from(code.as_str().to_string())).boxed())
-            .expect("response builder failed"))
-    })
+) -> Response<BoxBody<Bytes, Infallible>> {
+    try_handle_request(ctx, request)
+        .await
+        .unwrap_or_else(|code| {
+            Response::builder()
+                .status(code)
+                .body(Full::new(Bytes::from(code.as_str().to_string())).boxed())
+                .expect("response builder failed")
+        })
 }
 
 async fn try_handle_request(
