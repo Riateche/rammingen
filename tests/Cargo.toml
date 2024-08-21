@@ -9,6 +9,7 @@ rammingen = { path = "../client" }
 rammingen_server = { path = "../server" }
 rammingen_protocol = { path = "../protocol" }
 
+chrono = { workspace = true, features = ["std", "clock", "serde"] }
 reqwest = { version = "0.12.5", features = ["json", "stream"] }
 tokio = { version = "1.26.0", features = ["full"] }
 sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-native-tls", "offline", "time"] }
@@ -20,6 +21,5 @@ tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 json5 = "0.4.1"
 rand = "0.8.5"
-chrono = { version = "0.4.24", default-features = false, features = ["std", "clock", "serde"] }
 clap = { version = "4.2.1", features = ["derive"] }
 futures = "0.3.28"

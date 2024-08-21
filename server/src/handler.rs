@@ -675,9 +675,10 @@ impl ToDb for DateTimeUtc {
     type Output = Result<OffsetDateTime>;
 
     fn to_db(&self) -> Self::Output {
-        Ok(OffsetDateTime::from_unix_timestamp_nanos(
-            self.timestamp_nanos().into(),
-        )?)
+        const NANOS_IN_SECOND: i128 = 1_000_000_000;
+        let ts_nanos = i128::from(self.timestamp()) * NANOS_IN_SECOND
+            + i128::from(self.timestamp_subsec_nanos());
+        OffsetDateTime::from_unix_timestamp_nanos(ts_nanos).map_err(Into::into)
     }
 }
 
