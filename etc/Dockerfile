@@ -1,6 +1,6 @@
 FROM rust:1.80.1-bookworm AS builder
 COPY . /
-RUN cargo build --release \
+RUN cargo build --release --locked \
     --bin rammingen \
     --bin rammingen-admin \
     --bin rammingen-server

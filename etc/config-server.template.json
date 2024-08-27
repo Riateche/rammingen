@@ -1,5 +1,0 @@
-{
-    "database_url": "${DB_URL}",
-    "storage_path": "/app/storage/",
-    "bind_addr": "0.0.0.0:${SERVER_PORT}"
-}

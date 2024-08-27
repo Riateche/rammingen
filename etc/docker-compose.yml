@@ -7,7 +7,7 @@ services:
     entrypoint: sh
     command: >-
       -c "
-      envsubst < /etc/config-server.template.json > /etc/rammingen-server.conf &&
+      envsubst < /etc/rammingen-server.template.conf > /etc/rammingen-server.conf &&
       /sbin/rammingen-admin add-source main ||
         echo \"Failed to add access token. Perhaps you restarted the container and
           there's already a \\"main\\" source in the DB?\" &&
@@ -20,7 +20,7 @@ services:
       DB_URL: "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
     volumes:
       - ./server-storage/:/app/storage/
-      - ./config-server.template.json:/etc/config-server.template.json:ro
+      - ./rammingen-server.template.conf:/etc/rammingen-server.template.conf:ro
 
   # DB (Postgres)
   db:
@@ -34,5 +34,3 @@ services:
       POSTGRES_PASSWORD: "${DB_PASSWORD}"
     volumes:
       - ./db/:/var/lib/postgresql/data/
-      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
-      - ../server/migrations/:/migrations/:ro
