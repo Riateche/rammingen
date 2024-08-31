@@ -12,6 +12,7 @@ harness = false
 [dependencies]
 rammingen_protocol = { path = "../protocol" }
 
+chrono = { workspace = true, features = ["std", "clock", "serde"] }
 regex = "1.7.3"
 derivative = "2.2.0"
 serde = { version = "1.0.158", features = ["derive"] }
@@ -20,10 +21,9 @@ anyhow = { version = "1.0.70", features = ["backtrace"] }
 tokio = { version = "1.26.0", features = ["full"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-chrono = { version = "0.4.24", default-features = false, features = ["std", "clock", "serde"] }
 json5 = "0.4.1"
 fs-err = "2.9.0"
-reqwest = { version = "0.11.16", features = ["json", "stream"] }
+reqwest = { version = "0.12.5", features = ["json", "stream"] }
 url = { version = "2.3.1", features = ["serde"] }
 aes-siv = "0.7.0"
 base64 = "0.21.0"

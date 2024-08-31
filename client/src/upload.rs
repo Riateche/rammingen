@@ -68,11 +68,9 @@ pub async fn find_local_deletions<'a>(
             continue;
         }
 
-        let Some((archive_path, rules)) =
-            to_archive_path(&local_path, mount_points)?
-            else {
-                continue;
-            };
+        let Some((archive_path, rules)) = to_archive_path(&local_path, mount_points)? else {
+            continue;
+        };
         if rules.matches(&local_path)? {
             continue;
         }
@@ -459,10 +457,10 @@ async fn add_versions_task(
             }
             versions.push(item);
             if versions.len() >= BATCH_SIZE {
-                add_versions_batch(&ctx, versions.drain(..).collect()).await?;
+                add_versions_batch(&ctx, mem::take(&mut versions)).await?;
             }
         }
-        add_versions_batch(&ctx, versions.drain(..).collect()).await?;
+        add_versions_batch(&ctx, mem::take(&mut versions)).await?;
         anyhow::Ok(())
     }
     .await;

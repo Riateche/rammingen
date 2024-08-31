@@ -5,8 +5,8 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+chrono = { workspace = true, features = ["std", "clock", "serde"] }
 serde = { version = "1.0.158", features = ["derive"] }
-chrono = { version = "0.4.24", default-features = false, features = ["std", "clock", "serde"] }
 sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-native-tls", "offline", "time"] }
 derive_more = "0.99.17"
 anyhow = { version = "1.0.70", features = ["backtrace"] }

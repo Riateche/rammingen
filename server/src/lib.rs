@@ -28,6 +28,7 @@ use hyper::{
     service::service_fn,
     Method, Request, Response, StatusCode,
 };
+use hyper_util::rt::TokioIo;
 use rammingen_protocol::{
     endpoints::{
         AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions, GetDirectChildEntries,
@@ -162,13 +163,13 @@ pub async fn run(config: Config) -> Result<()> {
                 break;
             }
             r = listener.accept() => match r {
-                Ok((stream, _)) => {
+                Ok((io, _client_addr)) => {
                     let ctx = ctx.clone();
                     tokio::spawn(async move {
                         if let Err(err) = http1::Builder::new()
                             .keep_alive(true)
                             .serve_connection(
-                                stream,
+                                TokioIo::new(io),
                                 service_fn(move |req| handle_request(ctx.clone(), req)),
                             )
                             .await

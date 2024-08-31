@@ -112,7 +112,7 @@ async fn try_main() -> Result<()> {
             },
         };
         write(
-            &dir.join("rammingen-server.conf"),
+            dir.join("rammingen-server.conf"),
             json5::to_string(&server_config)?,
         )?;
         for client_index in 0..3 {
@@ -309,7 +309,8 @@ async fn test_random(ctx: Context) -> Result<()> {
                     let mut chosen_paths = Vec::<(PathBuf, PathBuf)>::new();
                     info!("Checking simultaneous edit");
                     for client in &two_clients {
-                        let Some(path1) = choose_path(&client.mount_dir, true, true, false, false)? else {
+                        let Some(path1) = choose_path(&client.mount_dir, true, true, false, false)?
+                        else {
                             continue;
                         };
                         if is_leftover_dir_with_ignored_files(&path1)? {
