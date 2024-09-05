@@ -1985,6 +1985,7 @@ dependencies = [
  "aes-siv",
  "anyhow",
  "base64 0.21.2",
+ "byte-unit",
  "bytes",
  "chrono",
  "derivative",

@@ -1,7 +1,8 @@
+use std::path::PathBuf;
+
 use byte_unit::Byte;
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use url::Url;
 
 use rammingen_protocol::{credentials::EncryptionKey, serde_path_with_prefix, ArchivePath};
