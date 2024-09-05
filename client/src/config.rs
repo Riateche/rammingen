@@ -4,13 +4,12 @@ use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use byte_unit::Byte;
 use core::fmt;
 use derivative::Derivative;
-use generic_array::GenericArray;
+use generic_array::{typenum::U64, GenericArray};
 use rammingen_protocol::{serde_path_with_prefix, ArchivePath};
-use reqwest::Url;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use typenum::U64;
+use url::Url;
 
 use crate::path::SanitizedLocalPath;
 use crate::rules::Rule;

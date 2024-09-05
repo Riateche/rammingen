@@ -5,3 +5,31 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+rammingen_protocol = { path = "../protocol" }
+
+aes-siv = { workspace = true, features = ["std"] }
+anyhow.workspace = true
+base64.workspace = true
+bincode.workspace = true
+byteorder.workspace = true
+deflate = "1"
+derivative.workspace = true
+fs-err.workspace = true
+futures.workspace = true
+generic-array.workspace = true
+inflate = "0.4.5"
+rand.workspace = true
+reqwest = { version = "0.12.5", features = ["json", "stream"] }
+serde = { workspace = true, features = ["derive"] }
+sha2.workspace = true
+stream_generator.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+
+[dev-dependencies]
+criterion = "0.4.0"
+
+[[bench]]
+name = "encryption"
+harness = false

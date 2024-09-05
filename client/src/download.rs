@@ -23,14 +23,9 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-use crate::{
-    data::{DecryptedEntryVersionData, DecryptedFileContent, LocalEntryInfo},
-    encryption::encrypt_path,
-    path::SanitizedLocalPath,
-    rules::Rules,
-    term::set_status,
-    Ctx,
-};
+use rammingen_sdk::content::{DecryptedEntryVersionData, DecryptedFileContent, LocalEntryInfo};
+
+use crate::{path::SanitizedLocalPath, rules::Rules, term::set_status, Ctx};
 
 fn archive_to_local_path(
     path: &ArchivePath,
@@ -68,12 +63,12 @@ pub async fn download_version(
 ) -> Result<bool> {
     let stream = generate_try_stream(move |mut y| async move {
         let mut response_stream = ctx.client.stream(&GetEntryVersionsAtTime {
-            path: encrypt_path(root_archive_path, &ctx.cipher)?,
+            path: ctx.cipher.encrypt_path(root_archive_path)?,
             recorded_at: version,
         });
         let mut any = false;
         while let Some(entry) = response_stream.try_next().await? {
-            let entry = DecryptedEntryVersionData::new(ctx, entry.data)?;
+            let entry = DecryptedEntryVersionData::new(entry.data, &ctx.cipher)?;
             any = true;
             y.send(Ok(entry)).await;
         }
