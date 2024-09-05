@@ -1,13 +1,10 @@
 #![allow(clippy::collapsible_if)]
 
 pub mod cli;
-mod client;
 pub mod config;
 mod counters;
-mod data;
 mod db;
 mod download;
-mod encryption;
 mod info;
 pub mod path;
 mod pull_updates;
@@ -21,15 +18,12 @@ use crate::{
     pull_updates::pull_updates,
     upload::upload,
 };
-use aes_siv::{Aes256SivAead, KeyInit};
 use anyhow::{anyhow, bail, Result};
 use cli::Cli;
-use client::Client;
 use config::Config;
 use counters::Counters;
 use derivative::Derivative;
 use download::{download_latest, download_version};
-use encryption::encrypt_path;
 use info::{list_versions, pretty_size};
 use rammingen_protocol::{
     endpoints::{CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion},
@@ -49,12 +43,14 @@ use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
 };
 
+use rammingen_sdk::{client::Client, crypto::Cipher};
+
 #[derive(Derivative)]
 pub struct Ctx {
     pub config: Config,
     pub client: Client,
     #[derivative(Debug = "ignore")]
-    pub cipher: Aes256SivAead,
+    pub cipher: Cipher,
     pub db: crate::db::Db,
     pub counters: Counters,
 }
@@ -68,7 +64,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
     };
     let ctx = Arc::new(Ctx {
         client: Client::new(config.server_url.clone(), &config.access_token),
-        cipher: Aes256SivAead::new(config.encryption_key.get()),
+        cipher: Cipher::new(config.encryption_key.get()),
         config,
         db: crate::db::Db::open(&local_db_path)?,
         counters: Counters::default(),
@@ -135,7 +131,7 @@ async fn handle_command(cli: Cli, ctx: &Arc<Ctx>) -> Result<()> {
             let stats = ctx
                 .client
                 .request(&ResetVersion {
-                    path: encrypt_path(&archive_path, &ctx.cipher)?,
+                    path: ctx.cipher.encrypt_path(&archive_path)?,
                     recorded_at: version.into(),
                 })
                 .await?;
@@ -145,8 +141,8 @@ async fn handle_command(cli: Cli, ctx: &Arc<Ctx>) -> Result<()> {
             let stats = ctx
                 .client
                 .request(&MovePath {
-                    old_path: encrypt_path(&old_path, &ctx.cipher)?,
-                    new_path: encrypt_path(&new_path, &ctx.cipher)?,
+                    old_path: ctx.cipher.encrypt_path(&old_path)?,
+                    new_path: ctx.cipher.encrypt_path(&new_path)?,
                 })
                 .await?;
             info!("{stats:?}");
@@ -155,7 +151,7 @@ async fn handle_command(cli: Cli, ctx: &Arc<Ctx>) -> Result<()> {
             let stats = ctx
                 .client
                 .request(&RemovePath {
-                    path: encrypt_path(&archive_path, &ctx.cipher)?,
+                    path: ctx.cipher.encrypt_path(&archive_path)?,
                 })
                 .await?;
             info!("{:?}", stats);

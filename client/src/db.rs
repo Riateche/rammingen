@@ -4,10 +4,9 @@ use rammingen_protocol::{ArchivePath, EntryKind, EntryUpdateNumber};
 use sled::{transaction::ConflictableTransactionError, Transactional};
 use std::{fmt::Debug, io, iter, path::Path, str};
 
-use crate::{
-    data::{DecryptedEntryVersionData, LocalEntryInfo},
-    path::SanitizedLocalPath,
-};
+use rammingen_sdk::content::{DecryptedEntryVersionData, LocalEntryInfo};
+
+use crate::path::SanitizedLocalPath;
 
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
 

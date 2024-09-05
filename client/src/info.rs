@@ -12,9 +12,11 @@ use rammingen_protocol::{
 };
 use tracing::{error, info};
 
+use rammingen_sdk::content::DecryptedEntryVersionData;
+
 use crate::{
-    data::DecryptedEntryVersionData, encryption::encrypt_path, path::SanitizedLocalPath,
-    pull_updates::pull_updates, rules::Rules, upload::to_archive_path, Ctx,
+    path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules, upload::to_archive_path,
+    Ctx,
 };
 
 struct Sources(Vec<SourceInfo>);
@@ -55,7 +57,7 @@ pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
             info!("this path is ignored according to the configured exclude rules");
         } else {
             info!("archive path: {}", archive_path);
-            let encrypted = encrypt_path(&archive_path, &ctx.cipher)?;
+            let encrypted = ctx.cipher.encrypt_path(&archive_path)?;
             info!("encrypted archive path: {}", encrypted);
             info!(
                 "archive entry in local db: {:?}",
@@ -83,7 +85,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     };
 
     info!("path: {}", main_entry.path);
-    let encrypted = encrypt_path(path, &ctx.cipher)?;
+    let encrypted = ctx.cipher.encrypt_path(path)?;
     info!("encrypted archive path: {}", encrypted);
     info!("recorded at: {}", pretty_time(main_entry.recorded_at));
     info!("source id: {}", sources.format(main_entry.source_id));
@@ -124,10 +126,10 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     let mut entries = Vec::new();
     let mut stream = ctx
         .client
-        .stream(&GetDirectChildEntries(encrypt_path(path, &ctx.cipher)?));
+        .stream(&GetDirectChildEntries(ctx.cipher.encrypt_path(path)?));
 
     while let Some(entry) = stream.try_next().await? {
-        entries.push(DecryptedEntryVersionData::new(ctx, entry.data)?);
+        entries.push(DecryptedEntryVersionData::new(entry.data, &ctx.cipher)?);
     }
     // already sorted by path, so we use stable sort
     entries.sort_by_key(|entry| match &entry.kind {
@@ -210,7 +212,7 @@ pub fn pretty_size(size: u64) -> impl Display {
 pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Result<()> {
     let sources = get_sources(ctx).await?;
     let mut stream = ctx.client.stream(&GetAllEntryVersions {
-        path: encrypt_path(path, &ctx.cipher)?,
+        path: ctx.cipher.encrypt_path(path)?,
         recursive,
     });
     let mut table = Table::new();
@@ -222,7 +224,7 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
     }
     table.add_row(header);
     while let Some(item) = stream.try_next().await? {
-        let data = DecryptedEntryVersionData::new(ctx, item.data)?;
+        let data = DecryptedEntryVersionData::new(item.data, &ctx.cipher)?;
         let recorded_at = pretty_time(data.recorded_at);
         let status = pretty_status(&data)?;
         let trigger = format!("{:?}", data.record_trigger);

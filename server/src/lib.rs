@@ -93,7 +93,8 @@ impl Config {
 }
 
 fn default_log_filter() -> String {
-    "info,sqlx::query=warn,rammingen_server=debug".into()
+    "info,sqlx::query=warn,rammingen_protocol=debug,rammingen_server=debug,rammingen_sdk=debug"
+        .to_owned()
 }
 
 #[derive(Debug, Clone)]

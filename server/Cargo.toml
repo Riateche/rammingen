@@ -16,27 +16,28 @@ path = "src/bin/admin.rs"
 [dependencies]
 rammingen_protocol = { path = "../protocol" }
 
-anyhow = { version = "1.0.70", features = ["backtrace"] }
+anyhow.workspace = true
+bincode.workspace = true
 chrono = { workspace = true, features = ["std", "clock", "serde"] }
+futures.workspace = true
 hyper = { version = "1.4.1", features = ["server", "http1"] }
 hyper-util = { version = "0.1.7", features = ["tokio"] }
-tokio = { version = "1.26.0", features = ["full"] }
-tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+rand.workspace = true
+serde = { workspace = true, features = ["derive"] }
+stream_generator.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 futures-util = "0.3.27"
-bincode = "1.3.3"
 sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-native-tls", "offline", "time"] }
-serde = { version = "1.0.158", features = ["derive"] }
 json5 = "0.4.1"
 fs-err = "2.9.0"
-tempfile = "3.4.0"
 base64 = "0.21.0"
 http-body-util = "0.1.0-rc.2"
-stream_generator = "0.1.0"
 tokio-stream = "0.1.12"
 bytes = "1.4.0"
 fs2 = "0.4.3"
 humantime-serde = "1.1.1"
 clap = { version = "4.2.1", features = ["derive"] }
-rand = "0.8.5"
 dirs = "5.0.1"

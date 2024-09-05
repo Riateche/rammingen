@@ -20,10 +20,13 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
+use rammingen_sdk::{
+    content::{DecryptedFileContent, EncryptedFileData, LocalEntryInfo},
+    crypto::encrypt_file,
+};
+
 use crate::{
     config::MountPoint,
-    data::{DecryptedFileContent, LocalEntryInfo},
-    encryption::{self, encrypt_content_hash, encrypt_path, encrypt_size, EncryptedFileData},
     info::pretty_size,
     path::SanitizedLocalPath,
     rules::Rules,
@@ -81,7 +84,7 @@ pub async fn find_local_deletions<'a>(
                 .fetch_add(1, Ordering::Relaxed);
         } else {
             new_versions.push(AddVersion {
-                path: encrypt_path(&archive_path, &ctx.cipher)?,
+                path: ctx.cipher.encrypt_path(&archive_path)?,
                 record_trigger: RecordTrigger::Sync,
                 kind: None,
                 content: None,
@@ -247,8 +250,7 @@ fn upload_inner<'a>(
             });
 
             if maybe_changed {
-                let file_data =
-                    block_in_place(|| encryption::encrypt_file(local_path, &ctx.ctx.cipher))?;
+                let file_data = block_in_place(|| encrypt_file(local_path, &ctx.ctx.cipher))?;
 
                 let final_modified = fs::symlink_metadata(local_path)?.modified()?;
                 if final_modified != modified {
@@ -323,18 +325,18 @@ fn upload_inner<'a>(
                 let item = AddVersionsTaskItem {
                     is_mount: ctx.is_mount,
                     version: AddVersion {
-                        path: encrypt_path(archive_path, &ctx.ctx.cipher)?,
+                        path: ctx.ctx.cipher.encrypt_path(archive_path)?,
                         record_trigger: RecordTrigger::Upload,
                         kind: Some(kind),
                         content: if let Some(content) = &content {
                             Some(FileContent {
                                 modified_at: content.modified_at,
-                                original_size: encrypt_size(
-                                    content.original_size,
-                                    &ctx.ctx.cipher,
-                                )?,
+                                original_size: ctx
+                                    .ctx
+                                    .cipher
+                                    .encrypt_size(content.original_size)?,
                                 encrypted_size: content.encrypted_size,
-                                hash: encrypt_content_hash(&content.hash, &ctx.ctx.cipher)?,
+                                hash: ctx.ctx.cipher.encrypt_content_hash(&content.hash)?,
                                 unix_mode: content.unix_mode,
                             })
                         } else {
@@ -409,7 +411,7 @@ async fn content_upload_task(
 }
 
 async fn content_upload_item_task(ctx: Arc<Ctx>, item: ContentUploadTaskItem) -> Result<()> {
-    let encrypted_hash = encrypt_content_hash(&item.hash, &ctx.cipher)?;
+    let encrypted_hash = ctx.cipher.encrypt_content_hash(&item.hash)?;
     let exists = ctx
         .client
         .request(&ContentHashExists(encrypted_hash.clone()))

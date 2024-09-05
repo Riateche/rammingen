@@ -5,11 +5,9 @@ use rammingen_protocol::{
     ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryVersionData, RecordTrigger, SourceId,
 };
 use serde::{Deserialize, Serialize};
+use tempfile::SpooledTempFile;
 
-use crate::{
-    encryption::{decrypt_content_hash, decrypt_path, decrypt_size},
-    Ctx,
-};
+use crate::crypto::Cipher;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecryptedFileContent {
@@ -81,9 +79,9 @@ pub struct DecryptedEntryVersionData {
 }
 
 impl DecryptedEntryVersionData {
-    pub fn new(ctx: &Ctx, data: EntryVersionData) -> Result<Self> {
+    pub fn new(data: EntryVersionData, cipher: &Cipher) -> Result<Self> {
         Ok(Self {
-            path: decrypt_path(&data.path, &ctx.cipher)?,
+            path: cipher.decrypt_path(&data.path)?,
             recorded_at: data.recorded_at,
             source_id: data.source_id,
             record_trigger: data.record_trigger,
@@ -91,9 +89,9 @@ impl DecryptedEntryVersionData {
             content: if let Some(content) = data.content {
                 Some(DecryptedFileContent {
                     modified_at: content.modified_at,
-                    original_size: decrypt_size(&content.original_size, &ctx.cipher)?,
+                    original_size: cipher.decrypt_size(&content.original_size)?,
                     encrypted_size: content.encrypted_size,
-                    hash: decrypt_content_hash(&content.hash, &ctx.cipher)?,
+                    hash: cipher.decrypt_content_hash(&content.hash)?,
                     unix_mode: content.unix_mode,
                 })
             } else {
@@ -101,4 +99,11 @@ impl DecryptedEntryVersionData {
             },
         })
     }
+}
+
+pub struct EncryptedFileData {
+    pub file: SpooledTempFile,
+    pub hash: ContentHash,
+    pub original_size: u64,
+    pub encrypted_size: u64,
 }
