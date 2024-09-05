@@ -25,11 +25,8 @@ use humantime_serde::re::humantime::parse_duration;
 use hyper::{
     body::{self, Bytes, Frame},
     header::AUTHORIZATION,
-    server::conn::http1,
-    service::service_fn,
     Method, Request, Response, StatusCode,
 };
-use hyper_util::rt::TokioIo;
 use rammingen_protocol::{
     endpoints::{
         AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions, GetDirectChildEntries,
@@ -54,7 +51,7 @@ use tokio::{
 };
 use tracing::{error, info, warn};
 
-use rammingen_sdk::signal::shutdown_signal;
+use rammingen_sdk::{server::serve_connection, signal::shutdown_signal};
 
 use crate::snapshot::make_snapshot;
 use util::default_config_dir;
@@ -157,18 +154,9 @@ pub async fn run(config: Config) -> Result<()> {
             r = listener.accept() => match r {
                 Ok((io, _client_addr)) => {
                     let ctx = ctx.clone();
-                    tokio::spawn(async move {
-                        if let Err(err) = http1::Builder::new()
-                            .keep_alive(true)
-                            .serve_connection(
-                                TokioIo::new(io),
-                                service_fn(move |req| handle_request(ctx.clone(), req)),
-                            )
-                            .await
-                        {
-                            warn!(?err, "error while serving HTTP connection");
-                        }
-                    });
+                    tokio::spawn(serve_connection(io, move |request| {
+                        handle_request(ctx.clone(), request)
+                    }));
                 }
                 Err(err) => warn!(?err, "failed to accept"),
             },

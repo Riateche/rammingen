@@ -18,6 +18,8 @@ derive_more = { workspace = true, features = ["display", "into"] }
 fs-err.workspace = true
 futures.workspace = true
 generic-array.workspace = true
+hyper = { workspace = true, features = ["server", "http1"] }
+hyper-util = { version = "0.1.7", features = ["tokio"] }
 inflate = "0.4.5"
 parking_lot.workspace = true
 rand.workspace = true
