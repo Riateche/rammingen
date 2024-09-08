@@ -1,4 +1,4 @@
-use std::{fmt::Display, io::Write, path::Path};
+use std::{fmt::Debug, io::Write, path::Path};
 
 use anyhow::{ensure, format_err, Context, Error, Result};
 use fs_err::File;
@@ -13,11 +13,11 @@ use crate::{
 };
 
 impl Client {
-    #[instrument(skip_all, fields(%path, ?handle))]
+    #[instrument(skip_all, fields(?path, ?handle))]
     pub async fn download_and_decrypt(
         &self,
         handle: &ContentHandle,
-        path: impl AsRef<Path> + Display,
+        path: impl AsRef<Path> + Debug,
         cipher: &Cipher,
     ) -> Result<()> {
         let (actual_encrypted_size, decryptor) = ok_or_retry(|| async {
@@ -71,7 +71,7 @@ impl Client {
             DEFAULT_TIMEOUT,
             self.reqwest
                 .get(url)
-                .bearer_auth(self.token.as_ref())
+                .bearer_auth(self.token.as_unmasked_str())
                 .timeout(DEFAULT_TIMEOUT)
                 .send(),
         )

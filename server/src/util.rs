@@ -15,7 +15,7 @@ pub async fn add_source(db: &PgPool, name: &str, access_token: &AccessToken) -> 
     query!(
         "INSERT INTO sources (name, access_token) VALUES ($1, $2)",
         name,
-        access_token.as_ref(),
+        access_token.as_unmasked_str(),
     )
     .execute(db)
     .await?;
@@ -25,7 +25,7 @@ pub async fn add_source(db: &PgPool, name: &str, access_token: &AccessToken) -> 
 pub async fn set_access_token(db: &PgPool, name: &str, access_token: &AccessToken) -> Result<()> {
     let rows = query!(
         "UPDATE sources SET access_token = $1 WHERE name = $2",
-        access_token.as_ref(),
+        access_token.as_unmasked_str(),
         name,
     )
     .execute(db)

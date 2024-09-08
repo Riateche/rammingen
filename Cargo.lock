@@ -1988,7 +1988,6 @@ dependencies = [
  "byte-unit",
  "bytes",
  "chrono",
- "derivative",
  "derive_more",
  "fs-err",
  "futures",

@@ -62,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
             add_source(&pool, &name, &token).await?;
             println!(
                 "Successfully added new source. New access token:\n{}",
-                token.as_ref(),
+                token.as_unmasked_str(),
             );
         }
         Command::UpdateAccessToken { name } => {
@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
             set_access_token(&pool, &name, &token).await?;
             println!(
                 "Successfully updated access token. New access token:\n{}",
-                token.as_ref(),
+                token.as_unmasked_str(),
             );
         }
         Command::Migrate => {

@@ -64,17 +64,17 @@ impl Client {
     {
         let url = self.server_url.join(R::PATH)?;
         let body = bincode::serialize(&request)?;
-        ok_or_retry(|| async {
+        let bytes = ok_or_retry(|| async {
             let mut request = self
                 .reqwest
                 .request(Method::POST, url.clone())
-                .bearer_auth(self.token.as_ref())
+                .bearer_auth(self.token.as_unmasked_str())
                 .body(body.clone());
             if let Some(timeout) = timeout {
                 request = request.timeout(timeout);
             }
 
-            let response = request
+            request
                 .send()
                 .await
                 .map_err(RequestError::transport)?
@@ -82,12 +82,11 @@ impl Client {
                 .map_err(RequestError::application)?
                 .bytes()
                 .await
-                .map_err(RequestError::transport)?;
-            bincode::deserialize::<Result<R::Response, String>>(&response)
-                .map_err(RequestError::application)?
-                .map_err(|msg| RequestError::Application(format_err!("server error: {msg}")))
+                .map_err(RequestError::transport)
         })
-        .await
+        .await?;
+        bincode::deserialize::<Result<_, String>>(&bytes)?
+            .map_err(|msg| format_err!("server error: {msg}"))
     }
 
     pub async fn request<R>(&self, request: &R) -> Result<R::Response>
@@ -111,7 +110,7 @@ impl Client {
                 this.reqwest
                     .request(Method::POST, this.server_url.join(R::PATH)?)
                     .timeout(Duration::from_secs(3600 * 24))
-                    .bearer_auth(this.token.as_ref())
+                    .bearer_auth(this.token.as_unmasked_str())
                     .body(request?)
                     .send(),
             )
@@ -160,7 +159,7 @@ impl Client {
             self.reqwest
                 .put(url.clone())
                 .timeout(upload_timeout(size))
-                .bearer_auth(self.token.as_ref())
+                .bearer_auth(self.token.as_unmasked_str())
                 .header(CONTENT_LENGTH, size)
                 .body(Body::wrap_stream(
                     stream_file(encrypted_file.clone()).map(io::Result::Ok),
@@ -207,13 +206,15 @@ where
     let mut attempt = 0;
     loop {
         attempt += 1;
-        let err = match f().await {
+        let transport_err = match f().await {
             Ok(x) => break Ok(x),
             Err(RequestError::Application(err)) => break Err(err),
-            Err(RequestError::Transport(err)) if attempt >= NUM_RETRIES => break Err(err),
             Err(RequestError::Transport(err)) => err,
         };
-        warn!(error = %err, attempt, "transport failed, will retry");
+        if attempt >= NUM_RETRIES {
+            break Err(transport_err);
+        }
+        warn!(error = %transport_err, attempt, "transport failed, will retry");
         sleep(RETRY_PERIOD).await;
     }
 }

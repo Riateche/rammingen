@@ -1,24 +1,30 @@
-use std::{borrow::Cow, fmt::Display, str::FromStr};
+use std::{
+    borrow::Cow,
+    fmt::{self, Debug, Display},
+    str::FromStr,
+};
 
 use aes_siv::{Aes256SivAead, KeyInit};
-use anyhow::{ensure, format_err, Error};
+use anyhow::{bail, ensure, format_err, Error};
 use base64::display::Base64Display;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use derivative::Derivative;
 use derive_more::AsRef;
 use generic_array::{typenum::U64, GenericArray};
 use rand::{distributions::Alphanumeric, distributions::DistString, rngs::OsRng};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Clone, AsRef, Derivative, Deserialize, Serialize)]
-#[derivative(Debug)]
-pub struct AccessToken(#[derivative(Debug = "ignore")] String);
+#[derive(Clone, Deserialize, Serialize)]
+pub struct AccessToken(String);
 
 const ACCESS_TOKEN_LENGTH: usize = 64;
 
 impl AccessToken {
     pub fn generate() -> Self {
         Self(Alphanumeric.sample_string(&mut OsRng, ACCESS_TOKEN_LENGTH))
+    }
+
+    pub fn as_unmasked_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -31,13 +37,21 @@ impl FromStr for AccessToken {
             "invalid length; got {}, expected {ACCESS_TOKEN_LENGTH}",
             s.len(),
         );
+        if let Some(c) = s.chars().find(|c| !c.is_ascii_alphanumeric()) {
+            bail!("must be alphanumeric but contains invalid character `{c}`");
+        }
         Ok(Self(s.to_owned()))
     }
 }
 
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
-pub struct EncryptionKey(#[derivative(Debug = "ignore")] GenericArray<u8, U64>);
+impl Debug for AccessToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AccessToken").finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct EncryptionKey(GenericArray<u8, U64>);
 
 impl EncryptionKey {
     pub fn generate() -> Self {
@@ -48,9 +62,7 @@ impl EncryptionKey {
         &self.0
     }
 
-    /// We intentionally don't implement `Display` on `Self` to prevent accidental
-    /// encryption key disclosure (in logs, etc).
-    pub fn fmt(&self) -> impl Display + '_ {
+    pub fn display_unmasked(&self) -> impl Display + '_ {
         Base64Display::new(self.0.as_ref(), &BASE64_URL_SAFE_NO_PAD)
     }
 }
@@ -80,5 +92,44 @@ impl FromStr for EncryptionKey {
             format_err!("invalid length; got {}, expected {KEY_LENGTH}", bytes.len())
         })?;
         Ok(Self(array.into()))
+    }
+}
+
+impl Debug for EncryptionKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptionKey").finish()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn access_token_from_str() {
+        static TOKEN: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab";
+        assert_eq!(
+            AccessToken::from_str(TOKEN).unwrap().as_unmasked_str(),
+            TOKEN,
+        );
+        assert!(AccessToken::from_str("").is_err());
+        assert!(AccessToken::from_str(&TOKEN[1..]).is_err());
+        assert!(AccessToken::from_str(&format!("{TOKEN}c")).is_err());
+        assert!(AccessToken::from_str(&format!("{}:", &TOKEN[1..])).is_err());
+    }
+
+    #[test]
+    fn encryption_key_from_str() {
+        static KEY: &str = "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg";
+        assert_eq!(
+            EncryptionKey::from_str(KEY)
+                .unwrap()
+                .display_unmasked()
+                .to_string(),
+            KEY,
+        );
+        assert!(EncryptionKey::from_str("").is_err());
+        assert!(EncryptionKey::from_str("qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo").is_err());
+        assert!(EncryptionKey::from_str(&format!("{KEY}:")).is_err());
     }
 }
