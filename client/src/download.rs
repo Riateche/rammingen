@@ -23,7 +23,7 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-use rammingen_sdk::content::{ContentHandle, EntryVersionHandle, LocalEntryInfo};
+use rammingen_sdk::content::{DecryptedContentHead, DecryptedEntryVersion, LocalEntry};
 
 use crate::{path::SanitizedLocalPath, rules::Rules, term::set_status, Ctx};
 
@@ -68,7 +68,7 @@ pub async fn download_version(
         });
         let mut any = false;
         while let Some(entry) = response_stream.try_next().await? {
-            let entry = EntryVersionHandle::new(entry.data, &ctx.cipher)?;
+            let entry = DecryptedEntryVersion::new(entry.data, &ctx.cipher)?;
             any = true;
             y.send(Ok(entry)).await;
         }
@@ -127,7 +127,7 @@ pub async fn download(
     root_local_path: &SanitizedLocalPath,
     rules: &mut Rules,
     is_mount: bool,
-    versions: impl Stream<Item = Result<EntryVersionHandle>>,
+    versions: impl Stream<Item = Result<DecryptedEntryVersion>>,
     dry_run: bool,
 ) -> Result<bool> {
     interrupt_on_error(|error_sender| async move {
@@ -176,7 +176,7 @@ pub async fn download(
 
 async fn download_inner(
     ctx: &mut DownloadContext<'_>,
-    versions: impl Stream<Item = Result<EntryVersionHandle>>,
+    versions: impl Stream<Item = Result<DecryptedEntryVersion>>,
 ) -> Result<bool> {
     tokio::pin!(versions);
     if ctx.is_mount {
@@ -330,7 +330,7 @@ impl Drop for TmpGuard {
 struct DownloadFileTask {
     local_path: SanitizedLocalPath,
     root_local_path: SanitizedLocalPath,
-    content: ContentHandle,
+    content: DecryptedContentHead,
     sender: oneshot::Sender<TmpGuard>,
 }
 
@@ -395,8 +395,8 @@ async fn finalize_download_task(
 }
 
 struct FinalizeDownloadTaskItem {
-    entry: EntryVersionHandle,
-    db_data: Option<LocalEntryInfo>,
+    entry: DecryptedEntryVersion,
+    db_data: Option<LocalEntry>,
     local_path: SanitizedLocalPath,
     must_delete: bool,
     file_receiver: Option<oneshot::Receiver<TmpGuard>>,
@@ -434,7 +434,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
             create_dir(&item.local_path)?;
             ctx.db.set_local_entry(
                 &item.local_path,
-                &LocalEntryInfo {
+                &LocalEntry {
                     kind,
                     content: None,
                 },
@@ -481,7 +481,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 .fetch_add(content.encrypted_size, Ordering::SeqCst);
             ctx.db.set_local_entry(
                 &item.local_path,
-                &LocalEntryInfo {
+                &LocalEntry {
                     kind,
                     content: Some(content),
                 },
