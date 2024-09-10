@@ -16,7 +16,7 @@ use tempfile::SpooledTempFile;
 
 use rammingen_protocol::ContentHash;
 
-use crate::{content::EncryptedFileData, crypto::Cipher};
+use crate::{content::EncryptedFileHead, crypto::Cipher};
 
 /// Max size of encrypted file content that will be stored in memory.
 /// Files exceeding this limit will be stored as a temporary file on disk.
@@ -227,7 +227,7 @@ impl<'a, W: Write> Write for DecryptingWriter<'a, W> {
     }
 }
 
-pub fn encrypt_file(path: impl AsRef<Path>, cipher: &Cipher) -> Result<EncryptedFileData> {
+pub fn encrypt_file(path: impl AsRef<Path>, cipher: &Cipher) -> Result<EncryptedFileHead> {
     let mut input_file = File::open(path.as_ref())?;
     let output = SpooledTempFile::new(MAX_IN_MEMORY);
     let encryptor = EncryptingWriter::new(output, cipher)?;
@@ -237,7 +237,7 @@ pub fn encrypt_file(path: impl AsRef<Path>, cipher: &Cipher) -> Result<Encrypted
     let (encoder, hash, original_size) = hasher.finish()?;
     let encryptor = encoder.finish()?;
     let (file, encrypted_size) = encryptor.finish()?;
-    Ok(EncryptedFileData {
+    Ok(EncryptedFileHead {
         file,
         hash,
         original_size,

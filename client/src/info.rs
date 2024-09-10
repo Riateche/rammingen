@@ -12,7 +12,7 @@ use rammingen_protocol::{
 };
 use tracing::{error, info};
 
-use rammingen_sdk::content::EntryVersionHandle;
+use rammingen_sdk::content::DecryptedEntryVersion;
 
 use crate::{
     path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules, upload::to_archive_path,
@@ -129,7 +129,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
         .stream(&GetDirectChildEntries(ctx.cipher.encrypt_path(path)?));
 
     while let Some(entry) = stream.try_next().await? {
-        entries.push(EntryVersionHandle::new(entry.data, &ctx.cipher)?);
+        entries.push(DecryptedEntryVersion::new(entry.data, &ctx.cipher)?);
     }
     // already sorted by path, so we use stable sort
     entries.sort_by_key(|entry| match &entry.kind {
@@ -180,7 +180,7 @@ fn pretty_time(value: DateTimeUtc) -> impl Display {
     local.format(DATE_TIME_FORMAT)
 }
 
-fn pretty_status(data: &EntryVersionHandle) -> Result<String> {
+fn pretty_status(data: &DecryptedEntryVersion) -> Result<String> {
     let text = if let Some(kind) = data.kind {
         match kind {
             EntryKind::File => {
@@ -224,7 +224,7 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
     }
     table.add_row(header);
     while let Some(item) = stream.try_next().await? {
-        let data = EntryVersionHandle::new(item.data, &ctx.cipher)?;
+        let data = DecryptedEntryVersion::new(item.data, &ctx.cipher)?;
         let recorded_at = pretty_time(data.recorded_at);
         let status = pretty_status(&data)?;
         let trigger = format!("{:?}", data.record_trigger);

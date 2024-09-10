@@ -10,7 +10,7 @@ use tempfile::SpooledTempFile;
 use crate::crypto::Cipher;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContentHandle {
+pub struct DecryptedContentHead {
     pub modified_at: DateTimeUtc,
     pub original_size: u64,
     pub encrypted_size: u64,
@@ -19,13 +19,13 @@ pub struct ContentHandle {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LocalEntryInfo {
+pub struct LocalEntry {
     pub kind: EntryKind,
-    pub content: Option<ContentHandle>,
+    pub content: Option<DecryptedContentHead>,
 }
 
-impl LocalEntryInfo {
-    pub fn is_same_as_entry(&self, other: &EntryVersionHandle) -> bool {
+impl LocalEntry {
+    pub fn is_same_as_entry(&self, other: &DecryptedEntryVersion) -> bool {
         if Some(self.kind) != other.kind {
             return false;
         }
@@ -69,16 +69,16 @@ impl LocalEntryInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EntryVersionHandle {
+pub struct DecryptedEntryVersion {
     pub path: ArchivePath,
     pub recorded_at: DateTimeUtc,
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
-    pub content: Option<ContentHandle>,
+    pub content: Option<DecryptedContentHead>,
 }
 
-impl EntryVersionHandle {
+impl DecryptedEntryVersion {
     pub fn new(data: EntryVersionData, cipher: &Cipher) -> Result<Self> {
         Ok(Self {
             path: cipher.decrypt_path(&data.path)?,
@@ -87,7 +87,7 @@ impl EntryVersionHandle {
             record_trigger: data.record_trigger,
             kind: data.kind,
             content: if let Some(content) = data.content {
-                Some(ContentHandle {
+                Some(DecryptedContentHead {
                     modified_at: content.modified_at,
                     original_size: cipher.decrypt_size(&content.original_size)?,
                     encrypted_size: content.encrypted_size,
@@ -101,7 +101,7 @@ impl EntryVersionHandle {
     }
 }
 
-pub struct EncryptedFileData {
+pub struct EncryptedFileHead {
     pub file: SpooledTempFile,
     pub hash: ContentHash,
     pub original_size: u64,

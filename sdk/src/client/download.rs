@@ -6,9 +6,9 @@ use reqwest::{header::CONTENT_LENGTH, Response};
 use tokio::{task::block_in_place, time::timeout};
 use tracing::instrument;
 
-use super::{ok_or_retry, Client, RequestError, DEFAULT_TIMEOUT};
+use super::{ok_or_retry, Client, RequestError, DEFAULT_TIMEOUT, RESPONSE_TIMEOUT};
 use crate::{
-    content::ContentHandle,
+    content::DecryptedContentHead,
     crypto::{Cipher, DecryptingWriter},
 };
 
@@ -16,7 +16,7 @@ impl Client {
     #[instrument(skip_all, fields(?path, ?handle))]
     pub async fn download_and_decrypt(
         &self,
-        handle: &ContentHandle,
+        handle: &DecryptedContentHead,
         path: impl AsRef<Path> + Debug,
         cipher: &Cipher,
     ) -> Result<()> {
@@ -60,7 +60,7 @@ impl Client {
 
     async fn content(
         &self,
-        handle: &ContentHandle,
+        handle: &DecryptedContentHead,
         cipher: &Cipher,
     ) -> Result<Response, RequestError> {
         let url = cipher
@@ -72,7 +72,7 @@ impl Client {
             self.reqwest
                 .get(url)
                 .bearer_auth(self.token.as_unmasked_str())
-                .timeout(DEFAULT_TIMEOUT)
+                .timeout(RESPONSE_TIMEOUT)
                 .send(),
         )
         .await

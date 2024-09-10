@@ -21,7 +21,7 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use rammingen_sdk::{
-    content::{ContentHandle, EncryptedFileData, LocalEntryInfo},
+    content::{DecryptedContentHead, EncryptedFileHead, LocalEntry},
     crypto::encrypt_file,
 };
 
@@ -260,7 +260,7 @@ fn upload_inner<'a>(
                     );
                 }
 
-                let current_content = ContentHandle {
+                let current_content = DecryptedContentHead {
                     modified_at: modified_datetime,
                     original_size: file_data.original_size,
                     encrypted_size: file_data.encrypted_size,
@@ -344,7 +344,7 @@ fn upload_inner<'a>(
                         },
                     },
                     local_path: local_path.clone(),
-                    local_entry_info: LocalEntryInfo { kind, content },
+                    local_entry_info: LocalEntry { kind, content },
                 };
                 ctx.add_versions_sender
                     .send((item, oneshot_receiver))
@@ -388,7 +388,7 @@ fn upload_inner<'a>(
 struct ContentUploadTaskItem {
     hash: ContentHash,
     local_path: SanitizedLocalPath,
-    file_data: EncryptedFileData,
+    file_data: EncryptedFileHead,
     sender: oneshot::Sender<()>,
 }
 
@@ -443,7 +443,7 @@ struct AddVersionsTaskItem {
     is_mount: bool,
     version: AddVersion,
     local_path: SanitizedLocalPath,
-    local_entry_info: LocalEntryInfo,
+    local_entry_info: LocalEntry,
 }
 
 async fn add_versions_task(

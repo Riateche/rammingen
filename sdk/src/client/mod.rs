@@ -35,6 +35,8 @@ pub struct Client {
 }
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Loading large files may take a long time.
+pub const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3600 * 24);
 
 pub fn upload_timeout(upload_size: u64) -> Duration {
     DEFAULT_TIMEOUT + Duration::from_micros(upload_size)
@@ -109,7 +111,7 @@ impl Client {
                 DEFAULT_TIMEOUT,
                 this.reqwest
                     .request(Method::POST, this.server_url.join(R::PATH)?)
-                    .timeout(Duration::from_secs(3600 * 24))
+                    .timeout(RESPONSE_TIMEOUT)
                     .bearer_auth(this.token.as_unmasked_str())
                     .body(request?)
                     .send(),
