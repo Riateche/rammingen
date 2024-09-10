@@ -20,10 +20,7 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
-use rammingen_sdk::{
-    content::{DecryptedContentHead, EncryptedFileHead, LocalEntry},
-    crypto::encrypt_file,
-};
+use rammingen_sdk::content::{DecryptedContentHead, EncryptedFileHead, LocalEntry};
 
 use crate::{
     config::MountPoint,
@@ -250,7 +247,7 @@ fn upload_inner<'a>(
             });
 
             if maybe_changed {
-                let file_data = block_in_place(|| encrypt_file(local_path, &ctx.ctx.cipher))?;
+                let file_data = block_in_place(|| ctx.ctx.cipher.encrypt_file(local_path))?;
 
                 let final_modified = fs::symlink_metadata(local_path)?.modified()?;
                 if final_modified != modified {

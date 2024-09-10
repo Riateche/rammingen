@@ -29,4 +29,4 @@ mod cipher;
 mod io;
 
 pub use cipher::Cipher;
-pub use io::{encrypt_file, DecryptingWriter};
+pub use io::DecryptingWriter;
