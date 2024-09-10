@@ -227,20 +227,22 @@ impl<'a, W: Write> Write for DecryptingWriter<'a, W> {
     }
 }
 
-pub fn encrypt_file(path: impl AsRef<Path>, cipher: &Cipher) -> Result<EncryptedFileHead> {
-    let mut input_file = File::open(path.as_ref())?;
-    let output = SpooledTempFile::new(MAX_IN_MEMORY);
-    let encryptor = EncryptingWriter::new(output, cipher)?;
-    let encoder = DeflateEncoder::new(encryptor, CompressionOptions::high());
-    let mut hasher = HashingWriter::new(encoder);
-    io::copy(&mut input_file, &mut hasher)?;
-    let (encoder, hash, original_size) = hasher.finish()?;
-    let encryptor = encoder.finish()?;
-    let (file, encrypted_size) = encryptor.finish()?;
-    Ok(EncryptedFileHead {
-        file,
-        hash,
-        original_size,
-        encrypted_size,
-    })
+impl Cipher {
+    pub fn encrypt_file(&self, path: impl AsRef<Path>) -> Result<EncryptedFileHead> {
+        let mut input_file = File::open(path.as_ref())?;
+        let output = SpooledTempFile::new(MAX_IN_MEMORY);
+        let encryptor = EncryptingWriter::new(output, self)?;
+        let encoder = DeflateEncoder::new(encryptor, CompressionOptions::high());
+        let mut hasher = HashingWriter::new(encoder);
+        io::copy(&mut input_file, &mut hasher)?;
+        let (encoder, hash, original_size) = hasher.finish()?;
+        let encryptor = encoder.finish()?;
+        let (file, encrypted_size) = encryptor.finish()?;
+        Ok(EncryptedFileHead {
+            file,
+            hash,
+            original_size,
+            encrypted_size,
+        })
+    }
 }

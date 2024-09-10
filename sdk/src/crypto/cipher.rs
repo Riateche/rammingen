@@ -127,7 +127,7 @@ mod test {
     use tempfile::NamedTempFile;
 
     use super::*;
-    use crate::crypto::{encrypt_file, DecryptingWriter};
+    use crate::crypto::DecryptingWriter;
 
     #[test]
     pub fn str_roundtrip() {
@@ -166,7 +166,7 @@ mod test {
         }
         file.flush().unwrap();
 
-        let mut encrypted_file = encrypt_file(file.path(), &cipher).unwrap();
+        let mut encrypted_file = cipher.encrypt_file(file.path()).unwrap();
         assert_eq!(encrypted_file.original_size, 20_000_000);
         println!(
             "encrypted size {}",
