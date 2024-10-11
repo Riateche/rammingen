@@ -9,7 +9,7 @@ use tempfile::SpooledTempFile;
 
 use crate::crypto::Cipher;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DecryptedContentHead {
     pub modified_at: DateTimeUtc,
     pub original_size: u64,
@@ -18,7 +18,7 @@ pub struct DecryptedContentHead {
     pub unix_mode: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LocalEntry {
     pub kind: EntryKind,
     pub content: Option<DecryptedContentHead>,

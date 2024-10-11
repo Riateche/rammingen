@@ -311,6 +311,10 @@ fn upload_inner<'a>(
             }
         };
 
+        let new_local_entry = LocalEntry {
+            kind,
+            content: content.clone(),
+        };
         if changed {
             if ctx.dry_run {
                 info!("Would upload {}", local_path);
@@ -341,7 +345,7 @@ fn upload_inner<'a>(
                         },
                     },
                     local_path: local_path.clone(),
-                    local_entry_info: LocalEntry { kind, content },
+                    local_entry_info: new_local_entry,
                 };
                 ctx.add_versions_sender
                     .send((item, oneshot_receiver))
@@ -351,6 +355,15 @@ fn upload_inner<'a>(
                     .counters
                     .queued_upload_entries
                     .fetch_add(1, Ordering::Relaxed);
+            }
+        } else if !ctx.dry_run {
+            if let Some(new_content) = &new_local_entry.content {
+                if let Some(old_content) = db_data.as_ref().and_then(|data| data.content.as_ref()) {
+                    if new_content.modified_at != old_content.modified_at {
+                        info!("updating modified_at in db for {}", local_path);
+                        ctx.ctx.db.set_local_entry(&local_path, &new_local_entry)?;
+                    }
+                }
             }
         }
         if is_dir {
