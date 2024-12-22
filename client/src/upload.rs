@@ -532,6 +532,6 @@ fn is_special_file(file_type: &FileType) -> bool {
 }
 
 #[cfg(not(unix))]
-fn is_special_file(file_type: &FileType) -> bool {
+fn is_special_file(_file_type: &FileType) -> bool {
     false
 }
