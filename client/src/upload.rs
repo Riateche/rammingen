@@ -9,6 +9,7 @@ use rammingen_protocol::{
 };
 use std::{
     collections::HashSet,
+    fs::FileType,
     mem,
     sync::{atomic::Ordering, Arc},
     time::Duration,
@@ -63,7 +64,13 @@ pub async fn find_local_deletions<'a>(
     let mut local_paths = Vec::new();
 
     for entry in ctx.db.get_all_local_entries().rev() {
-        let (local_path, _data) = entry?;
+        let (local_path, _data) = match entry {
+            Ok(r) => r,
+            Err(err) => {
+                warn!("couldn't load a local entry: {err}");
+                continue;
+            }
+        };
         if existing_paths.contains(&local_path) {
             continue;
         }
@@ -194,6 +201,10 @@ fn upload_inner<'a>(
         let _status = set_status(format!("Scanning local files: {}", local_path));
         ctx.existing_paths.insert(local_path.clone());
         let mut metadata = fs::symlink_metadata(local_path)?;
+        if is_special_file(&metadata.file_type()) {
+            info!("skipping special file: {}", local_path);
+            return Ok(());
+        }
         if metadata.is_symlink() {
             warn!("skipping symlink: {}", local_path);
             return Ok(());
@@ -508,4 +519,19 @@ async fn add_versions_batch(ctx: &Ctx, items: Vec<AddVersionsTaskItem>) -> Resul
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn is_special_file(file_type: &FileType) -> bool {
+    use std::os::unix::fs::FileTypeExt;
+
+    file_type.is_block_device()
+        || file_type.is_char_device()
+        || file_type.is_fifo()
+        || file_type.is_socket()
+}
+
+#[cfg(not(unix))]
+fn is_special_file(file_type: &FileType) -> bool {
+    false
 }

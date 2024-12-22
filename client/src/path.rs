@@ -45,7 +45,7 @@ fn canonicalize(path: &Path) -> Result<PathBuf> {
     // it can fail with a "not a directory" error if a parent path is a file.
     if path.exists() {
         if symlink_metadata(path)?.is_symlink() {
-            bail!("symlinks are not allowed");
+            bail!("symlinks are not allowed; path: {:?}", path);
         }
         return Ok(fs_err::canonicalize(path)?);
     }
