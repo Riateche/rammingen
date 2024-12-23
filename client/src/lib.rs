@@ -21,10 +21,11 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use cli::Cli;
 use config::Config;
-use counters::Counters;
+use counters::{FinalCounters, IntermediateCounters, NotificationCounters};
 use derivative::Derivative;
 use download::{download_latest, download_version};
 use info::{list_versions, pretty_size};
+use notify_rust::Notification;
 use rammingen_protocol::{
     endpoints::{CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion},
     util::log_writer,
@@ -38,7 +39,7 @@ use std::{
 };
 use sync::sync;
 use term::TermLayer;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
 };
@@ -52,7 +53,8 @@ pub struct Ctx {
     #[derivative(Debug = "ignore")]
     pub cipher: Cipher,
     pub db: crate::db::Db,
-    pub counters: Counters,
+    pub final_counters: FinalCounters,
+    pub intermediate_counters: IntermediateCounters,
 }
 
 pub async fn run(cli: Cli, config: Config) -> Result<()> {
@@ -67,12 +69,16 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         cipher: Cipher::new(&config.encryption_key),
         config,
         db: crate::db::Db::open(&local_db_path)?,
-        counters: Counters::default(),
+        final_counters: Default::default(),
+        intermediate_counters: Default::default(),
     });
 
     let dry_run = cli.command == cli::Command::DryRun;
     let result = handle_command(cli, &ctx).await;
-    ctx.counters.report(dry_run, &ctx);
+    info!(
+        "{}",
+        NotificationCounters::from(&ctx.final_counters).report(dry_run, &ctx)
+    );
     result
 }
 
@@ -198,4 +204,10 @@ pub fn setup_logger(log_file: Option<PathBuf>, log_filter: String) -> Result<()>
         .with(TermLayer)
         .init();
     Ok(())
+}
+
+pub fn show_notification(title: &str, text: &str) {
+    if let Err(err) = Notification::new().summary(title).body(text).show() {
+        warn!("failed to show notification: {err}");
+    }
 }

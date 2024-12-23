@@ -19,12 +19,6 @@ async fn main() {
 }
 
 async fn try_main() -> Result<()> {
-    notify_rust::Notification::new()
-        .summary("Firefox News")
-        .body("This will almost look like a real firefox notification.")
-        .icon("firefox")
-        .show()?;
-
     let cli = Cli::parse();
     if cli.command == Command::GenerateEncryptionKey {
         let key = EncryptionKey::generate();

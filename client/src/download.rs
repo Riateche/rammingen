@@ -161,10 +161,13 @@ pub async fn download(
         drop(ctx);
         let _status = set_status_updater(move || {
             let queued = ctx2
-                .counters
+                .intermediate_counters
                 .queued_download_entries
                 .load(Ordering::Relaxed);
-            let unqueued = ctx2.counters.downloaded_entries.load(Ordering::Relaxed);
+            let unqueued = ctx2
+                .final_counters
+                .downloaded_entries
+                .load(Ordering::Relaxed);
             format!("Downloading ({} / {} entries)", unqueued, queued)
         });
         content_upload_task.await?;
@@ -212,7 +215,7 @@ async fn download_inner(
                     info!("Deleted {}", entry_local_path);
                 }
                 ctx.ctx
-                    .counters
+                    .final_counters
                     .deleted_entries
                     .fetch_add(1, Ordering::SeqCst);
             }
@@ -256,7 +259,7 @@ async fn download_inner(
             info!("Would download {}", entry_local_path);
             if let Some(content) = &entry.content {
                 ctx.ctx
-                    .counters
+                    .final_counters
                     .downloaded_bytes
                     .fetch_add(content.encrypted_size, Ordering::SeqCst);
             }
@@ -295,7 +298,7 @@ async fn download_inner(
                 })
                 .await;
             ctx.ctx
-                .counters
+                .intermediate_counters
                 .queued_download_entries
                 .fetch_add(1, Ordering::SeqCst);
         }
@@ -476,7 +479,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
             }
 
             content.modified_at = fs_err::metadata(&item.local_path)?.modified()?.into();
-            ctx.counters
+            ctx.final_counters
                 .downloaded_bytes
                 .fetch_add(content.encrypted_size, Ordering::SeqCst);
             ctx.db.set_local_entry(
@@ -489,7 +492,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
         }
     }
     info!("Downloaded {}", item.local_path);
-    ctx.counters
+    ctx.final_counters
         .downloaded_entries
         .fetch_add(1, Ordering::SeqCst);
     Ok(())

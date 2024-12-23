@@ -162,6 +162,8 @@ async fn try_main() -> Result<()> {
             log_file: None,
             log_filter: String::new(),
             warn_about_files_larger_than: "50 MB".parse().unwrap(),
+            enable_desktop_notifications: false,
+            desktop_notification_interval: Default::default(),
         };
         let config_path = client_dir.join("rammingen.conf");
         write(&config_path, json5::to_string(&config)?)?;

@@ -1,16 +1,33 @@
 use std::{collections::HashSet, sync::Arc};
 
 use crate::{
+    counters::NotificationCounters,
     download::download_latest,
     pull_updates::pull_updates,
     rules::Rules,
+    show_notification,
     upload::{find_local_deletions, upload},
     Ctx,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
+use chrono::{TimeDelta, Utc};
+use humantime::format_duration;
 use itertools::Itertools;
+use tracing::warn;
 
 pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
+    sync_inner(ctx, dry_run).await.inspect_err(|err| {
+        if ctx.config.enable_desktop_notifications {
+            if dry_run {
+                show_notification("rammingen dry run failed", &err.to_string());
+            } else {
+                show_notification("rammingen dry run failed", &err.to_string());
+            }
+        }
+    })
+}
+
+async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     let mut existing_paths = HashSet::new();
     let mut mount_points = ctx
         .config
@@ -52,6 +69,41 @@ pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
             dry_run,
         )
         .await?;
+    }
+    if ctx.config.enable_desktop_notifications {
+        if dry_run {
+            let report = NotificationCounters::from(&ctx.final_counters).report(dry_run, &ctx);
+            show_notification("rammingen dry run complete", &report);
+        } else {
+            let mut stats = ctx
+                .db
+                .notification_stats()
+                .inspect_err(|err| {
+                    warn!("failed to load notification stats from db: {err}");
+                })
+                .unwrap_or_default();
+            stats.pending_counters += NotificationCounters::from(&ctx.final_counters);
+            let now = Utc::now();
+            let desktop_notification_interval =
+                TimeDelta::from_std(ctx.config.desktop_notification_interval)
+                    .context("config.desktop_notification_interval out of range")?;
+            let show = stats.last_notified_at.map_or(true, |last_notified_at| {
+                (now - last_notified_at) > desktop_notification_interval
+            });
+            if show {
+                show_notification(
+                    "rammingen sync complete",
+                    &format!(
+                        "Stats for the last {}\n{}",
+                        format_duration(ctx.config.desktop_notification_interval),
+                        stats.pending_counters.report(dry_run, ctx)
+                    ),
+                );
+                stats.last_notified_at = Some(now);
+                stats.pending_counters = NotificationCounters::default();
+            }
+            ctx.db.set_notification_stats(&stats)?;
+        }
     }
     Ok(())
 }

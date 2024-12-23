@@ -2358,6 +2358,8 @@ dependencies = [
  "futures",
  "generic-array",
  "hex",
+ "humantime",
+ "humantime-serde",
  "itertools",
  "json5",
  "mac-notification-sys",
@@ -2369,6 +2371,7 @@ dependencies = [
  "rammingen_sdk",
  "regex",
  "serde",
+ "serde_json",
  "serde_regex",
  "sha2",
  "sled",
@@ -2815,11 +2818,12 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.96"
+version = "1.0.134"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "057d394a50403bcac12672b2b18fb387ab6d289d957dab67dd201875391e52f1"
+checksum = "d00f4175c42ee48b15416f6193a959ba3a0d67fc699a0db9ad12df9f83991c7d"
 dependencies = [
  "itoa",
+ "memchr",
  "ryu",
  "serde",
 ]

@@ -1,14 +1,16 @@
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LE};
-use rammingen_protocol::{ArchivePath, EntryKind, EntryUpdateNumber};
+use rammingen_protocol::{ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber};
+use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
 use std::{fmt::Debug, io, iter, path::Path, str};
 
 use rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry};
 
-use crate::path::SanitizedLocalPath;
+use crate::{counters::NotificationCounters, path::SanitizedLocalPath};
 
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
+const KEY_NOTIFICATION_STATS: [u8; 4] = [0, 0, 0, 2];
 
 pub struct Db {
     #[allow(dead_code)]
@@ -107,6 +109,20 @@ impl Db {
         Ok(())
     }
 
+    pub fn notification_stats(&self) -> Result<NotificationStats> {
+        if let Some(value) = self.db.get(KEY_NOTIFICATION_STATS)? {
+            Ok(serde_json::from_slice(&value)?)
+        } else {
+            Ok(NotificationStats::default())
+        }
+    }
+
+    pub fn set_notification_stats(&self, value: &NotificationStats) -> Result<()> {
+        self.db
+            .insert(KEY_NOTIFICATION_STATS, serde_json::to_vec(value)?)?;
+        Ok(())
+    }
+
     pub fn get_all_local_entries(
         &self,
     ) -> impl DoubleEndedIterator<Item = Result<(SanitizedLocalPath, LocalEntry)>> {
@@ -139,4 +155,10 @@ impl Db {
 
 fn into_abort_err(e: impl Debug) -> ConflictableTransactionError<io::Error> {
     ConflictableTransactionError::Abort(io::Error::new(io::ErrorKind::Other, format!("{e:?}")))
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NotificationStats {
+    pub last_notified_at: Option<DateTimeUtc>,
+    pub pending_counters: NotificationCounters,
 }

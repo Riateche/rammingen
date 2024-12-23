@@ -83,7 +83,7 @@ pub async fn find_local_deletions<'a>(
         }
         if dry_run {
             info!("Would record deletion of {}", local_path);
-            ctx.counters
+            ctx.final_counters
                 .uploaded_entries
                 .fetch_add(1, Ordering::Relaxed);
         } else {
@@ -120,7 +120,7 @@ async fn record_deletion_batch(
     }
     for (local_path, response) in local_paths.drain(..).zip(results) {
         if response.added {
-            ctx.counters
+            ctx.final_counters
                 .uploaded_entries
                 .fetch_add(1, Ordering::Relaxed);
             info!("Recorded deletion of {}", local_path);
@@ -168,9 +168,12 @@ pub async fn upload(
         upload_inner(&mut ctx, local_path, archive_path).await?;
         drop(ctx);
         let _status = set_status_updater(move || {
-            let queued = ctx2.counters.queued_upload_entries.load(Ordering::Relaxed);
+            let queued = ctx2
+                .intermediate_counters
+                .queued_upload_entries
+                .load(Ordering::Relaxed);
             let unqueued = ctx2
-                .counters
+                .intermediate_counters
                 .unqueued_upload_entries
                 .load(Ordering::Relaxed);
             format!("Uploading ({} / {} entries)", unqueued, queued)
@@ -330,7 +333,7 @@ fn upload_inner<'a>(
             if ctx.dry_run {
                 info!("Would upload {}", local_path);
                 ctx.ctx
-                    .counters
+                    .final_counters
                     .uploaded_entries
                     .fetch_add(1, Ordering::Relaxed);
             } else {
@@ -363,7 +366,7 @@ fn upload_inner<'a>(
                     .await
                     .map_err(|_| anyhow!("failed to send item to add version task"))?;
                 ctx.ctx
-                    .counters
+                    .intermediate_counters
                     .queued_upload_entries
                     .fetch_add(1, Ordering::Relaxed);
             }
@@ -453,7 +456,7 @@ async fn content_upload_item_task(ctx: Arc<Ctx>, item: ContentUploadTaskItem) ->
     ctx.client
         .upload(&encrypted_hash, item.file_data.file)
         .await?;
-    ctx.counters
+    ctx.final_counters
         .uploaded_bytes
         .fetch_add(item.file_data.encrypted_size, Ordering::SeqCst);
     let _ = item.sender.send(());
@@ -502,13 +505,13 @@ async fn add_versions_batch(ctx: &Ctx, items: Vec<AddVersionsTaskItem>) -> Resul
         bail!("invalid item count in AddVersions response");
     }
 
-    ctx.counters
+    ctx.intermediate_counters
         .unqueued_upload_entries
         .fetch_add(items.len() as u64, Ordering::Relaxed);
 
     for (result, item) in results.into_iter().zip(items) {
         if result.added {
-            ctx.counters
+            ctx.final_counters
                 .uploaded_entries
                 .fetch_add(1, Ordering::Relaxed);
             info!("Uploaded {}", item.local_path);

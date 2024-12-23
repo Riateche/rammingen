@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use byte_unit::Byte;
+use humantime::parse_duration;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -34,9 +35,23 @@ pub struct Config {
     pub log_file: Option<PathBuf>,
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
-
     #[serde(default = "default_warn_about_files_larger_than")]
     pub warn_about_files_larger_than: Byte,
+    #[serde(default = "true_")]
+    pub enable_desktop_notifications: bool,
+    #[serde(
+        with = "humantime_serde",
+        default = "default_desktop_notification_interval"
+    )]
+    pub desktop_notification_interval: Duration,
+}
+
+fn true_() -> bool {
+    true
+}
+
+fn default_desktop_notification_interval() -> Duration {
+    parse_duration("1hour").unwrap()
 }
 
 fn default_log_filter() -> String {
