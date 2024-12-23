@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use clap::Parser;
 use tracing::error;
@@ -6,7 +6,7 @@ use tracing::error;
 use rammingen_protocol::credentials::EncryptionKey;
 
 use rammingen::{
-    cli::{Cli, Command},
+    cli::{default_config_path, Cli, Command},
     config::Config,
     setup_logger,
 };
@@ -29,8 +29,7 @@ async fn try_main() -> Result<()> {
     let config_path = if let Some(config) = &cli.config {
         config.clone()
     } else {
-        let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
-        config_dir.join("rammingen.conf")
+        default_config_path()?
     };
     let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
     setup_logger(config.log_file.clone(), config.log_filter.clone())?;

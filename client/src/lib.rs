@@ -19,7 +19,7 @@ use crate::{
     upload::upload,
 };
 use anyhow::{anyhow, bail, Result};
-use cli::Cli;
+use cli::{default_log_path, Cli};
 use config::Config;
 use counters::{FinalCounters, IntermediateCounters, NotificationCounters};
 use derivative::Derivative;
@@ -195,7 +195,11 @@ pub fn unix_mode(_metadata: &Metadata) -> Option<u32> {
 
 pub fn setup_logger(log_file: Option<PathBuf>, log_filter: String) -> Result<()> {
     // Defaults to stdout if `data_dir()` fails.
-    let log_file = log_file.or_else(|| dirs::data_dir().map(|dir| dir.join("rammingen.log")));
+    let log_file = log_file.or_else(|| {
+        default_log_path()
+            .inspect_err(|err| eprintln!("{err}"))
+            .ok()
+    });
     let fmt_layer =
         tracing_subscriber::fmt::layer().with_writer(Mutex::new(log_writer(log_file.as_deref())?));
     tracing_subscriber::registry()

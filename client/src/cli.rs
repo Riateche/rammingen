@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
 use clap::{Parser, Subcommand};
 use derive_more::{From, Into};
@@ -10,7 +10,7 @@ use crate::{info::DATE_TIME_FORMAT, path::SanitizedLocalPath};
 
 #[derive(Debug, Parser)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "File sync and backup utility")]
+#[command(about = about())]
 pub struct Cli {
     /// Path to config.
     ///
@@ -25,6 +25,24 @@ pub struct Cli {
     pub config: Option<PathBuf>,
     #[clap(subcommand)]
     pub command: Command,
+}
+
+fn display_path(path: anyhow::Result<PathBuf>) -> String {
+    match path {
+        Ok(path) => path.display().to_string(),
+        Err(err) => {
+            eprintln!("{err}");
+            "(error)".into()
+        }
+    }
+}
+
+fn about() -> String {
+    format!(
+        "File sync and backup utility\nDefault config location: {}\nDefault log location: {}",
+        display_path(default_config_path()),
+        display_path(default_log_path()),
+    )
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -100,4 +118,15 @@ impl FromStr for DateTimeArg {
                 .into(),
         ))
     }
+}
+
+pub fn default_config_path() -> anyhow::Result<PathBuf> {
+    let config_dir = dirs::config_dir().context("cannot find config dir")?;
+    Ok(config_dir.join("rammingen.conf"))
+}
+
+pub fn default_log_path() -> anyhow::Result<PathBuf> {
+    Ok(dirs::data_dir()
+        .context("cannot find data dir")?
+        .join("rammingen.log"))
 }
