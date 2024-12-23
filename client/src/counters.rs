@@ -33,6 +33,7 @@ pub struct NotificationCounters {
     pub uploaded_entries: u64,
     pub uploaded_large_files: u64,
     pub uploaded_bytes: u64,
+    pub completed_syncs: u64,
 }
 
 impl AddAssign for NotificationCounters {
@@ -43,12 +44,19 @@ impl AddAssign for NotificationCounters {
         self.uploaded_entries += rhs.uploaded_entries;
         self.uploaded_large_files += rhs.uploaded_large_files;
         self.uploaded_bytes += rhs.uploaded_bytes;
+        self.completed_syncs += rhs.completed_syncs;
     }
 }
 
 impl NotificationCounters {
-    pub fn report(&self, dry_run: bool, ctx: &Ctx) -> String {
+    pub fn report(&self, dry_run: bool, accumulated: bool, ctx: &Ctx) -> String {
         let mut output = Vec::new();
+        if accumulated {
+            output.push(format!(
+                "Total sync runs completed: {}",
+                self.completed_syncs
+            ));
+        }
         if self.uploaded_large_files > 0 {
             let size = pretty_size(ctx.config.warn_about_files_larger_than.get_bytes());
             if dry_run {
@@ -118,6 +126,7 @@ impl From<&FinalCounters> for NotificationCounters {
             uploaded_entries: counters.uploaded_entries.load(Ordering::Relaxed),
             uploaded_large_files: counters.uploaded_large_files.load(Ordering::Relaxed),
             uploaded_bytes: counters.uploaded_bytes.load(Ordering::Relaxed),
+            completed_syncs: 0,
         }
     }
 }

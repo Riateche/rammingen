@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use crate::{
     counters::NotificationCounters,
@@ -72,7 +72,8 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     }
     if ctx.config.enable_desktop_notifications {
         if dry_run {
-            let report = NotificationCounters::from(&ctx.final_counters).report(dry_run, &ctx);
+            let report =
+                NotificationCounters::from(&ctx.final_counters).report(dry_run, false, &ctx);
             show_notification("rammingen dry run complete", &report);
         } else {
             let mut stats = ctx
@@ -83,6 +84,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                 })
                 .unwrap_or_default();
             stats.pending_counters += NotificationCounters::from(&ctx.final_counters);
+            stats.pending_counters.completed_syncs += 1;
             let now = Utc::now();
             let desktop_notification_interval =
                 TimeDelta::from_std(ctx.config.desktop_notification_interval)
@@ -91,12 +93,21 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                 (now - last_notified_at) > desktop_notification_interval
             });
             if show {
+                let has_interval = ctx.config.desktop_notification_interval != Duration::ZERO;
+                let interval_str = if has_interval {
+                    format!(
+                        "Stats for the last {}:\n",
+                        format_duration(ctx.config.desktop_notification_interval),
+                    )
+                } else {
+                    "".to_string()
+                };
                 show_notification(
                     "rammingen sync complete",
                     &format!(
-                        "Stats for the last {}\n{}",
-                        format_duration(ctx.config.desktop_notification_interval),
-                        stats.pending_counters.report(dry_run, ctx)
+                        "{}{}",
+                        interval_str,
+                        stats.pending_counters.report(dry_run, has_interval, ctx)
                     ),
                 );
                 stats.last_notified_at = Some(now);

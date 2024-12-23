@@ -77,7 +77,7 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
     let result = handle_command(cli, &ctx).await;
     info!(
         "{}",
-        NotificationCounters::from(&ctx.final_counters).report(dry_run, &ctx)
+        NotificationCounters::from(&ctx.final_counters).report(dry_run, false, &ctx)
     );
     result
 }
@@ -211,7 +211,22 @@ pub fn setup_logger(log_file: Option<PathBuf>, log_filter: String) -> Result<()>
 }
 
 pub fn show_notification(title: &str, text: &str) {
+    #[cfg(target_os = "macos")]
+    init_notifications();
+
     if let Err(err) = Notification::new().summary(title).body(text).show() {
         warn!("failed to show notification: {err}");
     }
+}
+
+#[cfg(target_os = "macos")]
+fn init_notifications() {
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        if let Err(err) = notify_rust::set_application("com.rammingen.rammingen") {
+            warn!("failed to init notifications: {err}");
+        }
+    });
 }
