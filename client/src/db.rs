@@ -3,7 +3,8 @@ use byteorder::{ByteOrder, LE};
 use rammingen_protocol::{ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber};
 use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
-use std::{fmt::Debug, io, iter, path::Path, str};
+use std::{fmt::Debug, io, iter, path::Path, str, thread::sleep, time::Duration};
+use tracing::{info, warn};
 
 use rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry};
 
@@ -21,7 +22,23 @@ pub struct Db {
 
 impl Db {
     pub fn open(path: &Path) -> Result<Db> {
-        let db = sled::open(path)?;
+        let mut logged_error = false;
+        let db = loop {
+            match sled::open(path) {
+                Ok(db) => break db,
+                Err(err) => {
+                    if !logged_error {
+                        warn!("Failed to open database: {err}");
+                        info!("Retrying...");
+                        logged_error = true;
+                    }
+                    sleep(Duration::from_millis(100));
+                }
+            }
+        };
+        if logged_error {
+            info!("Opened database");
+        }
         Ok(Self {
             archive_entries: db.open_tree("archive_entries")?,
             local_entries: db.open_tree("local_entries")?,
