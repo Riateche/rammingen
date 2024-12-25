@@ -100,16 +100,21 @@ impl Rule {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use fs_err::canonicalize;
+    use once_cell::sync::Lazy;
+
     use super::*;
 
+    static TMP_PATH: Lazy<PathBuf> = Lazy::new(|| canonicalize("/tmp").unwrap());
+
     fn p(s: &str) -> SanitizedLocalPath {
-        SanitizedLocalPath::new(s).unwrap()
+        let path = TMP_PATH.join(s);
+        SanitizedLocalPath::new(&path).unwrap()
     }
     fn rules(rules: &str) -> Rules {
-        Rules::new(
-            &[&json5::from_str::<Vec<Rule>>(rules).unwrap()],
-            p("/tmp/1"),
-        )
+        Rules::new(&[&json5::from_str::<Vec<Rule>>(rules).unwrap()], p("1"))
     }
     fn i(rules: &mut Rules, path: &str) {
         assert!(!rules.matches(&p(path)).unwrap());
@@ -121,9 +126,9 @@ mod tests {
     #[test]
     fn empty() {
         let mut rules = rules(r#"[]"#);
-        i(&mut rules, "/tmp/1");
-        i(&mut rules, "/tmp/1/abc");
-        i(&mut rules, "/tmp/1/abc/def");
+        i(&mut rules, "1");
+        i(&mut rules, "1/abc");
+        i(&mut rules, "1/abc/def");
     }
 
     #[test]
@@ -134,46 +139,48 @@ mod tests {
             { name_matches: "\\..*" },
         ]"#,
         );
-        i(&mut rules, "/tmp/1");
-        e(&mut rules, "/tmp/1/abc");
-        e(&mut rules, "/tmp/1/.a");
-        i(&mut rules, "/tmp/1/abd");
-        e(&mut rules, "/tmp/1/other/abc");
-        e(&mut rules, "/tmp/1/other/.a");
-        i(&mut rules, "/tmp/1/other/abd");
-        e(&mut rules, "/tmp/1/abc/other");
-        e(&mut rules, "/tmp/1/.a/other");
-        i(&mut rules, "/tmp/1/abd/other");
+        i(&mut rules, "1");
+        e(&mut rules, "1/abc");
+        e(&mut rules, "1/.a");
+        i(&mut rules, "1/abd");
+        e(&mut rules, "1/other/abc");
+        e(&mut rules, "1/other/.a");
+        i(&mut rules, "1/other/abd");
+        e(&mut rules, "1/abc/other");
+        e(&mut rules, "1/.a/other");
+        i(&mut rules, "1/abd/other");
     }
 
     #[test]
     fn with_final() {
-        let mut rules = rules(
+        let mut rules = rules(&format!(
             r#"[
-            { name_equals: "target" },
-            { path_equals: "/tmp/1/target/2" },
+            {{ name_equals: "target" }},
+            {{ path_equals: "{}/1/target/2" }},
         ]"#,
-        );
-        i(&mut rules, "/tmp/1");
-        e(&mut rules, "/tmp/1/target");
-        e(&mut rules, "/tmp/1/target/2");
-        e(&mut rules, "/tmp/1/target/2/a");
+            TMP_PATH.to_str().unwrap()
+        ));
+        i(&mut rules, "1");
+        e(&mut rules, "1/target");
+        e(&mut rules, "1/target/2");
+        e(&mut rules, "1/target/2/a");
     }
 
     #[test]
     fn with_subdirs() {
-        let mut rules = rules(
+        let mut rules = rules(&format!(
             r#"[
-            { subdirs_of: { path: "/tmp/1/projects", except: ["p1", "p2"] } },
+            {{ subdirs_of: {{ path: "{}/1/projects", except: ["p1", "p2"] }} }},
         ]"#,
-        );
-        i(&mut rules, "/tmp/1");
-        i(&mut rules, "/tmp/1/projects");
-        i(&mut rules, "/tmp/1/projects/p1");
-        i(&mut rules, "/tmp/1/projects/p2");
-        e(&mut rules, "/tmp/1/projects/p3");
-        i(&mut rules, "/tmp/1/projects/p1/abc");
-        e(&mut rules, "/tmp/1/projects/p3/abc");
-        i(&mut rules, "/tmp/1/projects_2");
+            TMP_PATH.to_str().unwrap()
+        ));
+        i(&mut rules, "1");
+        i(&mut rules, "1/projects");
+        i(&mut rules, "1/projects/p1");
+        i(&mut rules, "1/projects/p2");
+        e(&mut rules, "1/projects/p3");
+        i(&mut rules, "1/projects/p1/abc");
+        e(&mut rules, "1/projects/p3/abc");
+        i(&mut rules, "1/projects_2");
     }
 }

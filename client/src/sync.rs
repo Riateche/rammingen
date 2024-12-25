@@ -21,7 +21,7 @@ pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
             if dry_run {
                 show_notification("rammingen dry run failed", &err.to_string());
             } else {
-                show_notification("rammingen dry run failed", &err.to_string());
+                show_notification("rammingen sync failed", &err.to_string());
             }
         }
     })
@@ -73,7 +73,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     if ctx.config.enable_desktop_notifications {
         if dry_run {
             let report =
-                NotificationCounters::from(&ctx.final_counters).report(dry_run, false, &ctx);
+                NotificationCounters::from(&ctx.final_counters).report(dry_run, false, ctx);
             show_notification("rammingen dry run complete", &report);
         } else {
             let mut stats = ctx

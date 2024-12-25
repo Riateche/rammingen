@@ -14,7 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --locked --all-targets --all-features
+      - run: |
+          cargo test --locked --all-targets --all-features
+          docker run --rm --name rammingen_autotest -e POSTGRES_HOST_AUTH_METHOD=trust -p 6123:5432 -d postgres:alpine
+          sleep 1
+          cargo run --release --bin rammingen_tests -- --database-url postgres://postgres@127.0.0.1:6123/ snapshot
 
   fmt:
     name: Formatting

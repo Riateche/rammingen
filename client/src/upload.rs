@@ -375,7 +375,7 @@ fn upload_inner<'a>(
                 if let Some(old_content) = db_data.as_ref().and_then(|data| data.content.as_ref()) {
                     if new_content.modified_at != old_content.modified_at {
                         info!("updating modified_at in db for {}", local_path);
-                        ctx.ctx.db.set_local_entry(&local_path, &new_local_entry)?;
+                        ctx.ctx.db.set_local_entry(local_path, &new_local_entry)?;
                     }
                 }
             }
