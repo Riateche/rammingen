@@ -2483,6 +2483,7 @@ dependencies = [
  "rammingen_protocol",
  "rammingen_server",
  "rand",
+ "rand_chacha",
  "reqwest",
  "sqlx",
  "tempfile",

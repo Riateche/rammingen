@@ -17,7 +17,8 @@ use fs_err::{
 use futures::future::pending;
 use portpicker::pick_unused_port;
 use rammingen_server::util::{add_source, migrate};
-use rand::{seq::SliceRandom, thread_rng, Rng};
+use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
+use rand_chacha::ChaCha12Rng;
 use reqwest::Url;
 use shuffle::{choose_path, random_content, random_name, shuffle};
 use sqlx::PgPool;
@@ -62,13 +63,15 @@ pub struct Cli {
     pub bind_addr: Option<SocketAddr>,
     #[clap(long)]
     pub server_url: Option<Url>,
+    #[clap(long)]
+    seed: Option<u64>,
     #[clap(subcommand)]
     pub command: Command,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    Random,
+    Shuffle,
     Snapshot,
     ServerOnly,
 }
@@ -104,11 +107,11 @@ async fn try_main() -> Result<()> {
             log_file: None,
             log_filter: String::new(),
             retain_detailed_history_for: match &cli.command {
-                Command::Random | Command::ServerOnly => Duration::from_secs(3600),
+                Command::Shuffle { .. } | Command::ServerOnly => Duration::from_secs(3600),
                 Command::Snapshot => Duration::from_secs(10),
             },
             snapshot_interval: match &cli.command {
-                Command::Random | Command::ServerOnly => Duration::from_secs(3600),
+                Command::Shuffle { .. } | Command::ServerOnly => Duration::from_secs(3600),
                 Command::Snapshot => Duration::from_secs(5),
             },
         };
@@ -175,9 +178,15 @@ async fn try_main() -> Result<()> {
         dir,
         archive_mount_path,
     };
+    let seed = cli.seed.unwrap_or_else(|| {
+        let v: u64 = thread_rng().gen();
+        info!("no seed provided, choosing random seed = {}", v);
+        v
+    });
+    let mut rng = ChaCha12Rng::seed_from_u64(seed);
     match cli.command {
-        Command::Random => test_random(ctx).await,
-        Command::Snapshot => test_snapshot(ctx).await,
+        Command::Shuffle => test_shuffle(ctx, &mut rng).await,
+        Command::Snapshot => test_snapshot(ctx, &mut rng).await,
         Command::ServerOnly => {
             info!("started server at {server_url}");
             pending().await
@@ -195,26 +204,28 @@ struct Context {
     archive_mount_path: ArchivePath,
 }
 
-async fn test_random(ctx: Context) -> Result<()> {
+async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
     let old_snapshot_path = ctx.dir.join("old_snapshot");
     let mut snapshot_time: Option<DateTime<Utc>> = None;
-    'outer: for _ in 0..1000 {
-        if thread_rng().gen_bool(0.2) {
+    let steps = 100;
+    'outer: for step in 1..=steps {
+        info!("Step {step} / {steps}");
+        if rng.gen_bool(0.2) {
             // mutate through server command
             let expected = ctx.dir.join("expected");
             if expected.exists() {
                 remove_dir_all_or_file(&expected)?;
             }
             copy_dir_all(&ctx.clients[0].mount_dir, &expected)?;
-            let client1 = ctx.clients.choose(&mut thread_rng()).unwrap();
-            match thread_rng().gen_range(0..=4) {
+            let client1 = ctx.clients.choose(rng).unwrap();
+            match rng.gen_range(0..=4) {
                 0 => {
                     // reset
                     let Some(snapshot_time_value) = snapshot_time else {
                         continue;
                     };
                     let local_path =
-                        choose_path(&old_snapshot_path, true, true, true, false)?.unwrap();
+                        choose_path(&old_snapshot_path, true, true, true, false, rng)?.unwrap();
                     if is_leftover_dir_with_ignored_files(&local_path)? {
                         continue;
                     }
@@ -252,14 +263,15 @@ async fn test_random(ctx: Context) -> Result<()> {
                     if path_for_upload.exists() {
                         remove_dir_all_or_file(&path_for_upload)?;
                     }
-                    if thread_rng().gen_bool(0.3) {
-                        write(&path_for_upload, random_content())?;
+                    if rng.gen_bool(0.3) {
+                        write(&path_for_upload, random_content(rng))?;
                     } else {
                         create_dir(&path_for_upload)?;
-                        shuffle(&path_for_upload)?;
+                        shuffle(&path_for_upload, rng)?;
                     }
-                    let parent_path = choose_path(&expected, false, true, true, false)?.unwrap();
-                    let path_in_expected = parent_path.join(random_name(false));
+                    let parent_path =
+                        choose_path(&expected, false, true, true, false, rng)?.unwrap();
+                    let path_in_expected = parent_path.join(random_name(false, rng));
                     if path_in_expected.exists() {
                         continue;
                     }
@@ -277,11 +289,12 @@ async fn test_random(ctx: Context) -> Result<()> {
                 }
                 2 => {
                     // move path
-                    let Some(path1) = choose_path(&expected, true, true, false, false)? else {
+                    let Some(path1) = choose_path(&expected, true, true, false, false, rng)? else {
                         continue;
                     };
-                    let path2_parent = choose_path(&expected, false, true, true, false)?.unwrap();
-                    let path2 = path2_parent.join(random_name(false));
+                    let path2_parent =
+                        choose_path(&expected, false, true, true, false, rng)?.unwrap();
+                    let path2 = path2_parent.join(random_name(false, rng));
                     if path2.exists() || path2.starts_with(&path1) {
                         continue;
                     }
@@ -294,7 +307,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                 }
                 3 => {
                     // remove path
-                    let Some(path1) = choose_path(&expected, true, true, false, false)? else {
+                    let Some(path1) = choose_path(&expected, true, true, false, false, rng)? else {
                         continue;
                     };
                     if is_leftover_dir_with_ignored_files(&path1)? {
@@ -307,12 +320,12 @@ async fn test_random(ctx: Context) -> Result<()> {
                 }
                 4 => {
                     // simultaneous edit of two mounts
-                    let two_clients: Vec<_> =
-                        ctx.clients.choose_multiple(&mut thread_rng(), 2).collect();
+                    let two_clients: Vec<_> = ctx.clients.choose_multiple(rng, 2).collect();
                     let mut chosen_paths = Vec::<(PathBuf, PathBuf)>::new();
                     info!("Checking simultaneous edit");
                     for client in &two_clients {
-                        let Some(path1) = choose_path(&client.mount_dir, true, true, false, false)?
+                        let Some(path1) =
+                            choose_path(&client.mount_dir, true, true, false, false, rng)?
                         else {
                             continue;
                         };
@@ -341,9 +354,9 @@ async fn test_random(ctx: Context) -> Result<()> {
                     for (path1, path_in_expected) in &chosen_paths {
                         info!("Shuffling {}", path1.display());
                         if path1.is_dir() {
-                            shuffle(path1)?;
+                            shuffle(path1, rng)?;
                         } else {
-                            write(path1, random_content())?;
+                            write(path1, random_content(rng))?;
                         }
                         if path1.is_file() {
                             copy(path1, path_in_expected)?;
@@ -363,10 +376,10 @@ async fn test_random(ctx: Context) -> Result<()> {
             }
         } else {
             // edit mount
-            let index = thread_rng().gen_range(0..ctx.clients.len());
-            for _ in 0..thread_rng().gen_range(1..=3) {
+            let index = rng.gen_range(0..ctx.clients.len());
+            for _ in 0..rng.gen_range(1..=3) {
                 debug!("shuffling mount for client {index}");
-                shuffle(&ctx.clients[index].mount_dir)?;
+                shuffle(&ctx.clients[index].mount_dir, rng)?;
                 debug!("syncing client {index}");
                 ctx.clients[index].sync().await?;
             }
@@ -379,7 +392,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                     }
                     copy_dir_all(&client.mount_dir, &before_sync_snapshot)?;
 
-                    if thread_rng().gen_bool(0.2) {
+                    if rng.gen_bool(0.2) {
                         client.dry_run().await?;
                         diff(&client.mount_dir, &before_sync_snapshot)?;
                     }
@@ -397,10 +410,11 @@ async fn test_random(ctx: Context) -> Result<()> {
             &ctx.archive_mount_path,
             &ctx.clients,
             None,
-            &ctx.clients.choose(&mut thread_rng()).unwrap().mount_dir,
+            &ctx.clients.choose(rng).unwrap().mount_dir,
+            rng,
         )
         .await?;
-        if thread_rng().gen_bool(0.3) {
+        if rng.gen_bool(0.3) {
             if let Some(snapshot_time_value) = snapshot_time {
                 check_download(
                     &ctx.dir,
@@ -408,6 +422,7 @@ async fn test_random(ctx: Context) -> Result<()> {
                     &ctx.clients,
                     Some(snapshot_time_value),
                     &old_snapshot_path,
+                    rng,
                 )
                 .await?;
                 snapshot_time = None;
@@ -427,7 +442,7 @@ async fn test_random(ctx: Context) -> Result<()> {
     Ok(())
 }
 
-async fn test_snapshot(ctx: Context) -> Result<()> {
+async fn test_snapshot(ctx: Context, rng: &mut impl Rng) -> Result<()> {
     let index = 0;
     let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
     let mut interval = interval(Duration::from_secs(1));
@@ -438,7 +453,7 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
             .iter()
             .any(|(path, _)| diff(path, &ctx.clients[index].mount_dir).is_ok())
         {
-            shuffle(&ctx.clients[index].mount_dir)?;
+            shuffle(&ctx.clients[index].mount_dir, rng)?;
         }
         debug!("syncing client {index}");
         ctx.clients[index].sync().await?;
@@ -661,14 +676,15 @@ async fn check_download(
     clients: &[ClientData],
     version: Option<DateTime<Utc>>,
     source_dir: &Path,
+    rng: &mut impl Rng,
 ) -> Result<()> {
-    let local_path = choose_path(source_dir, true, true, true, false)?.unwrap();
+    let local_path = choose_path(source_dir, true, true, true, false, rng)?.unwrap();
     if is_leftover_dir_with_ignored_files(&local_path)? {
         return Ok(());
     }
     let archive_path = archive_subpath(archive_mount_path, source_dir, &local_path)?;
     info!("Checking download: {}, {:?}", archive_path, version);
-    let client2 = clients.choose(&mut thread_rng()).unwrap();
+    let client2 = clients.choose(rng).unwrap();
     let destination = dir.join("tmp_download");
     if destination.exists() {
         remove_dir_all_or_file(&destination)?;

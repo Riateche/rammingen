@@ -10,7 +10,7 @@ use rand::{
     distributions::{Alphanumeric, DistString, WeightedIndex},
     prelude::Distribution,
     seq::SliceRandom,
-    thread_rng, Rng,
+    Rng,
 };
 use tracing::debug;
 
@@ -47,22 +47,22 @@ fn find_paths_inner(
     Ok(())
 }
 
-pub fn random_name(allow_ignored: bool) -> String {
-    if allow_ignored && thread_rng().gen_bool(0.1) {
+pub fn random_name(allow_ignored: bool, rng: &mut impl Rng) -> String {
+    if allow_ignored && rng.gen_bool(0.1) {
         // ignored name
         "target".into()
-    } else if allow_ignored && thread_rng().gen_bool(0.1) {
+    } else if allow_ignored && rng.gen_bool(0.1) {
         // ignored name
-        format!("build_{}", thread_rng().gen_range(0..1000))
+        format!("build_{}", rng.gen_range(0..1000))
     } else {
-        let name_len = thread_rng().gen_range(1..=10);
-        Alphanumeric.sample_string(&mut thread_rng(), name_len)
+        let name_len = rng.gen_range(1..=10);
+        Alphanumeric.sample_string(rng, name_len)
     }
 }
 
-pub fn random_content() -> String {
-    let content_len = thread_rng().gen_range(0..=3_000_000);
-    Alphanumeric.sample_string(&mut thread_rng(), content_len)
+pub fn random_content(rng: &mut impl Rng) -> String {
+    let content_len = rng.gen_range(0..=3_000_000);
+    Alphanumeric.sample_string(rng, content_len)
 }
 
 pub fn choose_path(
@@ -71,6 +71,7 @@ pub fn choose_path(
     allow_dirs: bool,
     allow_root: bool,
     allow_ignored: bool,
+    rng: &mut impl Rng,
 ) -> Result<Option<PathBuf>> {
     let mut paths = Vec::new();
     find_paths_inner(
@@ -81,32 +82,32 @@ pub fn choose_path(
         allow_ignored,
         &mut paths,
     )?;
-    Ok(paths.choose(&mut thread_rng()).cloned())
+    Ok(paths.choose(rng).cloned())
 }
 
-fn create(dir: &Path) -> Result<()> {
-    let parent = choose_path(dir, false, true, true, true)?.unwrap();
+fn create(dir: &Path, rng: &mut impl Rng) -> Result<()> {
+    let parent = choose_path(dir, false, true, true, true, rng)?.unwrap();
     if is_leftover_dir_with_ignored_files(&parent)? {
         return Ok(());
     }
-    let path = parent.join(random_name(true));
+    let path = parent.join(random_name(true, rng));
     if path.exists() {
         return Ok(());
     }
-    if thread_rng().gen_bool(0.1) {
+    if rng.gen_bool(0.1) {
         // dir
         create_dir(&path)?;
         debug!("created dir {}", path.display());
     } else {
         // file
-        write(&path, random_content())?;
+        write(&path, random_content(rng))?;
         debug!("created file {}", path.display());
     }
     Ok(())
 }
 
-fn file_to_dir(dir: &Path) -> Result<()> {
-    let Some(path) = choose_path(dir, true, false, false, true)? else {
+fn file_to_dir(dir: &Path, rng: &mut impl Rng) -> Result<()> {
+    let Some(path) = choose_path(dir, true, false, false, true, rng)? else {
         return Ok(());
     };
     remove_file(&path)?;
@@ -115,26 +116,26 @@ fn file_to_dir(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn dir_to_file(dir: &Path) -> Result<()> {
-    let Some(path) = choose_path(dir, false, true, false, true)? else {
+fn dir_to_file(dir: &Path, rng: &mut impl Rng) -> Result<()> {
+    let Some(path) = choose_path(dir, false, true, false, true, rng)? else {
         return Ok(());
     };
     remove_dir_all(&path)?;
-    write(&path, random_content())?;
+    write(&path, random_content(rng))?;
     debug!("replaced dir with file {}", path.display());
     Ok(())
 }
 
-fn random_rename(dir: &Path) -> Result<()> {
-    let Some(from) = choose_path(dir, true, true, false, true)? else {
+fn random_rename(dir: &Path, rng: &mut impl Rng) -> Result<()> {
+    let Some(from) = choose_path(dir, true, true, false, true, rng)? else {
         return Ok(());
     };
-    let to = if thread_rng().gen_bool(0.2) {
-        choose_path(dir, false, true, true, true)?
+    let to = if rng.gen_bool(0.2) {
+        choose_path(dir, false, true, true, true, rng)?
             .unwrap()
-            .join(random_name(true))
+            .join(random_name(true, rng))
     } else {
-        from.parent().unwrap().join(random_name(true))
+        from.parent().unwrap().join(random_name(true, rng))
     };
     if !to.exists() && !to.starts_with(&from) {
         rename(&from, &to)?;
@@ -143,30 +144,30 @@ fn random_rename(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn edit(dir: &Path) -> Result<()> {
-    let Some(path) = choose_path(dir, true, false, false, true)? else {
+fn edit(dir: &Path, rng: &mut impl Rng) -> Result<()> {
+    let Some(path) = choose_path(dir, true, false, false, true, rng)? else {
         return Ok(());
     };
     if symlink_metadata(&path)?.modified()?.elapsed()? < Duration::from_millis(50) {
         sleep(Duration::from_millis(50));
     }
-    write(&path, random_content())?;
+    write(&path, random_content(rng))?;
     //let new_modified = symlink_metadata(&path)?.modified()?;
     debug!("edited file {}", path.display());
     Ok(())
 }
 
-fn change_mode(_dir: &Path) -> Result<()> {
+fn change_mode(_dir: &Path, rng: &mut impl Rng) -> Result<()> {
     #[cfg(target_family = "unix")]
     {
         use std::fs::Permissions;
         use std::os::unix::prelude::PermissionsExt;
 
-        let Some(path) = choose_path(_dir, true, false, false, true)? else {
+        let Some(path) = choose_path(_dir, true, false, false, true, rng)? else {
             return Ok(());
         };
         let mode = [0o777, 0o774, 0o744, 0o700, 0o666, 0o664, 0o644, 0o600]
-            .choose(&mut thread_rng())
+            .choose(rng)
             .unwrap();
 
         fs_err::set_permissions(&path, Permissions::from_mode(*mode))?;
@@ -175,17 +176,17 @@ fn change_mode(_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn delete(dir: &Path) -> Result<()> {
-    if thread_rng().gen_bool(0.1) {
+fn delete(dir: &Path, rng: &mut impl Rng) -> Result<()> {
+    if rng.gen_bool(0.1) {
         // dir
-        let Some(path) = choose_path(dir, false, true, false, true)? else {
+        let Some(path) = choose_path(dir, false, true, false, true, rng)? else {
             return Ok(());
         };
         remove_dir_all(&path)?;
         debug!("removed dir {}", path.display());
     } else {
         // file
-        let Some(path) = choose_path(dir, true, false, false, true)? else {
+        let Some(path) = choose_path(dir, true, false, false, true, rng)? else {
             return Ok(());
         };
         remove_file(&path)?;
@@ -194,11 +195,11 @@ fn delete(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-type Shuffler = fn(dir: &Path) -> Result<()>;
+type Shuffler<R> = fn(dir: &Path, &mut R) -> Result<()>;
 
-pub fn shuffle(dir: &Path) -> Result<()> {
-    let num_mutations = thread_rng().gen_range(1..=30);
-    let shufflers: &[(Shuffler, i32)] = &[
+pub fn shuffle<R: Rng>(dir: &Path, rng: &mut R) -> Result<()> {
+    let num_mutations = rng.gen_range(1..=30);
+    let shufflers: &[(Shuffler<R>, i32)] = &[
         (create, 10),
         (random_rename, 5),
         (edit, 20),
@@ -209,8 +210,8 @@ pub fn shuffle(dir: &Path) -> Result<()> {
     ];
     let shufflers_distribution = WeightedIndex::new(shufflers.iter().map(|(_, w)| w))?;
     for _ in 0..num_mutations {
-        let index = shufflers_distribution.sample(&mut thread_rng());
-        (shufflers[index].0)(dir)?;
+        let index = shufflers_distribution.sample(rng);
+        (shufflers[index].0)(dir, rng)?;
     }
     Ok(())
 }
