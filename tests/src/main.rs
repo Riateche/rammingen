@@ -431,20 +431,15 @@ async fn test_snapshot(ctx: Context) -> Result<()> {
     let index = 0;
     let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
     let mut interval = interval(Duration::from_secs(1));
-    //let unique_file_path = ctx.clients[index].mount_dir.join("unique_file.txt");
     for i in 0..30 {
         interval.tick().await;
         debug!("shuffling mount for client {index}");
-        // if unique_file_path.exists() {
-        //     remove_dir_or_file(&unique_file_path)?;
-        // }
         while snapshots
             .iter()
             .any(|(path, _)| diff(path, &ctx.clients[index].mount_dir).is_ok())
         {
             shuffle(&ctx.clients[index].mount_dir)?;
         }
-        // write(&unique_file_path, format!("unique content {i}"))?;
         debug!("syncing client {index}");
         ctx.clients[index].sync().await?;
         let snapshot_path = ctx.dir.join(format!("snapshot_{i}"));

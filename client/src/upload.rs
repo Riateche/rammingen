@@ -240,7 +240,7 @@ fn upload_inner<'a>(
                 metadata = fs::symlink_metadata(local_path)?;
                 let new_modified = metadata.modified()?;
                 if new_modified.elapsed()? < TOO_RECENT_INTERVAL {
-                    info!("file {} was modified recently, waiting...", local_path);
+                    info!("File {} was modified recently, waiting...", local_path);
                     sleep(TOO_RECENT_INTERVAL).await;
                 } else {
                     modified = Some(new_modified);
