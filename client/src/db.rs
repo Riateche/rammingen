@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LE};
+use fs_err::symlink_metadata;
 use rammingen_protocol::{ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber};
 use serde::{Deserialize, Serialize};
 use sled::{transaction::ConflictableTransactionError, Transactional};
@@ -143,12 +144,20 @@ impl Db {
     pub fn get_all_local_entries(
         &self,
     ) -> impl DoubleEndedIterator<Item = Result<(SanitizedLocalPath, LocalEntry)>> {
-        self.local_entries.iter().map(|pair| {
-            let (key, value) = pair?;
-            let path = SanitizedLocalPath::new(str::from_utf8(&key)?)?;
-            let data = bincode::deserialize::<LocalEntry>(&value)?;
-            Ok((path, data))
-        })
+        self.local_entries
+            .iter()
+            .map(|pair| {
+                let (key, value) = pair?;
+                let path = str::from_utf8(&key)?;
+                if symlink_metadata(path).map_or(false, |meta| meta.is_symlink()) {
+                    // Cannot load local entry that currently points to a symlink.
+                    return Ok(None);
+                }
+                let path = SanitizedLocalPath::new(path)?;
+                let data = bincode::deserialize::<LocalEntry>(&value)?;
+                Ok(Some((path, data)))
+            })
+            .filter_map(|r| r.transpose())
     }
 
     pub fn get_local_entry(&self, path: &SanitizedLocalPath) -> Result<Option<LocalEntry>> {
