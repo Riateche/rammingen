@@ -174,7 +174,7 @@ async fn handle_command(cli: Cli, ctx: &Arc<Ctx>) -> Result<()> {
         }
         cli::Command::CheckIntegrity => {
             ctx.client.request(&CheckIntegrity).await?;
-            info!("It's fine.");
+            info!("Integrity check complete, no issues found.");
         }
         cli::Command::GenerateEncryptionKey => unreachable!(),
     }
@@ -215,7 +215,7 @@ pub fn show_notification(title: &str, text: &str) {
     init_notifications();
 
     if let Err(err) = Notification::new().summary(title).body(text).show() {
-        warn!("failed to show notification: {err}");
+        warn!("Failed to show notification: {err}");
     }
 }
 
@@ -226,7 +226,7 @@ fn init_notifications() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         if let Err(err) = notify_rust::set_application("com.rammingen.rammingen") {
-            warn!("failed to init notifications: {err}");
+            warn!("Failed to init notifications: {err}");
         }
     });
 }

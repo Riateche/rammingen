@@ -129,7 +129,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     }
 
     info!(
-        "created new snapshot for {} (deleted {} versions, added {} versions, removed {} files)",
+        "Created new snapshot for {} (deleted {} versions, added {} versions, removed {} files)",
         next_snapshot_timestamp, num_deleted, num_added, num_removed_files,
     );
 

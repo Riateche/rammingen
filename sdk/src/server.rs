@@ -65,9 +65,9 @@ impl ShutdownWatcher {
     pub async fn shutdown(self) {
         const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
         let Ok(()) = timeout(SHUTDOWN_TIMEOUT, self.inner.shutdown()).await else {
-            warn!("timed out wait for all connections to close");
+            warn!("Timed out wait for all connections to close");
             return;
         };
-        info!("all connections gracefully closed");
+        info!("All connections gracefully closed");
     }
 }

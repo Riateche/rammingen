@@ -180,7 +180,7 @@ async fn try_main() -> Result<()> {
     };
     let seed = cli.seed.unwrap_or_else(|| {
         let v: u64 = thread_rng().gen();
-        info!("no seed provided, choosing random seed = {}", v);
+        info!("No seed provided, choosing random seed = {}", v);
         v
     });
     let mut rng = ChaCha12Rng::seed_from_u64(seed);
@@ -188,7 +188,7 @@ async fn try_main() -> Result<()> {
         Command::Shuffle => test_shuffle(ctx, &mut rng).await,
         Command::Snapshot => test_snapshot(ctx, &mut rng).await,
         Command::ServerOnly => {
-            info!("started server at {server_url}");
+            info!("Started server at {server_url}");
             pending().await
         }
     }
@@ -378,14 +378,14 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
             // edit mount
             let index = rng.gen_range(0..ctx.clients.len());
             for _ in 0..rng.gen_range(1..=3) {
-                debug!("shuffling mount for client {index}");
+                debug!("Shuffling mount for client {index}");
                 shuffle(&ctx.clients[index].mount_dir, rng)?;
-                debug!("syncing client {index}");
+                debug!("Syncing client {index}");
                 ctx.clients[index].sync().await?;
             }
             for (index2, client) in ctx.clients.iter().enumerate() {
                 if index2 != index {
-                    debug!("syncing client {index2}");
+                    debug!("Syncing client {index2}");
                     let before_sync_snapshot = ctx.dir.join("snapshot");
                     if before_sync_snapshot.exists() {
                         remove_dir_all(&before_sync_snapshot)?;
@@ -448,17 +448,17 @@ async fn test_snapshot(ctx: Context, rng: &mut impl Rng) -> Result<()> {
     let mut interval = interval(Duration::from_secs(1));
     for i in 0..30 {
         interval.tick().await;
-        debug!("shuffling mount for client {index}");
+        debug!("Shuffling mount for client {index}");
         while snapshots
             .iter()
             .any(|(path, _)| diff(path, &ctx.clients[index].mount_dir).is_ok())
         {
             shuffle(&ctx.clients[index].mount_dir, rng)?;
         }
-        debug!("syncing client {index}");
+        debug!("Syncing client {index}");
         ctx.clients[index].sync().await?;
         let snapshot_path = ctx.dir.join(format!("snapshot_{i}"));
-        debug!("recording snapshot {i}");
+        debug!("Recording snapshot {i}");
         copy_dir_all(&ctx.clients[index].mount_dir, &snapshot_path)?;
         snapshots.push((snapshot_path, Utc::now()));
         ctx.clients[0].check_integrity().await?;
@@ -481,7 +481,7 @@ async fn test_snapshot(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                 let mut same_as = Vec::new();
                 for (i2, (path, time2)) in snapshots.iter().enumerate() {
                     if diff(&download_path, path).is_ok() {
-                        info!("download {i} ({time}) is the same as snapshot {i2} ({time2})");
+                        info!("Download {i} ({time}) is the same as snapshot {i2} ({time2})");
                         same_as.push(i2);
                     }
                 }
@@ -491,7 +491,7 @@ async fn test_snapshot(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                 results.push(Some(same_as[0]));
             }
             Err(err) => {
-                debug!("cannot download {i} ({time}): {err:?}");
+                debug!("Cannot download {i} ({time}): {err:?}");
                 results.push(None);
             }
         }

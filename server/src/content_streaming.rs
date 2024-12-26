@@ -22,7 +22,7 @@ pub async fn upload(
         .headers()
         .get(CONTENT_LENGTH)
         .ok_or_else(|| {
-            warn!("missing content length in request");
+            warn!("Missing content length in request");
             StatusCode::BAD_REQUEST
         })?
         .to_str()
@@ -48,7 +48,7 @@ pub async fn upload(
             StatusCode::BAD_REQUEST
         })?;
         let data = frame.data_ref().ok_or_else(|| {
-            warn!("unexpected trailer frame in request");
+            warn!("Unexpected trailer frame in request");
             StatusCode::BAD_REQUEST
         })?;
         received_length += data.len() as u64;

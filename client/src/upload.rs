@@ -67,7 +67,7 @@ pub async fn find_local_deletions<'a>(
         let (local_path, _data) = match entry {
             Ok(r) => r,
             Err(err) => {
-                warn!("couldn't load a local entry: {err}");
+                warn!("Couldn't load a local entry: {err}");
                 continue;
             }
         };
@@ -205,15 +205,15 @@ fn upload_inner<'a>(
         ctx.existing_paths.insert(local_path.clone());
         let mut metadata = fs::symlink_metadata(local_path)?;
         if is_special_file(&metadata.file_type()) {
-            info!("skipping special file: {}", local_path);
+            debug!("Skipping special file: {}", local_path);
             return Ok(());
         }
         if metadata.is_symlink() {
-            warn!("skipping symlink: {}", local_path);
+            debug!("Skipping symlink: {}", local_path);
             return Ok(());
         }
         if ctx.rules.matches(local_path)? {
-            debug!("ignored: {}", local_path);
+            debug!("Ignored: {}", local_path);
             return Ok(());
         }
         let is_dir = metadata.is_dir();
@@ -385,7 +385,7 @@ fn upload_inner<'a>(
                 let entry = entry?;
                 let entry_path = entry.path();
                 if symlink_metadata(&entry_path)?.is_symlink() {
-                    warn!("skipping symlink: {:?}", entry_path);
+                    debug!("Skipping symlink: {:?}", entry_path);
                     continue;
                 }
                 let file_name = entry.file_name();

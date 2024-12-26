@@ -50,26 +50,26 @@ pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
         })
         .collect_vec();
 
-    info!("normalized local path: {}", path);
+    info!("Normalized local path: {}", path);
 
     if let Some((archive_path, rules)) = to_archive_path(path, &mut mount_points)? {
         if rules.matches(path)? {
-            info!("this path is ignored according to the configured exclude rules");
+            info!("This path is ignored according to the configured exclude rules");
         } else {
-            info!("archive path: {}", archive_path);
+            info!("Archive path: {}", archive_path);
             let encrypted = ctx.cipher.encrypt_path(&archive_path)?;
-            info!("encrypted archive path: {}", encrypted);
+            info!("Encrypted archive path: {}", encrypted);
             info!(
-                "archive entry in local db: {:?}",
+                "Archive entry in local db: {:?}",
                 ctx.db.get_archive_entry(&archive_path)?
             );
             info!(
-                "local entry in local db: {:?}",
+                "Local entry in local db: {:?}",
                 ctx.db.get_local_entry(path)?
             );
         }
     } else {
-        info!("this path is not inside any of the configured mount points");
+        info!("This path is not inside any of the configured mount points");
     }
 
     Ok(())
@@ -84,43 +84,43 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
         return Ok(());
     };
 
-    info!("path: {}", main_entry.path);
+    info!("Path: {}", main_entry.path);
     let encrypted = ctx.cipher.encrypt_path(path)?;
-    info!("encrypted archive path: {}", encrypted);
-    info!("recorded at: {}", pretty_time(main_entry.recorded_at));
-    info!("source id: {}", sources.format(main_entry.source_id));
-    info!("record trigger: {:?}", main_entry.record_trigger);
+    info!("Encrypted archive path: {}", encrypted);
+    info!("Recorded at: {}", pretty_time(main_entry.recorded_at));
+    info!("Source id: {}", sources.format(main_entry.source_id));
+    info!("Record trigger: {:?}", main_entry.record_trigger);
     if let Some(kind) = main_entry.kind {
         match kind {
             EntryKind::File => {
-                info!("current status: existing file");
+                info!("Current status: existing file");
                 let content = main_entry
                     .content
                     .ok_or_else(|| anyhow!("missing content for file entry"))?;
                 info!("FS modified at: {}", pretty_time(content.modified_at));
                 info!(
-                    "original size: {} ({} bytes)",
+                    "Original size: {} ({} bytes)",
                     pretty_size(content.original_size),
                     content.original_size
                 );
                 info!(
-                    "encrypted size: {} ({} bytes)",
+                    "Encrypted size: {} ({} bytes)",
                     pretty_size(content.encrypted_size),
                     content.encrypted_size
                 );
                 if let Some(unix_mode) = content.unix_mode {
-                    info!("unix mode: {:#o}", unix_mode);
+                    info!("Unix mode: {:#o}", unix_mode);
                 } else {
-                    info!("unix mode: n/a");
+                    info!("Unix mode: n/a");
                 }
-                info!("content hash: {}", content.hash);
+                info!("Content hash: {}", content.hash);
             }
             EntryKind::Directory => {
-                info!("current status: existing directory");
+                info!("Current status: existing directory");
             }
         }
     } else {
-        info!("current status: deleted");
+        info!("Current status: deleted");
     }
 
     let mut entries = Vec::new();

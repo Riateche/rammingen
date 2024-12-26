@@ -80,7 +80,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                 .db
                 .notification_stats()
                 .inspect_err(|err| {
-                    warn!("failed to load notification stats from db: {err}");
+                    warn!("Failed to load notification stats from db: {err}");
                 })
                 .unwrap_or_default();
             stats.pending_counters += NotificationCounters::from(&ctx.final_counters);

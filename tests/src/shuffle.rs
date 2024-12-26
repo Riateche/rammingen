@@ -97,11 +97,11 @@ fn create(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     if rng.gen_bool(0.1) {
         // dir
         create_dir(&path)?;
-        debug!("created dir {}", path.display());
+        debug!("Created dir {}", path.display());
     } else {
         // file
         write(&path, random_content(rng))?;
-        debug!("created file {}", path.display());
+        debug!("Created file {}", path.display());
     }
     Ok(())
 }
@@ -112,7 +112,7 @@ fn file_to_dir(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     };
     remove_file(&path)?;
     create_dir(&path)?;
-    debug!("replaced file with dir {}", path.display());
+    debug!("Replaced file with dir {}", path.display());
     Ok(())
 }
 
@@ -122,7 +122,7 @@ fn dir_to_file(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     };
     remove_dir_all(&path)?;
     write(&path, random_content(rng))?;
-    debug!("replaced dir with file {}", path.display());
+    debug!("Replaced dir with file {}", path.display());
     Ok(())
 }
 
@@ -139,7 +139,7 @@ fn random_rename(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     };
     if !to.exists() && !to.starts_with(&from) {
         rename(&from, &to)?;
-        debug!("renamed {} -> {}", from.display(), to.display());
+        debug!("Renamed {} -> {}", from.display(), to.display());
     }
     Ok(())
 }
@@ -153,7 +153,7 @@ fn edit(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     }
     write(&path, random_content(rng))?;
     //let new_modified = symlink_metadata(&path)?.modified()?;
-    debug!("edited file {}", path.display());
+    debug!("Edited file {}", path.display());
     Ok(())
 }
 
@@ -171,7 +171,7 @@ fn change_mode(_dir: &Path, rng: &mut impl Rng) -> Result<()> {
             .unwrap();
 
         fs_err::set_permissions(&path, Permissions::from_mode(*mode))?;
-        debug!("changed mode of file {} to {:#o}", path.display(), mode);
+        debug!("Changed mode of file {} to {:#o}", path.display(), mode);
     }
     Ok(())
 }
@@ -183,14 +183,14 @@ fn delete(dir: &Path, rng: &mut impl Rng) -> Result<()> {
             return Ok(());
         };
         remove_dir_all(&path)?;
-        debug!("removed dir {}", path.display());
+        debug!("Removed dir {}", path.display());
     } else {
         // file
         let Some(path) = choose_path(dir, true, false, false, true, rng)? else {
             return Ok(());
         };
         remove_file(&path)?;
-        debug!("removed file {}", path.display());
+        debug!("Removed file {}", path.display());
     }
     Ok(())
 }
