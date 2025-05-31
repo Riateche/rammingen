@@ -2,42 +2,66 @@
 
 Rammingen is a self-hosted file synchronization and backup system.
 
-1. Manages previous versions of backups.
-1. Stores the backup archive in encrypted form.
+Rammingen client periodically runs in background, scans local files and uploads any new detected changes to your server. It also pulls changes from the server and applies them to the local files.
 
-Rammingen installation dependency graph (arrows represent the "X depends on Y" relationship):
+## Features
+
+1. Rammingen server can work with multiple clients. The client supports Linux, Windows and osX.
+1. Fully configurable path management: you can specify multiple local directories for periodic sync and map each of them to a virtual archive path that is shared among all clients. The same virtual archive path can be mapped to different local paths in different clients.
+1. Flexible file ignore rules (name- or path-based, exact name match or regex, can be configured separately for each directory).
+1. Non-automatic download and upload using `rammingen` cli for one-time operations.
+1. End-to-end encryption: file contents and all metadata (including path names) are sent to the server in an encrypted form using a private key that never leaves your local systems. It uses AES-CMAC-SIV in AEAD mode with 512-bit key size.
+1. Files with the same content (or renamed/moved files) will be deduplicated, i.e. the content will only be uploaded and downloaded once.
+1. All files are compressed using DEFLATE.
+1. Every version of each file is stored independently. You can use `rammingen` command to see all versions of a certain file or all changes within a certain directory. You can also download a specific version of a file or even a version of a directory at a particular time, serving essentially as a time machine.
+1. Old versions of files are periodically cleaned up, leaving only the last version. You can configure the time interval after which that happens.
+1. Rammingen runs in background and doesn't require any user intervention. It can show desktop notifications in case of errors or periodic notifications about file sync statistics (the interval of notifications can be configured).
+1. Rammingen never modifies file names or content. In case of conflicted changes for a file, it overwrites the file with the latest version. However, you can always see all the versions and reset the file to the correct version.
+1. It's optimized for slow networks and slow servers. You can run the server on the cheapest VDS configuration.
+1. It's also optimized for large amounts of files. It can handle millions of files without issues.
+
+## Setup
 
 ```mermaid
 graph BT
     subgraph Server host
         server[Rammingen server]
-        db[("Database<br>(Postgres)")]
-        storage[("Backup archive storage<br>(in the file system)")]
+        db[("Metadata storage<br>(Postgres database)")]
+        storage[("File content storage<br>(local file system)")]
         tls_proxy["TLS proxy (Nginx)"]
     end
 
-    subgraph Client host
-        client["Rammingen client<br>(encrypts/decrypts backup)"]
-        directory[(Backed-up directory)]
+    subgraph Client host #1
+        client1["Rammingen client"]
+        directory1[(Local directory)]
+    end
+
+    subgraph Client host #2
+        client2["Rammingen client"]
+        directory2[(Local directory 1)]
+        directory22[(Local directory 2)]
     end
 
     server --> db
     server --> storage
-    client --> tls_proxy
-    client --> directory
+    client1 --> tls_proxy
+    client1 --> directory1
+    client2 --> tls_proxy
+    client2 --> directory2
+    client2 --> directory22
     tls_proxy --> server
 ```
 
-## Quick start
+In order to use rammingen, you will need a server with a Postgres database and some space in the filesystem for storage. You also need to set up a rammingen client on your local system.
 
-This guide will help you quickly deploy and try out Rammingen.
+### Server setup
 
-### Server host
+This guide assumes using Linux on the server. However, rammingen-server should also work on other systems.
 
-1. Install Nginx, Postgres and Docker from system repository.
+1. Install Nginx, Postgres and Docker from system repository (e.g. using `apt`).
 1. Set up a Postgres user and database.
-1. Create a storage directory for backup archive.
-1. Create server configuration file. You may store it in the custom directory or use default path:
+1. Create a local directory for storage.
+1. Create a server configuration file. You may store it in the custom directory or use default path:
 
     - Linux: `/etc/rammingen-server.conf`
     - macOS: `$HOME/Library/Application Support/rammingen-server.conf`
@@ -116,3 +140,6 @@ This guide will help you quickly deploy and try out Rammingen.
         --volume /etc/rammingen.conf:/etc/rammingen.conf:ro \
         --entrypoint /sbin/rammingen riateche/rammingen --config /etc/rammingen.conf sync
     ```
+## Caveats
+
+Note that rammingen doesn't perform diffing and partial uploads of files - if a file is changed, the full file will be uploaded and stored.
