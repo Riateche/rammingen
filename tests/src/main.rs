@@ -149,6 +149,7 @@ async fn try_main() -> Result<()> {
         let mount_dir = client_dir.join("mount1");
         create_dir_all(&mount_dir)?;
         let config = rammingen::config::Config {
+            use_keyring: false,
             always_exclude: vec![
                 Rule::NameEquals("target".into()),
                 Rule::NameMatches("^build_".parse()?),
@@ -158,9 +159,9 @@ async fn try_main() -> Result<()> {
                 archive_path: archive_mount_path.clone(),
                 exclude: vec![],
             }],
-            encryption_key: encryption_key.clone(),
+            encryption_key: Some(encryption_key.clone()),
             server_url: server_url.clone(),
-            access_token: access_token(client_index),
+            access_token: Some(access_token(client_index)),
             local_db_path: Some(client_dir.join("db")),
             log_file: None,
             log_filter: String::new(),

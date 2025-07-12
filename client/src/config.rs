@@ -24,11 +24,13 @@ pub struct MountPoint {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default)]
+    pub use_keyring: bool,
     pub always_exclude: Vec<Rule>,
     pub mount_points: Vec<MountPoint>,
-    pub encryption_key: EncryptionKey,
+    pub encryption_key: Option<EncryptionKey>,
     pub server_url: Url,
-    pub access_token: AccessToken,
+    pub access_token: Option<AccessToken>,
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
     #[serde(default)]

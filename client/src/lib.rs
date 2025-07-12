@@ -18,7 +18,7 @@ use crate::{
     pull_updates::pull_updates,
     upload::upload,
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context as _, Result};
 use cli::{default_log_path, Cli};
 use config::Config;
 use counters::{FinalCounters, IntermediateCounters, NotificationCounters};
@@ -57,6 +57,49 @@ pub struct Ctx {
     pub intermediate_counters: IntermediateCounters,
 }
 
+const KEYRING_SERVICE: &str = "rammingen";
+
+enum SecretKind {
+    AccessToken,
+    EncryptionKey,
+}
+
+fn fetch_keyring_secret(kind: SecretKind) -> anyhow::Result<String> {
+    let user = match kind {
+        SecretKind::AccessToken => "rammingen_access_token",
+        SecretKind::EncryptionKey => "rammingen_encryption_key",
+    };
+
+    let entry = keyring::Entry::new(KEYRING_SERVICE, user)?;
+    match entry.get_password() {
+        Ok(password) => Ok(password),
+        Err(err) => {
+            if matches!(err, keyring::Error::NoEntry) {
+                info!("entry {user:?} not found in keyring");
+                let prompt = match kind {
+                    SecretKind::AccessToken => "Input access token: ",
+                    SecretKind::EncryptionKey => "Input encryption key: ",
+                };
+                let value = rpassword::prompt_password(prompt)?;
+                if value.is_empty() {
+                    bail!("no value provided");
+                }
+                match entry.set_password(&value) {
+                    Ok(()) => {
+                        info!("entry {user:?} saved to keyring");
+                    }
+                    Err(err) => {
+                        warn!("failed to save secret in keyring: {err}");
+                    }
+                }
+                Ok(value)
+            } else {
+                Err(err.into())
+            }
+        }
+    }
+}
+
 pub async fn run(cli: Cli, config: Config) -> Result<()> {
     let local_db_path = if let Some(v) = &config.local_db_path {
         v.clone()
@@ -64,9 +107,35 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
         data_dir.join("rammingen.db")
     };
+
+    if config.use_keyring && (config.encryption_key.is_some() || config.access_token.is_some()) {
+        bail!(
+            "invalid config: if `use_keyring` is true, \
+            `encryption_key` and `access_token` cannot be specified in the config"
+        );
+    }
+
+    let access_token = if config.use_keyring {
+        fetch_keyring_secret(SecretKind::AccessToken)?.parse()?
+    } else {
+        config
+            .access_token
+            .clone()
+            .context("missing `access_token` or `use_keyring` in config")?
+    };
+
+    let encryption_key = if config.use_keyring {
+        fetch_keyring_secret(SecretKind::EncryptionKey)?.parse()?
+    } else {
+        config
+            .encryption_key
+            .clone()
+            .context("missing `encryption_key` or `use_keyring` in config")?
+    };
+
     let ctx = Arc::new(Ctx {
-        client: Client::new(config.server_url.clone(), config.access_token.clone()),
-        cipher: Cipher::new(&config.encryption_key),
+        client: Client::new(config.server_url.clone(), access_token),
+        cipher: Cipher::new(&encryption_key),
         config,
         db: crate::db::Db::open(&local_db_path)?,
         final_counters: Default::default(),
