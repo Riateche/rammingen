@@ -79,7 +79,7 @@ impl Db {
         })();
         let children = if root_entry
             .as_ref()
-            .map_or(false, |entry| entry.kind == Some(EntryKind::Directory))
+            .is_ok_and(|entry| entry.kind == Some(EntryKind::Directory))
         {
             let mut prefix = path.to_str_without_prefix().to_owned();
             prefix.push('/');
@@ -149,7 +149,7 @@ impl Db {
             .map(|pair| {
                 let (key, value) = pair?;
                 let path = str::from_utf8(&key)?;
-                if symlink_metadata(path).map_or(false, |meta| meta.is_symlink()) {
+                if symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
                     // Cannot load local entry that currently points to a symlink.
                     return Ok(None);
                 }
@@ -180,7 +180,7 @@ impl Db {
 }
 
 fn into_abort_err(e: impl Debug) -> ConflictableTransactionError<io::Error> {
-    ConflictableTransactionError::Abort(io::Error::new(io::ErrorKind::Other, format!("{e:?}")))
+    ConflictableTransactionError::Abort(io::Error::other(format!("{e:?}")))
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

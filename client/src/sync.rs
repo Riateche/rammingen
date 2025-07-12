@@ -89,7 +89,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
             let desktop_notification_interval =
                 TimeDelta::from_std(ctx.config.desktop_notification_interval)
                     .context("config.desktop_notification_interval out of range")?;
-            let show = stats.last_notified_at.map_or(true, |last_notified_at| {
+            let show = stats.last_notified_at.is_none_or(|last_notified_at| {
                 (now - last_notified_at) > desktop_notification_interval
             });
             if show {

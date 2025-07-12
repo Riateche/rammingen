@@ -107,11 +107,11 @@ async fn try_main() -> Result<()> {
             log_file: None,
             log_filter: String::new(),
             retain_detailed_history_for: match &cli.command {
-                Command::Shuffle { .. } | Command::ServerOnly => Duration::from_secs(3600),
+                Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
                 Command::Snapshot => Duration::from_secs(10),
             },
             snapshot_interval: match &cli.command {
-                Command::Shuffle { .. } | Command::ServerOnly => Duration::from_secs(3600),
+                Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
                 Command::Snapshot => Duration::from_secs(5),
             },
         };
@@ -694,7 +694,7 @@ async fn check_download(
         .download(
             archive_path,
             destination.to_str().unwrap().parse()?,
-            version.map(Into::into),
+            version,
         )
         .await?;
     diff(&local_path, &destination)?;

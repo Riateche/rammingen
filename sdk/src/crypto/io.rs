@@ -104,7 +104,7 @@ impl<'a, W: Write> EncryptingWriter<'a, W> {
         let ciphertext = self
             .cipher
             .encrypt_bytes(&nonce, &self.buf[..input_len])
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "encryption failed"))?;
+            .map_err(|_| io::Error::other("encryption failed"))?;
         let output_size = nonce.len() + ciphertext.len();
 
         self.output.write_u32::<LE>(output_size as u32)?;
@@ -161,7 +161,7 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
     pub fn finish(mut self) -> io::Result<(W, ContentHash, u64)> {
         self.process_block()?;
         if !self.buf.is_empty() {
-            return Err(io::Error::new(io::ErrorKind::Other, "trailing data found"));
+            return Err(io::Error::other("trailing data found"));
         }
         self.output.finish()?.finish()
     }
@@ -172,10 +172,7 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
                 return Ok(());
             }
             if LE::read_u32(&self.buf) != MAGIC_NUMBER {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "magic number mismatch",
-                ));
+                return Err(io::Error::other("magic number mismatch"));
             }
             self.buf.drain(..4);
             self.got_header = true;
@@ -185,14 +182,13 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
         }
         let len: usize = LE::read_u32(&self.buf)
             .try_into()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
         let nonce_size = nonce_size();
         let max_block_size = BLOCK_SIZE + nonce_size + 16;
         if len > max_block_size {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("block size is too large (expected {max_block_size}, got {len})"),
-            ));
+            return Err(io::Error::other(format!(
+                "block size is too large (expected {max_block_size}, got {len})"
+            )));
         }
         let rest_of_data = &self.buf[4..];
         if rest_of_data.len() < len {
@@ -202,12 +198,12 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
 
         let nonce = chunk_data
             .get(..nonce_size)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "chunk data is too short"))?;
+            .ok_or_else(|| io::Error::other("chunk data is too short"))?;
         let nonce = Nonce::from_slice(nonce);
         let plaintext = self
             .cipher
             .decrypt_bytes(nonce, &chunk_data[nonce_size..])
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "decryption failed"))?;
+            .map_err(|_| io::Error::other("decryption failed"))?;
         self.output.write_all(&plaintext)?;
         self.buf.drain(..4 + len);
         Ok(())

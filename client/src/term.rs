@@ -204,7 +204,7 @@ impl<S: Subscriber> Layer<S> for TermLayer {
     ) -> bool {
         metadata
             .module_path()
-            .map_or(false, |path| path.starts_with("rammingen"))
+            .is_some_and(|path| path.starts_with("rammingen"))
     }
 }
 
@@ -213,7 +213,7 @@ struct DebugVisitor<'a>(&'a mut String, &'a mut Vec<String>);
 impl Visit for DebugVisitor<'_> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         if field.name() == "message" {
-            write!(self.0, "{:?}", value).unwrap();
+            write!(self.0, "{value:?}").unwrap();
         } else {
             self.1.push(format!("{} = {:?}", field.name(), value));
         }

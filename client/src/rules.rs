@@ -43,7 +43,7 @@ impl Rules {
         }
         if path
             .file_name()
-            .map_or(false, |name| name.ends_with(".rammingen.part"))
+            .is_some_and(|name| name.ends_with(".rammingen.part"))
         {
             return Ok(true);
         }

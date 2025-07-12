@@ -176,7 +176,7 @@ pub async fn upload(
                 .intermediate_counters
                 .unqueued_upload_entries
                 .load(Ordering::Relaxed);
-            format!("Uploading ({} / {} entries)", unqueued, queued)
+            format!("Uploading ({unqueued} / {queued} entries)")
         });
         content_upload_task.await?;
         versions_task.await?;
@@ -201,7 +201,7 @@ fn upload_inner<'a>(
     archive_path: &'a ArchivePath,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
-        let _status = set_status(format!("Scanning local files: {}", local_path));
+        let _status = set_status(format!("Scanning local files: {local_path}"));
         ctx.existing_paths.insert(local_path.clone());
         let mut metadata = fs::symlink_metadata(local_path)?;
         if is_special_file(&metadata.file_type()) {
@@ -229,9 +229,7 @@ fn upload_inner<'a>(
         let oneshot_receiver;
 
         if is_dir {
-            changed = db_data
-                .as_ref()
-                .map_or(true, |db_data| db_data.kind != kind);
+            changed = db_data.as_ref().is_none_or(|db_data| db_data.kind != kind);
             content = None;
             oneshot_receiver = None;
         } else {
@@ -252,9 +250,9 @@ fn upload_inner<'a>(
             let modified_datetime = DateTimeUtc::from(modified);
             let unix_mode = unix_mode(&metadata);
 
-            let maybe_changed = db_data.as_ref().map_or(true, |db_data| {
+            let maybe_changed = db_data.as_ref().is_none_or(|db_data| {
                 db_data.kind != kind || {
-                    db_data.content.as_ref().map_or(true, |content| {
+                    db_data.content.as_ref().is_none_or(|content| {
                         content.modified_at != modified_datetime || content.unix_mode != unix_mode
                     })
                 }
@@ -279,9 +277,9 @@ fn upload_inner<'a>(
                     unix_mode,
                 };
 
-                changed = db_data.as_ref().map_or(true, |db_data| {
+                changed = db_data.as_ref().is_none_or(|db_data| {
                     db_data.kind != kind || {
-                        db_data.content.as_ref().map_or(true, |content| {
+                        db_data.content.as_ref().is_none_or(|content| {
                             content.hash != current_content.hash
                                 || content.unix_mode != current_content.unix_mode
                         })

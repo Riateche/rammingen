@@ -168,7 +168,7 @@ pub async fn download(
                 .final_counters
                 .downloaded_entries
                 .load(Ordering::Relaxed);
-            format!("Downloading ({} / {} entries)", unqueued, queued)
+            format!("Downloading ({unqueued} / {queued} entries)")
         });
         content_upload_task.await?;
         versions_task.await?;
@@ -356,7 +356,7 @@ async fn download_files_task(
 }
 
 async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
-    let tmp_parent_dir = if metadata(&item.root_local_path).map_or(false, |m| m.is_dir()) {
+    let tmp_parent_dir = if metadata(&item.root_local_path).is_ok_and(|m| m.is_dir()) {
         item.root_local_path.clone()
     } else {
         item.root_local_path.parent()?.ok_or_else(|| {

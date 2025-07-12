@@ -12,8 +12,9 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: |
           cargo test --locked --all-targets --all-features
           docker run --rm --name rammingen_autotest -e POSTGRES_HOST_AUTH_METHOD=trust -p 6123:5432 -d postgres:alpine
@@ -29,12 +30,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: cargo fmt --check
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: cargo clippy --locked --all-targets --all-features -- --deny warnings

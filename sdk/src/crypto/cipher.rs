@@ -93,7 +93,7 @@ impl Cipher {
     pub fn decrypt_content_hash(&self, value: &EncryptedContentHash) -> Result<ContentHash> {
         self.inner
             .decrypt(&Nonce::default(), value.as_slice())
-            .with_context(|| format!("decryption failed for {:?}", value))?
+            .with_context(|| format!("decryption failed for {value:?}"))?
             .try_into()
     }
 
@@ -110,7 +110,7 @@ impl Cipher {
         let plaintext = self
             .inner
             .decrypt(&Nonce::default(), value.as_slice())
-            .with_context(|| format!("decryption failed for {:?}", value))?;
+            .with_context(|| format!("decryption failed for {value:?}"))?;
         ensure!(
             plaintext.len() == SIZE_LENGTH,
             "invalid decrypted length: {}, expected {SIZE_LENGTH}",
