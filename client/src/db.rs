@@ -1,15 +1,15 @@
-use anyhow::{anyhow, Result};
-use byteorder::{ByteOrder, LE};
-use fs_err::symlink_metadata;
-use rammingen_protocol::{ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber};
-use serde::{Deserialize, Serialize};
-use sled::{transaction::ConflictableTransactionError, Transactional};
-use std::{fmt::Debug, io, iter, path::Path, str, thread::sleep, time::Duration};
-use tracing::{info, warn};
-
-use rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry};
-
-use crate::{counters::NotificationCounters, path::SanitizedLocalPath};
+use {
+    crate::{counters::NotificationCounters, path::SanitizedLocalPath},
+    anyhow::{anyhow, Result},
+    byteorder::{ByteOrder, LE},
+    fs_err::symlink_metadata,
+    rammingen_protocol::{ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber},
+    rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry},
+    serde::{Deserialize, Serialize},
+    sled::{transaction::ConflictableTransactionError, Transactional},
+    std::{fmt::Debug, io, iter, path::Path, str, thread::sleep, time::Duration},
+    tracing::{info, warn},
+};
 
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
 const KEY_NOTIFICATION_STATS: [u8; 4] = [0, 0, 0, 2];

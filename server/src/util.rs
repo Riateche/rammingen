@@ -1,8 +1,9 @@
-use anyhow::{bail, Result};
-use sqlx::{query, query_scalar, PgPool};
-use std::path::PathBuf;
-
-use rammingen_protocol::credentials::AccessToken;
+use {
+    anyhow::{bail, Result},
+    rammingen_protocol::credentials::AccessToken,
+    sqlx::{query, query_scalar, PgPool},
+    std::path::PathBuf,
+};
 
 pub async fn sources(db: &PgPool) -> Result<Vec<String>> {
     query_scalar!("SELECT name FROM sources ORDER BY name")

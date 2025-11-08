@@ -1,10 +1,10 @@
-use std::path::Path;
-
-use anyhow::{bail, Result};
-use fs_err::{read_dir, symlink_metadata};
-use rammingen::unix_mode;
-
-use crate::is_ignored;
+use {
+    crate::is_ignored,
+    anyhow::{bail, Result},
+    fs_err::{read_dir, symlink_metadata},
+    rammingen::unix_mode,
+    std::path::Path,
+};
 
 pub fn is_leftover_dir_with_ignored_files(path: &Path) -> Result<bool> {
     let meta = symlink_metadata(path)?;

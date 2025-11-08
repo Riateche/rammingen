@@ -1,13 +1,13 @@
-use std::path::PathBuf;
-
-use clap::{Parser, Subcommand};
-use sqlx::PgPool;
-
-use rammingen_protocol::credentials::AccessToken;
-use rammingen_server::{
-    config_path,
-    util::{add_source, set_access_token, sources},
-    Config,
+use {
+    clap::{Parser, Subcommand},
+    rammingen_protocol::credentials::AccessToken,
+    rammingen_server::{
+        config_path,
+        util::{add_source, set_access_token, sources},
+        Config,
+    },
+    sqlx::PgPool,
+    std::path::PathBuf,
 };
 
 #[derive(Debug, Parser)]

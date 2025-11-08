@@ -17,26 +17,26 @@ path = "src/bin/admin.rs"
 rammingen_protocol = { path = "../protocol" }
 rammingen_sdk = { path = "../sdk" }
 
-anyhow.workspace = true
-bincode.workspace = true
-chrono = { workspace = true, features = ["std", "clock", "serde"] }
-futures.workspace = true
-hyper = { workspace = true, features = ["server", "http1"] }
-json5.workspace = true
-serde = { workspace = true, features = ["derive"] }
-stream_generator.workspace = true
-tempfile.workspace = true
-tokio = { workspace = true, features = ["full"] }
-tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
-futures-util = "0.3.27"
-sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-native-tls", "offline", "time"] }
-fs-err = "2.9.0"
-base64 = "0.21.0"
-http-body-util = "0.1.0-rc.2"
-tokio-stream = "0.1.12"
-bytes = "1.4.0"
-fs2 = "0.4.3"
-humantime-serde = "1.1.1"
-clap = { version = "4.2.1", features = ["derive"] }
-dirs = "5.0.1"
+anyhow = { workspace = true }
+base64 = { workspace = true }
+bincode = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+dirs = { workspace = true }
+fs-err = { workspace = true }
+fs2 = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+http-body-util = { workspace = true }
+humantime-serde = { workspace = true }
+hyper = { workspace = true }
+json5 = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+stream_generator = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

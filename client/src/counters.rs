@@ -1,12 +1,12 @@
-use std::{
-    ops::AddAssign,
-    sync::atomic::{AtomicU64, Ordering},
+use {
+    crate::{info::pretty_size, Ctx},
+    itertools::Itertools,
+    serde::{Deserialize, Serialize},
+    std::{
+        ops::AddAssign,
+        sync::atomic::{AtomicU64, Ordering},
+    },
 };
-
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
-
-use crate::{info::pretty_size, Ctx};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct FinalCounters {

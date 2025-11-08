@@ -1,22 +1,21 @@
-use std::fmt::Display;
-
-use anyhow::{anyhow, Result};
-use byte_unit::Byte;
-use chrono::{DateTime, Local, SubsecRound, Timelike};
-use futures::TryStreamExt;
-use itertools::Itertools;
-use prettytable::{cell, format::FormatBuilder, row, Table};
-use rammingen_protocol::{
-    endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
-    ArchivePath, DateTimeUtc, EntryKind, SourceId,
-};
-use tracing::{error, info};
-
-use rammingen_sdk::content::DecryptedEntryVersion;
-
-use crate::{
-    path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules, upload::to_archive_path,
-    Ctx,
+use {
+    crate::{
+        path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules,
+        upload::to_archive_path, Ctx,
+    },
+    anyhow::{anyhow, Result},
+    byte_unit::Byte,
+    chrono::{DateTime, Local, SubsecRound, Timelike},
+    futures::TryStreamExt,
+    itertools::Itertools,
+    prettytable::{cell, format::FormatBuilder, row, Table},
+    rammingen_protocol::{
+        endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
+        ArchivePath, DateTimeUtc, EntryKind, SourceId,
+    },
+    rammingen_sdk::content::DecryptedEntryVersion,
+    std::fmt::Display,
+    tracing::{error, info},
 };
 
 struct Sources(Vec<SourceInfo>);

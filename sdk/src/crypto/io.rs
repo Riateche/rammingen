@@ -1,22 +1,22 @@
-use aes_siv::AeadCore;
-use aes_siv::{aead::OsRng, Aes256SivAead, Nonce};
-use anyhow::Result;
-use byteorder::{ByteOrder, WriteBytesExt, LE};
-use deflate::write::DeflateEncoder;
-use deflate::CompressionOptions;
-use fs_err::File;
-use generic_array::typenum::ToInt;
-use inflate::InflateWriter;
-use rand::RngCore;
-use sha2::{Digest, Sha256};
-use std::cmp::min;
-use std::io::{self, Write};
-use std::path::Path;
-use tempfile::SpooledTempFile;
-
-use rammingen_protocol::ContentHash;
-
-use crate::{content::EncryptedFileHead, crypto::Cipher};
+use {
+    crate::{content::EncryptedFileHead, crypto::Cipher},
+    aes_siv::{aead::OsRng, AeadCore, Aes256SivAead, Nonce},
+    anyhow::Result,
+    byteorder::{ByteOrder, WriteBytesExt, LE},
+    deflate::{write::DeflateEncoder, CompressionOptions},
+    fs_err::File,
+    generic_array::typenum::ToInt,
+    inflate::InflateWriter,
+    rammingen_protocol::ContentHash,
+    rand::RngCore,
+    sha2::{Digest, Sha256},
+    std::{
+        cmp::min,
+        io::{self, Write},
+        path::Path,
+    },
+    tempfile::SpooledTempFile,
+};
 
 /// Max size of encrypted file content that will be stored in memory.
 /// Files exceeding this limit will be stored as a temporary file on disk.
@@ -199,6 +199,7 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
         let nonce = chunk_data
             .get(..nonce_size)
             .ok_or_else(|| io::Error::other("chunk data is too short"))?;
+        #[allow(deprecated)]
         let nonce = Nonce::from_slice(nonce);
         let plaintext = self
             .cipher

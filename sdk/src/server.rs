@@ -1,21 +1,22 @@
-use std::{convert::Infallible, error::Error, future::Future, io, time::Duration};
-
-use futures::FutureExt;
-use hyper::{
-    body::{Body, Incoming},
-    server::conn::http1,
-    service::service_fn,
-    Request, Response,
+use {
+    futures::FutureExt,
+    hyper::{
+        body::{Body, Incoming},
+        server::conn::http1,
+        service::service_fn,
+        Request, Response,
+    },
+    hyper_util::{
+        rt::TokioIo,
+        server::graceful::{GracefulConnection, GracefulShutdown},
+    },
+    std::{convert::Infallible, error::Error, future::Future, io, time::Duration},
+    tokio::{
+        io::{AsyncRead, AsyncWrite},
+        time::timeout,
+    },
+    tracing::{debug, info, warn},
 };
-use hyper_util::{
-    rt::TokioIo,
-    server::graceful::{GracefulConnection, GracefulShutdown},
-};
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    time::timeout,
-};
-use tracing::{debug, info, warn};
 
 pub fn serve_connection<C, H, Fut, B>(
     io: C,

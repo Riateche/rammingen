@@ -1,17 +1,23 @@
-use std::{
-    borrow::Cow,
-    fmt::{self, Debug, Display},
-    str::FromStr,
+use {
+    aes_siv::{Aes256SivAead, KeyInit},
+    anyhow::{bail, ensure, format_err, Error},
+    base64::{display::Base64Display, prelude::BASE64_URL_SAFE_NO_PAD, Engine},
+    derive_more::AsRef,
+    generic_array::typenum::U64,
+    rand::{
+        distributions::{Alphanumeric, DistString},
+        rngs::OsRng,
+    },
+    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
+    std::{
+        borrow::Cow,
+        fmt::{self, Debug, Display},
+        str::FromStr,
+    },
 };
 
-use aes_siv::{Aes256SivAead, KeyInit};
-use anyhow::{bail, ensure, format_err, Error};
-use base64::display::Base64Display;
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use derive_more::AsRef;
-use generic_array::{typenum::U64, GenericArray};
-use rand::{distributions::Alphanumeric, distributions::DistString, rngs::OsRng};
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+#[allow(deprecated, reason = "aes-siv doesn't support generic-array 1.x")]
+use generic_array::GenericArray;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct AccessToken(String);
@@ -51,6 +57,7 @@ impl Debug for AccessToken {
 }
 
 #[derive(Clone)]
+#[allow(deprecated)]
 pub struct EncryptionKey(GenericArray<u8, U64>);
 
 impl EncryptionKey {
@@ -58,6 +65,7 @@ impl EncryptionKey {
         Self(Aes256SivAead::generate_key(&mut OsRng))
     }
 
+    #[allow(deprecated)]
     pub fn get(&self) -> &GenericArray<u8, U64> {
         &self.0
     }

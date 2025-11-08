@@ -1,31 +1,31 @@
-use crate::term::set_status_updater;
-use fs_err::metadata;
-use rammingen_protocol::util::interrupt_on_error;
-use sha2::Digest;
-use sha2::Sha256;
-use std::{
-    path::Path,
-    sync::{atomic::Ordering, Arc},
+use {
+    crate::{
+        path::SanitizedLocalPath,
+        rules::Rules,
+        term::{set_status, set_status_updater},
+        Ctx,
+    },
+    anyhow::{anyhow, bail, Result},
+    fs_err::{create_dir, metadata, remove_dir, remove_file, rename},
+    futures::{stream, Stream, TryStreamExt},
+    rammingen_protocol::{
+        endpoints::GetEntryVersionsAtTime,
+        util::{archive_to_native_relative_path, interrupt_on_error, try_exists, ErrorSender},
+        ArchivePath, DateTimeUtc, EntryKind,
+    },
+    rammingen_sdk::content::{DecryptedContentHead, DecryptedEntryVersion, LocalEntry},
+    sha2::{Digest, Sha256},
+    std::{
+        path::Path,
+        sync::{atomic::Ordering, Arc},
+    },
+    stream_generator::generate_try_stream,
+    tokio::{
+        sync::{mpsc, oneshot, Semaphore},
+        task,
+    },
+    tracing::{info, warn},
 };
-
-use anyhow::{anyhow, bail, Result};
-use fs_err::{create_dir, remove_dir, remove_file, rename};
-use futures::{stream, Stream, TryStreamExt};
-use rammingen_protocol::{
-    endpoints::GetEntryVersionsAtTime,
-    util::{archive_to_native_relative_path, try_exists, ErrorSender},
-    ArchivePath, DateTimeUtc, EntryKind,
-};
-use stream_generator::generate_try_stream;
-use tokio::{
-    sync::{mpsc, oneshot, Semaphore},
-    task,
-};
-use tracing::{info, warn};
-
-use rammingen_sdk::content::{DecryptedContentHead, DecryptedEntryVersion, LocalEntry};
-
-use crate::{path::SanitizedLocalPath, rules::Rules, term::set_status, Ctx};
 
 fn archive_to_local_path(
     path: &ArchivePath,
@@ -470,8 +470,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
 
             #[cfg(target_family = "unix")]
             {
-                use std::fs::Permissions;
-                use std::os::unix::prelude::PermissionsExt;
+                use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
 
                 if let Some(mode) = content.unix_mode {
                     fs_err::set_permissions(&item.local_path, Permissions::from_mode(mode))?;

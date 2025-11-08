@@ -9,18 +9,18 @@ rammingen = { path = "../client" }
 rammingen_server = { path = "../server" }
 rammingen_protocol = { path = "../protocol" }
 
-anyhow.workspace = true
-chrono = { workspace = true, features = ["std", "clock", "serde"] }
-rand.workspace = true
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+fs-err = { workspace = true }
+futures = { workspace = true }
+json5 = { workspace = true }
+portpicker = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
 reqwest = { workspace = true }
-sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-native-tls", "offline", "time"] }
-tempfile = "3.5.0"
+sqlx = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-tracing.workspace = true
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-portpicker = "0.1.1"
-fs-err = "2.9.0"
-json5 = "0.4.1"
-clap = { version = "4.2.1", features = ["derive"] }
-futures = "0.3.28"
-rand_chacha = "0.3.1"

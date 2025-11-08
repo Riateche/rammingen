@@ -1,9 +1,10 @@
-use anyhow::Result;
-use regex::Regex;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
-use crate::path::SanitizedLocalPath;
+use {
+    crate::path::SanitizedLocalPath,
+    anyhow::Result,
+    regex::Regex,
+    serde::{Deserialize, Serialize},
+    std::collections::HashMap,
+};
 
 #[derive(Debug, Clone)]
 pub struct Rules {
@@ -100,12 +101,7 @@ impl Rule {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use fs_err::canonicalize;
-    use once_cell::sync::Lazy;
-
-    use super::*;
+    use {super::*, fs_err::canonicalize, once_cell::sync::Lazy, std::path::PathBuf};
 
     static TMP_PATH: Lazy<PathBuf> = Lazy::new(|| canonicalize("/tmp").unwrap());
 

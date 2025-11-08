@@ -1,17 +1,17 @@
-use std::{convert::Infallible, io::Write, sync::Arc};
-
-use futures_util::StreamExt;
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, StreamBody};
-use hyper::{
-    body::{self, Bytes, Frame},
-    header::CONTENT_LENGTH,
-    Request, Response, StatusCode,
+use {
+    crate::handler,
+    futures_util::StreamExt,
+    http_body_util::{combinators::BoxBody, BodyExt, Empty, StreamBody},
+    hyper::{
+        body::{self, Bytes, Frame},
+        header::CONTENT_LENGTH,
+        Request, Response, StatusCode,
+    },
+    rammingen_protocol::{util::stream_file, EncryptedContentHash},
+    std::{convert::Infallible, io::Write, sync::Arc},
+    tokio::{sync::Mutex, task::block_in_place},
+    tracing::warn,
 };
-use rammingen_protocol::{util::stream_file, EncryptedContentHash};
-use tokio::{sync::Mutex, task::block_in_place};
-use tracing::warn;
-
-use crate::handler;
 
 pub async fn upload(
     ctx: handler::Context,

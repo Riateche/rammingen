@@ -1,20 +1,20 @@
-use std::{
-    path::{Path, PathBuf},
-    thread::sleep,
-    time::Duration,
+use {
+    crate::{diff::is_leftover_dir_with_ignored_files, is_ignored},
+    anyhow::Result,
+    fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write},
+    rand::{
+        distributions::{Alphanumeric, DistString, WeightedIndex},
+        prelude::Distribution,
+        seq::SliceRandom,
+        Rng,
+    },
+    std::{
+        path::{Path, PathBuf},
+        thread::sleep,
+        time::Duration,
+    },
+    tracing::debug,
 };
-
-use anyhow::Result;
-use fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write};
-use rand::{
-    distributions::{Alphanumeric, DistString, WeightedIndex},
-    prelude::Distribution,
-    seq::SliceRandom,
-    Rng,
-};
-use tracing::debug;
-
-use crate::{diff::is_leftover_dir_with_ignored_files, is_ignored};
 
 fn find_paths_inner(
     dir: &Path,
@@ -160,8 +160,7 @@ fn edit(dir: &Path, rng: &mut impl Rng) -> Result<()> {
 fn change_mode(_dir: &Path, rng: &mut impl Rng) -> Result<()> {
     #[cfg(target_family = "unix")]
     {
-        use std::fs::Permissions;
-        use std::os::unix::prelude::PermissionsExt;
+        use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
 
         let Some(path) = choose_path(_dir, true, false, false, true, rng)? else {
             return Ok(());

@@ -1,8 +1,9 @@
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    path::EncryptedArchivePath, DateTimeUtc, EncryptedContentHash, Entry, EntryKind,
-    EntryUpdateNumber, EntryVersion, FileContent, RecordTrigger, SourceId,
+use {
+    crate::{
+        path::EncryptedArchivePath, DateTimeUtc, EncryptedContentHash, Entry, EntryKind,
+        EntryUpdateNumber, EntryVersion, FileContent, RecordTrigger, SourceId,
+    },
+    serde::{Deserialize, Serialize},
 };
 
 pub trait RequestToResponse {

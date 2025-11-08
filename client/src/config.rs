@@ -1,17 +1,15 @@
-use std::{path::PathBuf, time::Duration};
-
-use byte_unit::Byte;
-use humantime::parse_duration;
-use serde::{Deserialize, Serialize};
-use url::Url;
-
-use rammingen_protocol::{
-    credentials::{AccessToken, EncryptionKey},
-    serde_path_with_prefix, ArchivePath,
+use {
+    crate::{path::SanitizedLocalPath, rules::Rule},
+    byte_unit::Byte,
+    humantime::parse_duration,
+    rammingen_protocol::{
+        credentials::{AccessToken, EncryptionKey},
+        serde_path_with_prefix, ArchivePath,
+    },
+    serde::{Deserialize, Serialize},
+    std::{path::PathBuf, time::Duration},
+    url::Url,
 };
-
-use crate::path::SanitizedLocalPath;
-use crate::rules::Rule;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountPoint {

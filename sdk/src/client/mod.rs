@@ -1,29 +1,29 @@
 mod download;
 
-use std::{
-    future::Future,
-    io::{self, Read, Seek, SeekFrom},
-    sync::Arc,
-    time::Duration,
-};
-
-use anyhow::{bail, format_err, Error, Result};
-use byteorder::{ByteOrder, LE};
-use futures::{Stream, StreamExt};
-use reqwest::{header::CONTENT_LENGTH, Body, Method, Url};
-use serde::{de::DeserializeOwned, Serialize};
-use stream_generator::generate_try_stream;
-use tokio::{
-    sync::Mutex,
-    time::{sleep, timeout},
-};
-use tracing::{instrument, warn};
-
-use rammingen_protocol::{
-    credentials::AccessToken,
-    endpoints::{RequestToResponse, RequestToStreamingResponse},
-    util::stream_file,
-    EncryptedContentHash,
+use {
+    anyhow::{bail, format_err, Error, Result},
+    byteorder::{ByteOrder, LE},
+    futures::{Stream, StreamExt},
+    rammingen_protocol::{
+        credentials::AccessToken,
+        endpoints::{RequestToResponse, RequestToStreamingResponse},
+        util::stream_file,
+        EncryptedContentHash,
+    },
+    reqwest::{header::CONTENT_LENGTH, Body, Method, Url},
+    serde::{de::DeserializeOwned, Serialize},
+    std::{
+        future::Future,
+        io::{self, Read, Seek, SeekFrom},
+        sync::Arc,
+        time::Duration,
+    },
+    stream_generator::generate_try_stream,
+    tokio::{
+        sync::Mutex,
+        time::{sleep, timeout},
+    },
+    tracing::{instrument, warn},
 };
 
 /// Reuse created client or clone it in order to reuse a connection pool.

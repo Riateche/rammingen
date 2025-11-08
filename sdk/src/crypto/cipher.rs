@@ -1,15 +1,12 @@
-use std::mem::size_of;
-
-use aes_siv::{
-    aead::Aead,
-    KeyInit, {Aes256SivAead, Nonce},
-};
-use anyhow::{ensure, Context, Result};
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-
-use rammingen_protocol::{
-    credentials::EncryptionKey, ArchivePath, ContentHash, EncryptedArchivePath,
-    EncryptedContentHash, EncryptedSize,
+use {
+    aes_siv::{aead::Aead, Aes256SivAead, KeyInit, Nonce},
+    anyhow::{ensure, Context, Result},
+    base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine},
+    rammingen_protocol::{
+        credentials::EncryptionKey, ArchivePath, ContentHash, EncryptedArchivePath,
+        EncryptedContentHash, EncryptedSize,
+    },
+    std::mem::size_of,
 };
 
 pub struct Cipher {
@@ -122,12 +119,12 @@ impl Cipher {
 
 #[cfg(test)]
 mod test {
-    use std::io::{self, Read, Seek, SeekFrom, Write};
-
-    use tempfile::NamedTempFile;
-
-    use super::*;
-    use crate::crypto::DecryptingWriter;
+    use {
+        super::*,
+        crate::crypto::DecryptingWriter,
+        std::io::{self, Read, Seek, SeekFrom, Write},
+        tempfile::NamedTempFile,
+    };
 
     #[test]
     pub fn str_roundtrip() {

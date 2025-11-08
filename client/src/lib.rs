@@ -13,38 +13,39 @@ mod sync;
 pub mod term;
 mod upload;
 
-use crate::{
-    info::{local_status, ls},
-    pull_updates::pull_updates,
-    upload::upload,
+use {
+    crate::{
+        info::{local_status, ls},
+        pull_updates::pull_updates,
+        upload::upload,
+    },
+    anyhow::{anyhow, bail, Context as _, Result},
+    cli::{default_log_path, Cli},
+    config::Config,
+    counters::{FinalCounters, IntermediateCounters, NotificationCounters},
+    derivative::Derivative,
+    download::{download_latest, download_version},
+    info::{list_versions, pretty_size},
+    notify_rust::Notification,
+    rammingen_protocol::{
+        endpoints::{CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion},
+        util::log_writer,
+    },
+    rammingen_sdk::{client::Client, crypto::Cipher},
+    rules::Rules,
+    std::{
+        collections::HashSet,
+        fs::Metadata,
+        path::PathBuf,
+        sync::{Arc, Mutex},
+    },
+    sync::sync,
+    term::TermLayer,
+    tracing::{info, warn},
+    tracing_subscriber::{
+        prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
+    },
 };
-use anyhow::{anyhow, bail, Context as _, Result};
-use cli::{default_log_path, Cli};
-use config::Config;
-use counters::{FinalCounters, IntermediateCounters, NotificationCounters};
-use derivative::Derivative;
-use download::{download_latest, download_version};
-use info::{list_versions, pretty_size};
-use notify_rust::Notification;
-use rammingen_protocol::{
-    endpoints::{CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion},
-    util::log_writer,
-};
-use rules::Rules;
-use std::fs::Metadata;
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
-use sync::sync;
-use term::TermLayer;
-use tracing::{info, warn};
-use tracing_subscriber::{
-    prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
-};
-
-use rammingen_sdk::{client::Client, crypto::Cipher};
 
 #[derive(Derivative)]
 pub struct Ctx {

@@ -6,58 +6,58 @@ mod snapshot;
 mod storage;
 pub mod util;
 
-use std::{
-    cmp::min,
-    collections::HashMap,
-    convert::Infallible,
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    pin::pin,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
-use anyhow::{anyhow, Result};
-use bytes::{BufMut, BytesMut};
-use futures_util::{Future, StreamExt, TryStreamExt};
-use http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody};
-use humantime_serde::re::humantime::parse_duration;
-use hyper::{
-    body::{self, Bytes, Frame},
-    header::AUTHORIZATION,
-    Method, Request, Response, StatusCode,
-};
-use rammingen_protocol::{
-    endpoints::{
-        AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions, GetDirectChildEntries,
-        GetEntryVersionsAtTime, GetNewEntries, GetServerStatus, GetSources, MovePath, RemovePath,
-        RequestToResponse, RequestToStreamingResponse, ResetVersion, StreamingResponseItem,
+use {
+    crate::snapshot::make_snapshot,
+    anyhow::{anyhow, Result},
+    bytes::{BufMut, BytesMut},
+    futures_util::{Future, StreamExt, TryStreamExt},
+    http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody},
+    humantime_serde::re::humantime::parse_duration,
+    hyper::{
+        body::{self, Bytes, Frame},
+        header::AUTHORIZATION,
+        Method, Request, Response, StatusCode,
     },
-    EncryptedContentHash, SourceId,
-};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use sqlx::{query, PgPool};
-use storage::Storage;
-use stream_generator::{generate_stream, Yielder};
-use tokio::{
-    net::TcpListener,
-    select,
-    sync::{
-        mpsc::{self, Sender},
-        Mutex,
+    rammingen_protocol::{
+        endpoints::{
+            AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions,
+            GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries, GetServerStatus,
+            GetSources, MovePath, RemovePath, RequestToResponse, RequestToStreamingResponse,
+            ResetVersion, StreamingResponseItem,
+        },
+        EncryptedContentHash, SourceId,
     },
-    task,
-    time::interval,
+    rammingen_sdk::{
+        server::{serve_connection, ShutdownWatcher},
+        signal::shutdown_signal,
+    },
+    serde::{de::DeserializeOwned, Deserialize, Serialize},
+    sqlx::{query, PgPool},
+    std::{
+        cmp::min,
+        collections::HashMap,
+        convert::Infallible,
+        net::SocketAddr,
+        path::{Path, PathBuf},
+        pin::pin,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
+    storage::Storage,
+    stream_generator::{generate_stream, Yielder},
+    tokio::{
+        net::TcpListener,
+        select,
+        sync::{
+            mpsc::{self, Sender},
+            Mutex,
+        },
+        task,
+        time::interval,
+    },
+    tracing::{error, info, warn},
+    util::default_config_dir,
 };
-use tracing::{error, info, warn};
-
-use rammingen_sdk::{
-    server::{serve_connection, ShutdownWatcher},
-    signal::shutdown_signal,
-};
-
-use crate::snapshot::make_snapshot;
-use util::default_config_dir;
 
 const SOURCES_CACHE_INTERVAL: Duration = Duration::from_secs(10);
 

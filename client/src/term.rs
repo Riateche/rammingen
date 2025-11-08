@@ -1,26 +1,22 @@
-use std::fmt::Write as _;
-use std::process;
-use std::time::Duration;
-use std::{
-    fmt::Display,
-    io::{Stdout, Write},
-    sync::Arc,
+use {
+    crossterm::{
+        cursor,
+        style::{Color, ResetColor, SetForegroundColor},
+        terminal, QueueableCommand,
+    },
+    once_cell::sync::Lazy,
+    parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex},
+    std::{
+        fmt::{Display, Write as _},
+        io::{Stdout, Write},
+        process,
+        sync::Arc,
+        time::Duration,
+    },
+    tokio::{select, signal::ctrl_c, sync::oneshot, task, time::interval},
+    tracing::{error, field::Visit, warn, Level, Subscriber},
+    tracing_subscriber::Layer,
 };
-
-use crossterm::{
-    cursor,
-    style::{Color, ResetColor, SetForegroundColor},
-    terminal, QueueableCommand,
-};
-use once_cell::sync::Lazy;
-use parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex};
-use tokio::signal::ctrl_c;
-use tokio::sync::oneshot;
-use tokio::time::interval;
-use tokio::{select, task};
-use tracing::{error, warn, Level};
-use tracing::{field::Visit, Subscriber};
-use tracing_subscriber::Layer;
 
 struct Term {
     stdout: Stdout,

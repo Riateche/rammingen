@@ -28,5 +28,4 @@
 mod cipher;
 mod io;
 
-pub use cipher::Cipher;
-pub use io::DecryptingWriter;
+pub use {cipher::Cipher, io::DecryptingWriter};

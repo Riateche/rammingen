@@ -1,38 +1,38 @@
 mod diff;
 mod shuffle;
 
-use std::{
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    time::Duration,
-};
-
-use anyhow::{bail, Result};
-use chrono::{DateTime, FixedOffset, Utc};
-use clap::{Parser, Subcommand};
-use diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files};
-use fs_err::{
-    copy, create_dir, create_dir_all, read_dir, remove_dir_all, remove_file, rename, write,
-};
-use futures::future::pending;
-use portpicker::pick_unused_port;
-use rammingen_server::util::{add_source, migrate};
-use rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng};
-use rand_chacha::ChaCha12Rng;
-use reqwest::Url;
-use shuffle::{choose_path, random_content, random_name, shuffle};
-use sqlx::PgPool;
-use tempfile::TempDir;
-use tokio::time::{interval, sleep};
-use tracing::{debug, error, info};
-
-use rammingen::{
-    config::MountPoint, path::SanitizedLocalPath, rules::Rule, setup_logger, term::clear_status,
-};
-use rammingen_protocol::{
-    credentials::{AccessToken, EncryptionKey},
-    util::native_to_archive_relative_path,
-    ArchivePath, DateTimeUtc,
+use {
+    anyhow::{bail, Result},
+    chrono::{DateTime, FixedOffset, Utc},
+    clap::{Parser, Subcommand},
+    diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files},
+    fs_err::{
+        copy, create_dir, create_dir_all, read_dir, remove_dir_all, remove_file, rename, write,
+    },
+    futures::future::pending,
+    portpicker::pick_unused_port,
+    rammingen::{
+        config::MountPoint, path::SanitizedLocalPath, rules::Rule, setup_logger, term::clear_status,
+    },
+    rammingen_protocol::{
+        credentials::{AccessToken, EncryptionKey},
+        util::native_to_archive_relative_path,
+        ArchivePath, DateTimeUtc,
+    },
+    rammingen_server::util::{add_source, migrate},
+    rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng},
+    rand_chacha::ChaCha12Rng,
+    reqwest::Url,
+    shuffle::{choose_path, random_content, random_name, shuffle},
+    sqlx::PgPool,
+    std::{
+        net::SocketAddr,
+        path::{Path, PathBuf},
+        time::Duration,
+    },
+    tempfile::TempDir,
+    tokio::time::{interval, sleep},
+    tracing::{debug, error, info},
 };
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
@@ -78,7 +78,7 @@ pub enum Command {
 
 async fn try_main() -> Result<()> {
     // TODO: remove into_path
-    let dir = TempDir::new()?.into_path();
+    let dir = TempDir::new()?.keep();
     let cli = Cli::parse();
 
     setup_logger(

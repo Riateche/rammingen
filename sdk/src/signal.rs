@@ -1,9 +1,10 @@
-use std::{future::Future, pin::pin};
-
-use anyhow::{Context, Result};
-use derive_more::Display;
-use futures::{future::select, FutureExt};
-use tokio::signal::ctrl_c;
+use {
+    anyhow::{Context, Result},
+    derive_more::Display,
+    futures::{future::select, FutureExt},
+    std::{future::Future, pin::pin},
+    tokio::signal::ctrl_c,
+};
 
 #[derive(Display)]
 pub enum ShutdownSignal {

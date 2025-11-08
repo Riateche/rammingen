@@ -1,12 +1,12 @@
-use std::{path::PathBuf, str::FromStr};
-
-use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone};
-use clap::{Parser, Subcommand};
-use derive_more::{From, Into};
-use rammingen_protocol::{ArchivePath, DateTimeUtc};
-
-use crate::{info::DATE_TIME_FORMAT, path::SanitizedLocalPath};
+use {
+    crate::{info::DATE_TIME_FORMAT, path::SanitizedLocalPath},
+    anyhow::{anyhow, Context, Result},
+    chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone},
+    clap::{Parser, Subcommand},
+    derive_more::{From, Into},
+    rammingen_protocol::{ArchivePath, DateTimeUtc},
+    std::{path::PathBuf, str::FromStr},
+};
 
 #[derive(Debug, Parser)]
 #[command(version = env!("CARGO_PKG_VERSION"))]

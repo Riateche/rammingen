@@ -1,13 +1,15 @@
-use anyhow::{anyhow, bail, Result};
-use fs2::available_space;
-use fs_err::{create_dir_all, read_dir, remove_file, rename, symlink_metadata, File};
-use rammingen_protocol::{util::try_exists, EncryptedContentHash};
-use std::{
-    collections::HashMap,
-    io::Write,
-    path::{Path, PathBuf},
+use {
+    anyhow::{anyhow, bail, Result},
+    fs2::available_space,
+    fs_err::{create_dir_all, read_dir, remove_file, rename, symlink_metadata, File},
+    rammingen_protocol::{util::try_exists, EncryptedContentHash},
+    std::{
+        collections::HashMap,
+        io::Write,
+        path::{Path, PathBuf},
+    },
+    tempfile::NamedTempFile,
 };
-use tempfile::NamedTempFile;
 
 #[derive(Debug)]
 pub struct Storage {
@@ -116,8 +118,7 @@ impl Storage {
 
 #[test]
 fn basic() {
-    use std::io::Read;
-    use tempfile::TempDir;
+    use {std::io::Read, tempfile::TempDir};
 
     let dir = TempDir::new().unwrap();
     let storage = Storage::new(dir.path().into()).unwrap();

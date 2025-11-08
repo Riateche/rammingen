@@ -1,10 +1,8 @@
-use std::{fmt, str::FromStr};
-
-use anyhow::anyhow;
-use anyhow::bail;
-use anyhow::Result;
-use serde::Serialize;
-use serde::{de::Error, Deserialize};
+use {
+    anyhow::{anyhow, bail, Result},
+    serde::{de::Error, Deserialize, Serialize},
+    std::{fmt, str::FromStr},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct ArchivePath(String);

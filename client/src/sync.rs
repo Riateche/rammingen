@@ -1,19 +1,20 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
-
-use crate::{
-    counters::NotificationCounters,
-    download::download_latest,
-    pull_updates::pull_updates,
-    rules::Rules,
-    show_notification,
-    upload::{find_local_deletions, upload},
-    Ctx,
+use {
+    crate::{
+        counters::NotificationCounters,
+        download::download_latest,
+        pull_updates::pull_updates,
+        rules::Rules,
+        show_notification,
+        upload::{find_local_deletions, upload},
+        Ctx,
+    },
+    anyhow::{Context, Result},
+    chrono::{TimeDelta, Utc},
+    humantime::format_duration,
+    itertools::Itertools,
+    std::{collections::HashSet, sync::Arc, time::Duration},
+    tracing::warn,
 };
-use anyhow::{Context, Result};
-use chrono::{TimeDelta, Utc};
-use humantime::format_duration;
-use itertools::Itertools;
-use tracing::warn;
 
 pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     sync_inner(ctx, dry_run).await.inspect_err(|err| {

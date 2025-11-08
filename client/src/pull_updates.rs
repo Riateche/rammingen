@@ -1,12 +1,11 @@
-use std::cmp::max;
-
-use anyhow::Result;
-use futures::TryStreamExt;
-
-use rammingen_protocol::endpoints::GetNewEntries;
-use rammingen_sdk::content::DecryptedEntryVersion;
-
-use crate::{term::set_status, Ctx};
+use {
+    crate::{term::set_status, Ctx},
+    anyhow::Result,
+    futures::TryStreamExt,
+    rammingen_protocol::endpoints::GetNewEntries,
+    rammingen_sdk::content::DecryptedEntryVersion,
+    std::cmp::max,
+};
 
 pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     let _status = set_status("Pulling updates from server");

@@ -1,35 +1,35 @@
-use anyhow::{anyhow, bail, Result};
-use fs::symlink_metadata;
-use fs_err as fs;
-use futures::future::BoxFuture;
-use rammingen_protocol::{
-    endpoints::{AddVersion, AddVersions, ContentHashExists},
-    util::{interrupt_on_error, native_to_archive_relative_path, ErrorSender},
-    ArchivePath, ContentHash, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
-};
-use std::{
-    collections::HashSet,
-    fs::FileType,
-    mem,
-    sync::{atomic::Ordering, Arc},
-    time::Duration,
-};
-use tokio::{
-    sync::{mpsc, oneshot, Semaphore},
-    task::{self, block_in_place},
-    time::sleep,
-};
-use tracing::{debug, info, warn};
-
-use rammingen_sdk::content::{DecryptedContentHead, EncryptedFileHead, LocalEntry};
-
-use crate::{
-    config::MountPoint,
-    info::pretty_size,
-    path::SanitizedLocalPath,
-    rules::Rules,
-    term::{set_status, set_status_updater},
-    unix_mode, Ctx,
+use {
+    crate::{
+        config::MountPoint,
+        info::pretty_size,
+        path::SanitizedLocalPath,
+        rules::Rules,
+        term::{set_status, set_status_updater},
+        unix_mode, Ctx,
+    },
+    anyhow::{anyhow, bail, Result},
+    fs::symlink_metadata,
+    fs_err as fs,
+    futures::future::BoxFuture,
+    rammingen_protocol::{
+        endpoints::{AddVersion, AddVersions, ContentHashExists},
+        util::{interrupt_on_error, native_to_archive_relative_path, ErrorSender},
+        ArchivePath, ContentHash, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
+    },
+    rammingen_sdk::content::{DecryptedContentHead, EncryptedFileHead, LocalEntry},
+    std::{
+        collections::HashSet,
+        fs::FileType,
+        mem,
+        sync::{atomic::Ordering, Arc},
+        time::Duration,
+    },
+    tokio::{
+        sync::{mpsc, oneshot, Semaphore},
+        task::{self, block_in_place},
+        time::sleep,
+    },
+    tracing::{debug, info, warn},
 };
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_millis(100);

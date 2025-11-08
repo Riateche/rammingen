@@ -1,9 +1,11 @@
-use anyhow::Result;
-use clap::Parser;
-use rammingen_protocol::util::log_writer;
-use rammingen_server::{config_path, Config};
-use std::{path::PathBuf, sync::Mutex};
-use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
+use {
+    anyhow::Result,
+    clap::Parser,
+    rammingen_protocol::util::log_writer,
+    rammingen_server::{config_path, Config},
+    std::{path::PathBuf, sync::Mutex},
+    tracing_subscriber::{util::SubscriberInitExt, EnvFilter},
+};
 
 #[derive(Debug, Parser)]
 #[command(version = env!("CARGO_PKG_VERSION"))]

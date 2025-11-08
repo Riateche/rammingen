@@ -1,10 +1,12 @@
-use anyhow::{anyhow, bail, Result};
-use fs_err::symlink_metadata;
-use serde::{de::Error, Deserialize, Serialize};
-use std::{
-    fmt::Display,
-    path::{Component, Path, PathBuf},
-    str::FromStr,
+use {
+    anyhow::{anyhow, bail, Result},
+    fs_err::symlink_metadata,
+    serde::{de::Error, Deserialize, Serialize},
+    std::{
+        fmt::Display,
+        path::{Component, Path, PathBuf},
+        str::FromStr,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]

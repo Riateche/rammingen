@@ -8,5 +8,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rammingen = { path = "../../client" }
-jni = { version = "0.21.1", default-features = false }
+
+jni = { workspace = true }
 tracing = { workspace = true }

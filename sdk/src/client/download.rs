@@ -1,15 +1,15 @@
-use std::{fmt::Debug, io::Write, path::Path};
-
-use anyhow::{ensure, format_err, Context, Error, Result};
-use fs_err::File;
-use reqwest::{header::CONTENT_LENGTH, Response};
-use tokio::{task::block_in_place, time::timeout};
-use tracing::instrument;
-
-use super::{ok_or_retry, Client, RequestError, DEFAULT_TIMEOUT, RESPONSE_TIMEOUT};
-use crate::{
-    content::DecryptedContentHead,
-    crypto::{Cipher, DecryptingWriter},
+use {
+    super::{ok_or_retry, Client, RequestError, DEFAULT_TIMEOUT, RESPONSE_TIMEOUT},
+    crate::{
+        content::DecryptedContentHead,
+        crypto::{Cipher, DecryptingWriter},
+    },
+    anyhow::{ensure, format_err, Context, Error, Result},
+    fs_err::File,
+    reqwest::{header::CONTENT_LENGTH, Response},
+    std::{fmt::Debug, io::Write, path::Path},
+    tokio::{task::block_in_place, time::timeout},
+    tracing::instrument,
 };
 
 impl Client {

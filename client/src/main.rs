@@ -1,14 +1,14 @@
-use anyhow::Result;
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use clap::Parser;
-use tracing::error;
-
-use rammingen_protocol::credentials::EncryptionKey;
-
-use rammingen::{
-    cli::{default_config_path, Cli, Command},
-    config::Config,
-    setup_logger,
+use {
+    anyhow::Result,
+    base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine},
+    clap::Parser,
+    rammingen::{
+        cli::{default_config_path, Cli, Command},
+        config::Config,
+        setup_logger,
+    },
+    rammingen_protocol::credentials::EncryptionKey,
+    tracing::error,
 };
 
 #[tokio::main]
