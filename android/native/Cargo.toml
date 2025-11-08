@@ -1,0 +1,12 @@
+[package]
+name = "rammingen_android"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rammingen = { path = "../../client" }
+jni = { version = "0.21.1", default-features = false }
+tracing = { workspace = true }

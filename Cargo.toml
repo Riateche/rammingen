@@ -4,7 +4,8 @@ members = [
     "client",
     "protocol",
     "sdk",
-    "tests"
+    "tests",
+    "android/native",
 ]
 resolver = "2"
 
@@ -25,6 +26,7 @@ hyper = "1.4.1"
 json5 = "0.4.1"
 parking_lot = "0.12.3"
 rand = "0.8.5"
+reqwest = { version = "0.12.5", default-features = false, features = ["json", "stream", "rustls-tls"] }
 serde = "1.0.158"
 sha2 = "0.10.6"
 stream_generator = "0.1"

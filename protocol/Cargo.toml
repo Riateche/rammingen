@@ -14,7 +14,6 @@ futures.workspace = true
 generic-array.workspace = true
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
-sqlx = { version = "0.6.3", features = ["postgres", "runtime-tokio-native-tls", "offline", "time"] }
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
 base64 = "0.21.0"

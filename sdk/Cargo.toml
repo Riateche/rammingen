@@ -23,7 +23,7 @@ hyper-util = { version = "0.1.7", features = ["server-graceful", "tokio"] }
 inflate = "0.4.5"
 parking_lot.workspace = true
 rand.workspace = true
-reqwest = { version = "0.12.5", features = ["json", "stream"] }
+reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
 stream_generator.workspace = true
