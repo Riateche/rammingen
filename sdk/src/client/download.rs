@@ -6,9 +6,10 @@ use {
     },
     anyhow::{ensure, format_err, Context, Error, Result},
     fs_err::File,
+    rammingen_protocol::util::maybe_block_in_place,
     reqwest::{header::CONTENT_LENGTH, Response},
     std::{fmt::Debug, io::Write, path::Path},
-    tokio::{task::block_in_place, time::timeout},
+    tokio::time::timeout,
     tracing::instrument,
 };
 
@@ -32,7 +33,7 @@ impl Client {
                 .map_err(RequestError::transport)?
             {
                 actual_encrypted_size += chunk.len() as u64;
-                block_in_place(|| decryptor.write_all(&chunk))
+                maybe_block_in_place(|| decryptor.write_all(&chunk))
                     .map_err(RequestError::application)?;
             }
             Ok((actual_encrypted_size, decryptor))
@@ -44,7 +45,7 @@ impl Client {
             actual_encrypted_size,
             handle.encrypted_size,
         );
-        let (_, actual_hash, actual_size) = block_in_place(|| decryptor.finish())?;
+        let (_, actual_hash, actual_size) = maybe_block_in_place(|| decryptor.finish())?;
         ensure!(
             actual_size == handle.original_size,
             "content size mismatch; actual {actual_size}, expected {}",

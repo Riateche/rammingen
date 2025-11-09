@@ -18,14 +18,40 @@ use {
     tracing_subscriber::Layer,
 };
 
-struct Term {
-    stdout: Stdout,
-    current_status: Option<String>,
+type OptionDynTerm = Option<Box<dyn Term + Send + Sync>>;
+static GLOBAL_TERM: Lazy<Arc<Mutex<OptionDynTerm>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+
+pub struct GlobalTerm(ArcMutexGuard<RawMutex, Option<Box<dyn Term + Send + Sync>>>);
+
+impl Term for GlobalTerm {
+    fn set_status(&mut self, status: &str) {
+        self.0
+            .as_mut()
+            .expect("term not initialized")
+            .set_status(status);
+    }
+
+    fn clear_status(&mut self) {
+        self.0
+            .as_mut()
+            .expect("term not initialized")
+            .clear_status();
+    }
+
+    fn write(&mut self, level: Level, text: &str) {
+        self.0
+            .as_mut()
+            .expect("term not initialized")
+            .write(level, text);
+    }
 }
 
-fn term() -> ArcMutexGuard<RawMutex, Term> {
-    static TERM: Lazy<Arc<Mutex<Term>>> = Lazy::new(|| Arc::new(Mutex::new(Term::new())));
-    Mutex::lock_arc(&TERM)
+fn term() -> GlobalTerm {
+    GlobalTerm(Mutex::lock_arc(&GLOBAL_TERM))
+}
+
+pub fn set_term(term: Option<Box<dyn Term + Send + Sync>>) {
+    *GLOBAL_TERM.lock() = term;
 }
 
 #[must_use]
@@ -33,7 +59,7 @@ pub struct StatusGuard;
 
 impl StatusGuard {
     pub fn set(&self, status: impl Display) {
-        term().set_status(status);
+        term().set_status(&status.to_string());
     }
 }
 
@@ -44,7 +70,7 @@ impl Drop for StatusGuard {
 }
 
 pub fn set_status(status: impl Display) -> StatusGuard {
-    term().set_status(status);
+    term().set_status(&status.to_string());
     StatusGuard
 }
 
@@ -83,8 +109,60 @@ pub fn set_status_updater(
     StatusUpdaterGuard(Some(sender))
 }
 
-impl Term {
-    fn new() -> Self {
+pub struct TermLayer;
+
+impl<S: Subscriber> Layer<S> for TermLayer {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut message = String::new();
+        let mut fields = Vec::new();
+        event.record(&mut DebugVisitor(&mut message, &mut fields));
+        if !fields.is_empty() {
+            write!(message, " ({})", fields.join(", ")).unwrap();
+        }
+        let level = *event.metadata().level();
+        term().write(level, &message);
+    }
+
+    fn enabled(
+        &self,
+        metadata: &tracing::Metadata<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) -> bool {
+        metadata
+            .module_path()
+            .is_some_and(|path| path.starts_with("rammingen"))
+    }
+}
+
+struct DebugVisitor<'a>(&'a mut String, &'a mut Vec<String>);
+
+impl Visit for DebugVisitor<'_> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            write!(self.0, "{value:?}").unwrap();
+        } else {
+            self.1.push(format!("{} = {:?}", field.name(), value));
+        }
+    }
+}
+
+pub trait Term {
+    fn set_status(&mut self, status: &str);
+    fn clear_status(&mut self);
+    fn write(&mut self, level: Level, text: &str);
+}
+
+pub struct StdoutTerm {
+    stdout: Stdout,
+    current_status: Option<String>,
+}
+
+impl StdoutTerm {
+    pub fn new() -> Self {
         task::spawn(async {
             match ctrl_c().await {
                 Ok(()) => {
@@ -102,8 +180,16 @@ impl Term {
             current_status: None,
         }
     }
+}
 
-    fn set_status(&mut self, status: impl Display) {
+impl Default for StdoutTerm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Term for StdoutTerm {
+    fn set_status(&mut self, status: &str) {
         let status = status.to_string();
         if self.current_status.is_none() {
             self.stdout.queue(cursor::Hide).unwrap();
@@ -141,7 +227,15 @@ impl Term {
         self.current_status = None;
     }
 
-    fn write(&mut self, color: Option<Color>, text: impl Display) {
+    fn write(&mut self, level: Level, text: &str) {
+        let color = if level == Level::ERROR || level == Level::WARN {
+            Some(Color::Red)
+        } else if level == Level::INFO {
+            None
+        } else {
+            Some(Color::Grey)
+        };
+
         let old_status = self.current_status.clone();
         self.clear_status();
         if let Some(color) = color {
@@ -156,62 +250,8 @@ impl Term {
             self.stdout.queue(ResetColor).unwrap();
         }
         if let Some(old_status) = old_status {
-            self.set_status(old_status);
+            self.set_status(&old_status);
         }
         self.stdout.flush().unwrap();
-    }
-}
-
-impl Default for Term {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub struct TermLayer;
-
-impl<S: Subscriber> Layer<S> for TermLayer {
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
-        let mut message = String::new();
-        let mut fields = Vec::new();
-        event.record(&mut DebugVisitor(&mut message, &mut fields));
-        if !fields.is_empty() {
-            write!(message, " ({})", fields.join(", ")).unwrap();
-        }
-        let level = *event.metadata().level();
-        let color = if level == Level::ERROR || level == Level::WARN {
-            Some(Color::Red)
-        } else if level == Level::INFO {
-            None
-        } else {
-            Some(Color::Grey)
-        };
-        term().write(color, message);
-    }
-
-    fn enabled(
-        &self,
-        metadata: &tracing::Metadata<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) -> bool {
-        metadata
-            .module_path()
-            .is_some_and(|path| path.starts_with("rammingen"))
-    }
-}
-
-struct DebugVisitor<'a>(&'a mut String, &'a mut Vec<String>);
-
-impl Visit for DebugVisitor<'_> {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            write!(self.0, "{value:?}").unwrap();
-        } else {
-            self.1.push(format!("{} = {:?}", field.name(), value));
-        }
     }
 }

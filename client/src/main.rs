@@ -6,6 +6,7 @@ use {
         cli::{default_config_path, Cli, Command},
         config::Config,
         setup_logger,
+        term::{set_term, StdoutTerm},
     },
     rammingen_protocol::credentials::EncryptionKey,
     tracing::error,
@@ -32,8 +33,9 @@ async fn try_main() -> Result<()> {
         default_config_path()?
     };
     let config: Config = json5::from_str(&fs_err::read_to_string(config_path)?)?;
+    set_term(Some(Box::new(StdoutTerm::new())));
     setup_logger(config.log_file.clone(), config.log_filter.clone())?;
-    if let Err(err) = rammingen::run(cli, config).await {
+    if let Err(err) = rammingen::run(cli.command, config, None).await {
         error!("{err:?}");
     }
     Ok(())

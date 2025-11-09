@@ -8,6 +8,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rammingen = { path = "../../client" }
+rammingen_protocol = { path = "../../protocol" }
 
 jni = { workspace = true }
 tracing = { workspace = true }
+tokio = { workspace = true }
+json5 = { workspace = true }
+fs-err = { workspace = true }
+anyhow = { workspace = true }
+scopeguard = { workspace = true }

@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
@@ -27,37 +29,97 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import me.darkecho.rammingen.ui.theme.RammingenTheme
 
+
 const val TAG = "rammingen"
 
 class MainActivity : ComponentActivity(), Receiver {
     var logsBuilder = AnnotatedString.Builder()
     var logs = mutableStateOf(logsBuilder.toAnnotatedString())
+    var status = mutableStateOf("")
+    var isRunning = mutableStateOf(false)
+    var nativeBridge = NativeBridge()
+
+//    val openDocumentTreeLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+//        if (result.resultCode == RESULT_OK) {
+//            val uri: Uri? = result.data?.data
+//            if (uri != null) {
+//                // Persist permission so we can use it later
+//                contentResolver.takePersistableUriPermission(
+//                    uri,
+//                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+//                )
+//
+//                // Example: list files in that folder
+//                val pickedDir = DocumentFile.fromTreeUri(this, uri)
+//                pickedDir?.listFiles()?.forEach {
+//                    println("Found file: ${it.name}")
+//                }
+//            }
+//        }
+//    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        Log.i(TAG, "ok1")
-        val rust = NativeBridge()
-        Log.i(TAG, "ok2")
-
-        Thread {
-            val output = rust.add(2u, 3u, this)
-            Log.i(TAG, "ok3 $output")
-            // your code here
-        }.start()
-
 
         enableEdgeToEdge()
         setContent {
             RammingenTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Greeting(
-                        name = "Android",
                         modifier = Modifier.padding(innerPadding),
                         logs = logs,
+                        status = status,
+                        isRunning = isRunning,
+                        onSync = { onSync() },
                     )
                 }
             }
         }
+    }
+
+    fun onSync() {
+        val dir = getExternalFilesDir(null)
+        Log.d(TAG, "dir: $dir")
+//        val persistedUris = contentResolver.persistedUriPermissions
+//
+//        for (perm in persistedUris) {
+//            Log.d(TAG, "Persisted URI: ${perm.uri}, read=${perm.isReadPermission}, write=${perm.isWritePermission}")
+//        }
+//
+//        val sm = getSystemService(STORAGE_SERVICE) as StorageManager
+//        val intent = sm.primaryStorageVolume.createOpenDocumentTreeIntent()
+//        intent.addCategory(Intent.CATEGORY_DEFAULT)
+//        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+//                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+//                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+//
+//        openDocumentTreeLauncher.launch(intent)
+
+
+
+//        if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+//                == PackageManager.PERMISSION_GRANTED) {
+
+        isRunning.value = true
+        logsBuilder = AnnotatedString.Builder()
+        logs.value = logsBuilder.toAnnotatedString()
+        Thread {
+            val isOk = nativeBridge.add(2u, 3u, this)
+            isRunning.value = false
+            runOnUiThread {
+                if (isOk) {
+                    logsBuilder.append("Operation finished successfully.\n")
+                } else {
+                    logsBuilder.append("Operation failed.\n")
+                }
+                logs.value = logsBuilder.toAnnotatedString()
+            }
+        }.start()
+//        } else {
+//            Log.i(TAG, "requestPermissions")
+//            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
+//        }
+
     }
 
     override fun onNativeBridgeLog(level: Int, text: String) {
@@ -93,14 +155,36 @@ class MainActivity : ComponentActivity(), Receiver {
             logs.value = logsBuilder.toAnnotatedString()
         }
     }
+
+    override fun onNativeBridgeStatus(status: String) {
+        runOnUiThread {
+            Log.println(Log.INFO, "rammingen_native_status", status)
+            this.status.value = status
+        }
+    }
 }
 
 @Composable
-fun Greeting(name: String, logs: MutableState<AnnotatedString>, modifier: Modifier = Modifier) {
-    Log.i(TAG, "Greeting logs: ${logs.value}")
+fun Greeting(
+    logs: MutableState<AnnotatedString>,
+    status: MutableState<String>,
+    isRunning: MutableState<Boolean>,
+    onSync: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column {
         Text(
-            text = "Hello $name!",
+            text = "Rammingen file sync",
+            modifier = modifier,
+        )
+        Button(
+            onClick = { onSync() },
+            enabled = !isRunning.value
+        ) {
+            Text("Sync")
+        }
+        Text(
+            text = status.value,
             modifier = modifier,
         )
         Text(
@@ -118,6 +202,11 @@ fun Greeting(name: String, logs: MutableState<AnnotatedString>, modifier: Modifi
 @Composable
 fun GreetingPreview() {
     RammingenTheme {
-        Greeting("Android", mutableStateOf(AnnotatedString("logs\nlogs\nlogs")))
+        Greeting(
+            remember { mutableStateOf(AnnotatedString("logs\nlogs\nlogs")) },
+            remember { mutableStateOf("status") },
+            remember { mutableStateOf(false) },
+            {}
+        )
     }
 }

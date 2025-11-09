@@ -15,12 +15,13 @@ mod upload;
 
 use {
     crate::{
+        cli::Command,
         info::{local_status, ls},
         pull_updates::pull_updates,
         upload::upload,
     },
     anyhow::{anyhow, bail, Context as _, Result},
-    cli::{default_log_path, Cli},
+    cli::default_log_path,
     config::Config,
     counters::{FinalCounters, IntermediateCounters, NotificationCounters},
     derivative::Derivative,
@@ -28,6 +29,7 @@ use {
     info::{list_versions, pretty_size},
     notify_rust::Notification,
     rammingen_protocol::{
+        credentials::{AccessToken, EncryptionKey},
         endpoints::{CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion},
         util::log_writer,
     },
@@ -101,7 +103,12 @@ fn fetch_keyring_secret(kind: SecretKind) -> anyhow::Result<String> {
     }
 }
 
-pub async fn run(cli: Cli, config: Config) -> Result<()> {
+pub struct Secrets {
+    pub access_token: AccessToken,
+    pub encryption_key: EncryptionKey,
+}
+
+pub async fn run(command: Command, config: Config, secrets: Option<Secrets>) -> Result<()> {
     let local_db_path = if let Some(v) = &config.local_db_path {
         v.clone()
     } else {
@@ -109,14 +116,19 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         data_dir.join("rammingen.db")
     };
 
-    if config.use_keyring && (config.encryption_key.is_some() || config.access_token.is_some()) {
+    if secrets.is_none()
+        && config.use_keyring
+        && (config.encryption_key.is_some() || config.access_token.is_some())
+    {
         bail!(
             "invalid config: if `use_keyring` is true, \
             `encryption_key` and `access_token` cannot be specified in the config"
         );
     }
 
-    let access_token = if config.use_keyring {
+    let access_token = if let Some(secrets) = &secrets {
+        secrets.access_token.clone()
+    } else if config.use_keyring {
         fetch_keyring_secret(SecretKind::AccessToken)?.parse()?
     } else {
         config
@@ -125,7 +137,9 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
             .context("missing `access_token` or `use_keyring` in config")?
     };
 
-    let encryption_key = if config.use_keyring {
+    let encryption_key = if let Some(secrets) = &secrets {
+        secrets.encryption_key.clone()
+    } else if config.use_keyring {
         fetch_keyring_secret(SecretKind::EncryptionKey)?.parse()?
     } else {
         config
@@ -143,8 +157,8 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
         intermediate_counters: Default::default(),
     });
 
-    let dry_run = cli.command == cli::Command::DryRun;
-    let result = handle_command(cli, &ctx).await;
+    let dry_run = command == cli::Command::DryRun;
+    let result = handle_command(command, &ctx).await;
     info!(
         "{}",
         NotificationCounters::from(&ctx.final_counters).report(dry_run, false, &ctx)
@@ -152,8 +166,8 @@ pub async fn run(cli: Cli, config: Config) -> Result<()> {
     result
 }
 
-async fn handle_command(cli: Cli, ctx: &Arc<Ctx>) -> Result<()> {
-    match cli.command {
+async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
+    match command {
         cli::Command::DryRun => {
             sync(ctx, true).await?;
         }
@@ -284,8 +298,10 @@ pub fn show_notification(title: &str, text: &str) {
     #[cfg(target_os = "macos")]
     init_notifications();
 
-    if let Err(err) = Notification::new().summary(title).body(text).show() {
-        warn!("Failed to show notification: {err}");
+    if !cfg!(target_os = "android") {
+        if let Err(err) = Notification::new().summary(title).body(text).show() {
+            warn!("Failed to show notification: {err}");
+        }
     }
 }
 

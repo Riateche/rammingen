@@ -98,7 +98,7 @@ async fn try_main() -> Result<()> {
             bind_addr
         } else {
             let port = pick_unused_port().expect("failed to pick port");
-            SocketAddr::new("127.0.0.1".parse()?, port)
+            SocketAddr::new("0.0.0.0".parse()?, port) // TMP!
         };
         let server_config = rammingen_server::Config {
             bind_addr,
@@ -544,25 +544,11 @@ struct ClientData {
 
 impl ClientData {
     async fn sync(&self) -> Result<()> {
-        rammingen::run(
-            rammingen::cli::Cli {
-                config: None,
-                command: rammingen::cli::Command::Sync,
-            },
-            self.config.clone(),
-        )
-        .await
+        rammingen::run(rammingen::cli::Command::Sync, self.config.clone(), None).await
     }
 
     async fn dry_run(&self) -> Result<()> {
-        rammingen::run(
-            rammingen::cli::Cli {
-                config: None,
-                command: rammingen::cli::Command::DryRun,
-            },
-            self.config.clone(),
-        )
-        .await
+        rammingen::run(rammingen::cli::Command::DryRun, self.config.clone(), None).await
     }
 
     async fn download(
@@ -572,15 +558,13 @@ impl ClientData {
         version: Option<DateTimeUtc>,
     ) -> Result<()> {
         rammingen::run(
-            rammingen::cli::Cli {
-                config: None,
-                command: rammingen::cli::Command::Download {
-                    archive_path,
-                    local_path,
-                    version: version.map(Into::into),
-                },
+            rammingen::cli::Command::Download {
+                archive_path,
+                local_path,
+                version: version.map(Into::into),
             },
             self.config.clone(),
+            None,
         )
         .await
     }
@@ -591,14 +575,12 @@ impl ClientData {
         archive_path: ArchivePath,
     ) -> Result<()> {
         rammingen::run(
-            rammingen::cli::Cli {
-                config: None,
-                command: rammingen::cli::Command::Upload {
-                    local_path,
-                    archive_path,
-                },
+            rammingen::cli::Command::Upload {
+                local_path,
+                archive_path,
             },
             self.config.clone(),
+            None,
         )
         .await
     }
@@ -609,50 +591,42 @@ impl ClientData {
         new_archive_path: ArchivePath,
     ) -> Result<()> {
         rammingen::run(
-            rammingen::cli::Cli {
-                config: None,
-                command: rammingen::cli::Command::Move {
-                    old_path: archive_path,
-                    new_path: new_archive_path,
-                },
+            rammingen::cli::Command::Move {
+                old_path: archive_path,
+                new_path: new_archive_path,
             },
             self.config.clone(),
+            None,
         )
         .await
     }
 
     async fn remove_path(&self, archive_path: ArchivePath) -> Result<()> {
         rammingen::run(
-            rammingen::cli::Cli {
-                config: None,
-                command: rammingen::cli::Command::Remove { archive_path },
-            },
+            rammingen::cli::Command::Remove { archive_path },
             self.config.clone(),
+            None,
         )
         .await
     }
 
     async fn reset(&self, archive_path: ArchivePath, version: DateTime<FixedOffset>) -> Result<()> {
         rammingen::run(
-            rammingen::cli::Cli {
-                config: None,
-                command: rammingen::cli::Command::Reset {
-                    archive_path,
-                    version,
-                },
+            rammingen::cli::Command::Reset {
+                archive_path,
+                version,
             },
             self.config.clone(),
+            None,
         )
         .await
     }
 
     async fn check_integrity(&self) -> Result<()> {
         rammingen::run(
-            rammingen::cli::Cli {
-                config: None,
-                command: rammingen::cli::Command::CheckIntegrity,
-            },
+            rammingen::cli::Command::CheckIntegrity,
             self.config.clone(),
+            None,
         )
         .await
     }

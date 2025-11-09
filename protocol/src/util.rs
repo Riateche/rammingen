@@ -28,7 +28,7 @@ pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<
         let mut file = file.lock().await;
         let mut buf = vec![0u8; CONTENT_CHUNK_LEN];
         loop {
-            match block_in_place(|| file.read(&mut buf)) {
+            match maybe_block_in_place(|| file.read(&mut buf)) {
                 Ok(len) => {
                     if len == 0 {
                         break; // end of file
@@ -131,5 +131,16 @@ where
             fut.await
         },
         r = &mut fut => r,
+    }
+}
+
+pub fn maybe_block_in_place<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    if cfg!(target_os = "android") {
+        f()
+    } else {
+        block_in_place(f)
     }
 }

@@ -7,9 +7,12 @@ use {
         header::CONTENT_LENGTH,
         Request, Response, StatusCode,
     },
-    rammingen_protocol::{util::stream_file, EncryptedContentHash},
+    rammingen_protocol::{
+        util::{maybe_block_in_place, stream_file},
+        EncryptedContentHash,
+    },
     std::{convert::Infallible, io::Write, sync::Arc},
-    tokio::{sync::Mutex, task::block_in_place},
+    tokio::sync::Mutex,
     tracing::warn,
 };
 
@@ -36,7 +39,7 @@ pub async fn upload(
             StatusCode::BAD_REQUEST
         })?;
 
-    let mut file = block_in_place(|| ctx.storage.create_file()).map_err(|err| {
+    let mut file = maybe_block_in_place(|| ctx.storage.create_file()).map_err(|err| {
         warn!(?err, "failed to create file");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -52,7 +55,7 @@ pub async fn upload(
             StatusCode::BAD_REQUEST
         })?;
         received_length += data.len() as u64;
-        block_in_place(|| file.write_all(data)).map_err(|err| {
+        maybe_block_in_place(|| file.write_all(data)).map_err(|err| {
             warn!(?err, "failed to write to content file");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
@@ -63,7 +66,7 @@ pub async fn upload(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    block_in_place(|| ctx.storage.commit_file(file, hash)).map_err(|err| {
+    maybe_block_in_place(|| ctx.storage.commit_file(file, hash)).map_err(|err| {
         warn!(?err, "failed to commit content file");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -75,7 +78,7 @@ pub async fn download(
     ctx: handler::Context,
     hash: &EncryptedContentHash,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode> {
-    let file = block_in_place(|| ctx.storage.open_file(hash)).map_err(|err| {
+    let file = maybe_block_in_place(|| ctx.storage.open_file(hash)).map_err(|err| {
         warn!(?err, "couldn't open content file");
         StatusCode::NOT_FOUND
     })?;

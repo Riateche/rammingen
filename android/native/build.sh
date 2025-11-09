@@ -33,13 +33,13 @@ mkdir -p "$LIB_PATH/armeabi-v7a"
 mkdir -p "$LIB_PATH/x86"
 mkdir -p "$LIB_PATH/x86_64"
 
-cp target/aarch64-linux-android/release/librammingen_android.so \
+cp ../../target/aarch64-linux-android/release/librammingen_android.so \
     "$LIB_PATH/arm64-v8a/"
-cp target/armv7-linux-androideabi/release/librammingen_android.so \
+cp ../../target/armv7-linux-androideabi/release/librammingen_android.so \
     "$LIB_PATH/armeabi-v7a/"
-cp target/i686-linux-android/release/librammingen_android.so \
+cp ../../target/i686-linux-android/release/librammingen_android.so \
     "$LIB_PATH/x86/"
-cp target/x86_64-linux-android/release/librammingen_android.so \
+cp ../../target/x86_64-linux-android/release/librammingen_android.so \
     "$LIB_PATH/x86_64/"
 
 #cd ..

@@ -13,7 +13,9 @@ use {
     futures::future::BoxFuture,
     rammingen_protocol::{
         endpoints::{AddVersion, AddVersions, ContentHashExists},
-        util::{interrupt_on_error, native_to_archive_relative_path, ErrorSender},
+        util::{
+            interrupt_on_error, maybe_block_in_place, native_to_archive_relative_path, ErrorSender,
+        },
         ArchivePath, ContentHash, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
     },
     rammingen_sdk::content::{DecryptedContentHead, EncryptedFileHead, LocalEntry},
@@ -26,7 +28,7 @@ use {
     },
     tokio::{
         sync::{mpsc, oneshot, Semaphore},
-        task::{self, block_in_place},
+        task::{self},
         time::sleep,
     },
     tracing::{debug, info, warn},
@@ -259,7 +261,7 @@ fn upload_inner<'a>(
             });
 
             if maybe_changed {
-                let file_data = block_in_place(|| ctx.ctx.cipher.encrypt_file(local_path))?;
+                let file_data = maybe_block_in_place(|| ctx.ctx.cipher.encrypt_file(local_path))?;
 
                 let final_modified = fs::symlink_metadata(local_path)?.modified()?;
                 if final_modified != modified {

@@ -2563,8 +2563,14 @@ dependencies = [
 name = "rammingen_android"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "fs-err",
  "jni",
+ "json5",
  "rammingen",
+ "rammingen_protocol",
+ "scopeguard",
+ "tokio",
  "tracing",
 ]
 
