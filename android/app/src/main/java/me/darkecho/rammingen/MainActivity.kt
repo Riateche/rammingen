@@ -1,5 +1,6 @@
 package me.darkecho.rammingen
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -71,6 +72,7 @@ class MainActivity : ComponentActivity(), Receiver {
                         status = status,
                         isRunning = isRunning,
                         onSync = { onSync() },
+                        onSettings = { onSettings() }
                     )
                 }
             }
@@ -122,6 +124,11 @@ class MainActivity : ComponentActivity(), Receiver {
 
     }
 
+    fun onSettings() {
+        val intent = Intent(this, SettingsActivity::class.java)
+        startActivity(intent)
+    }
+
     override fun onNativeBridgeLog(level: Int, text: String) {
         runOnUiThread {
             var priority: Int
@@ -170,6 +177,7 @@ fun Greeting(
     status: MutableState<String>,
     isRunning: MutableState<Boolean>,
     onSync: () -> Unit,
+    onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column {
@@ -182,6 +190,11 @@ fun Greeting(
             enabled = !isRunning.value
         ) {
             Text("Sync")
+        }
+        Button(
+            onClick = { onSettings() },
+        ) {
+            Text("Settings")
         }
         Text(
             text = status.value,
@@ -206,7 +219,8 @@ fun GreetingPreview() {
             remember { mutableStateOf(AnnotatedString("logs\nlogs\nlogs")) },
             remember { mutableStateOf("status") },
             remember { mutableStateOf(false) },
-            {}
+            {},
+            {},
         )
     }
 }
