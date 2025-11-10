@@ -1,7 +1,9 @@
 package me.darkecho.rammingen
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.content.FileProvider
 import me.darkecho.rammingen.ui.theme.RammingenTheme
 
 
@@ -72,7 +75,8 @@ class MainActivity : ComponentActivity(), Receiver {
                         status = status,
                         isRunning = isRunning,
                         onSync = { onSync() },
-                        onSettings = { onSettings() }
+                        onSettings = { onSettings() },
+                        onShowStorage = { onShowStorage() },
                     )
                 }
             }
@@ -121,6 +125,26 @@ class MainActivity : ComponentActivity(), Receiver {
 //            Log.i(TAG, "requestPermissions")
 //            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
 //        }
+
+    }
+
+    fun onShowStorage() {
+        val dir = getExternalFilesDir(null)
+        Log.d(TAG, "externalFilesDir: $dir")
+        if (dir == null) {
+            AlertDialog.Builder(this)
+                .setMessage("Shared storage is not currently available")
+                .create()
+                .show()
+            return
+        }
+
+        val sendIntent: Intent = Intent().apply {
+            action = Intent.ACTION_SEND
+            putExtra(Intent.EXTRA_TEXT, dir.absolutePath)
+            type = "text/plain"
+        }
+        startActivity(Intent.createChooser(sendIntent, null))
 
     }
 
@@ -178,6 +202,7 @@ fun Greeting(
     isRunning: MutableState<Boolean>,
     onSync: () -> Unit,
     onSettings: () -> Unit,
+    onShowStorage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column {
@@ -195,6 +220,11 @@ fun Greeting(
             onClick = { onSettings() },
         ) {
             Text("Settings")
+        }
+        Button(
+            onClick = { onShowStorage() },
+        ) {
+            Text("Show storage")
         }
         Text(
             text = status.value,
@@ -219,6 +249,7 @@ fun GreetingPreview() {
             remember { mutableStateOf(AnnotatedString("logs\nlogs\nlogs")) },
             remember { mutableStateOf("status") },
             remember { mutableStateOf(false) },
+            {},
             {},
             {},
         )
