@@ -446,6 +446,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
+name = "cadd"
+version = "0.1.0"
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2564,14 +2568,21 @@ name = "rammingen_android"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "byte-unit",
+ "cadd",
+ "clap 4.5.51",
  "fs-err",
+ "humantime-serde",
  "jni",
  "json5",
  "rammingen",
  "rammingen_protocol",
  "scopeguard",
+ "serde",
+ "shell-words",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -3134,6 +3145,12 @@ checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
 ]
+
+[[package]]
+name = "shell-words"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
 
 [[package]]
 name = "shlex"

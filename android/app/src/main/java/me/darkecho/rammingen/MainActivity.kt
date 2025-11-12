@@ -3,7 +3,6 @@ package me.darkecho.rammingen
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
-import android.provider.DocumentsContract
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,7 +29,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.core.content.FileProvider
 import me.darkecho.rammingen.ui.theme.RammingenTheme
 
 
@@ -84,35 +82,46 @@ class MainActivity : ComponentActivity(), Receiver {
     }
 
     fun onSync() {
-        val dir = getExternalFilesDir(null)
-        Log.d(TAG, "dir: $dir")
-//        val persistedUris = contentResolver.persistedUriPermissions
-//
-//        for (perm in persistedUris) {
-//            Log.d(TAG, "Persisted URI: ${perm.uri}, read=${perm.isReadPermission}, write=${perm.isWritePermission}")
-//        }
-//
-//        val sm = getSystemService(STORAGE_SERVICE) as StorageManager
-//        val intent = sm.primaryStorageVolume.createOpenDocumentTreeIntent()
-//        intent.addCategory(Intent.CATEGORY_DEFAULT)
-//        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
-//                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-//                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-//
-//        openDocumentTreeLauncher.launch(intent)
-
-
-
-//        if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-//                == PackageManager.PERMISSION_GRANTED) {
-
-        isRunning.value = true
         logsBuilder = AnnotatedString.Builder()
         logs.value = logsBuilder.toAnnotatedString()
+
+        val dir = getExternalFilesDir(null)
+        Log.d(TAG, "externalFilesDir: $dir")
+        if (dir == null) {
+            AlertDialog.Builder(this)
+                .setMessage("Shared storage is not currently available")
+                .create()
+                .show()
+            return
+        }
+        val dataStore = EncryptedPreferenceDataStore(this)
+        val accessToken = dataStore.getString("access_token", null)
+        if (accessToken.isNullOrEmpty()) {
+            AlertDialog.Builder(this)
+                .setMessage("Access token not specified in settings")
+                .create()
+                .show()
+            return
+        }
+        val encryptionKey = dataStore.getString("encryption_key", null)
+        if (encryptionKey.isNullOrEmpty()) {
+            AlertDialog.Builder(this)
+                .setMessage("Encryption key not specified in settings")
+                .create()
+                .show()
+            return
+        }
+        isRunning.value = true
         Thread {
-            val isOk = nativeBridge.add(2u, 3u, this)
-            isRunning.value = false
+            val isOk = nativeBridge.run(
+                dir.absolutePath,
+                accessToken,
+                encryptionKey,
+                "sync",
+                this
+            )
             runOnUiThread {
+                isRunning.value = false
                 if (isOk) {
                     logsBuilder.append("Operation finished successfully.\n")
                 } else {

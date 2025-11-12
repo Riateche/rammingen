@@ -12,6 +12,12 @@ class NativeBridge {
         System.loadLibrary("rammingen_android")
     }
 
-    @JvmName("add")
-    external fun add(a: ULong, b: ULong, receiver: Receiver): Boolean
+    @JvmName("run")
+    external fun run(
+        appDir: String,
+        accessToken: String,
+        encryptionKey: String,
+        args: String,
+        receiver: Receiver
+    ): Boolean
 }

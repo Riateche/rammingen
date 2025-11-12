@@ -46,7 +46,7 @@ impl Term for GlobalTerm {
     }
 }
 
-fn term() -> GlobalTerm {
+pub fn term() -> GlobalTerm {
     GlobalTerm(Mutex::lock_arc(&GLOBAL_TERM))
 }
 

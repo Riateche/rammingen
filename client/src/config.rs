@@ -50,14 +50,14 @@ fn true_() -> bool {
     true
 }
 
-fn default_desktop_notification_interval() -> Duration {
+pub fn default_desktop_notification_interval() -> Duration {
     parse_duration("1hour").unwrap()
 }
 
-fn default_log_filter() -> String {
+pub fn default_log_filter() -> String {
     "info".into()
 }
 
-fn default_warn_about_files_larger_than() -> Byte {
+pub fn default_warn_about_files_larger_than() -> Byte {
     "50 MB".parse().unwrap()
 }

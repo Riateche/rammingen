@@ -12,7 +12,11 @@ use {
     futures::future::pending,
     portpicker::pick_unused_port,
     rammingen::{
-        config::MountPoint, path::SanitizedLocalPath, rules::Rule, setup_logger, term::clear_status,
+        config::MountPoint,
+        path::SanitizedLocalPath,
+        rules::Rule,
+        setup_logger,
+        term::{clear_status, set_term, StdoutTerm},
     },
     rammingen_protocol::{
         credentials::{AccessToken, EncryptionKey},
@@ -81,6 +85,7 @@ async fn try_main() -> Result<()> {
     let dir = TempDir::new()?.keep();
     let cli = Cli::parse();
 
+    set_term(Some(Box::new(StdoutTerm::new())));
     setup_logger(
         Some(dir.join("1.log")),
         "info,sqlx=warn,rammingen_server=debug".into(),

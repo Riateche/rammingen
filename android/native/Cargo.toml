@@ -17,3 +17,10 @@ json5 = { workspace = true }
 fs-err = { workspace = true }
 anyhow = { workspace = true }
 scopeguard = { workspace = true }
+cadd = { workspace = true }
+shell-words = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+url = { workspace = true }
+byte-unit = { workspace = true }
+humantime-serde = { workspace = true }

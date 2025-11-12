@@ -1,32 +1,58 @@
 #![allow(clippy::missing_safety_doc)]
 
 use {
-    anyhow::{ensure, format_err},
+    anyhow::{Context as _, bail, format_err},
+    byte_unit::Byte,
+    cadd::prelude::IntoType as _,
+    clap::Parser as _,
     jni::{
         JNIEnv,
-        objects::{GlobalRef, JObject, JValue},
-        sys::{self, jboolean, jlong},
+        objects::{GlobalRef, JObject, JString, JValue},
+        sys::{self, jboolean},
     },
     rammingen::{
         Secrets,
-        cli::Command,
-        config::Config,
+        cli::{Cli, Command},
+        config::{
+            Config, MountPoint, default_desktop_notification_interval, default_log_filter,
+            default_warn_about_files_larger_than,
+        },
+        path::SanitizedLocalPath,
+        rules::Rule,
         setup_logger,
-        term::{Term, set_term},
+        term::{Term, set_term, term},
+    },
+    rammingen_protocol::{
+        ArchivePath,
+        credentials::{AccessToken, EncryptionKey},
+        serde_path_with_prefix,
     },
     scopeguard::defer,
-    std::{any::Any, cell::Cell, panic, path::Path, ptr, sync::Once},
+    serde::{Deserialize, Serialize},
+    std::{
+        any::Any,
+        cell::Cell,
+        fmt::Display,
+        panic,
+        path::{Path, PathBuf},
+        ptr,
+        sync::Once,
+        time::Duration,
+    },
     tracing::{Level, error},
+    url::Url,
 };
 
 thread_local!(static JNI_ENV: Cell<*mut sys::JNIEnv> = const { Cell::new(ptr::null_mut()) });
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_add(
-    env: JNIEnv,
+pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
+    mut env: JNIEnv,
     _class: JObject,
-    _a: jlong,
-    _b: jlong,
+    app_dir: JString,
+    access_token: JString,
+    encryption_key: JString,
+    args: JString,
     log_receiver: JObject,
 ) -> jboolean {
     let log_receiver = env
@@ -36,24 +62,41 @@ pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_add(
     JNI_ENV.with(|v| v.set(env.get_raw()));
     defer!(JNI_ENV.with(|v| v.set(ptr::null_mut())));
 
-    let term = NativeBridgeTerm { log_receiver };
-    set_term(Some(Box::new(term)));
+    let native_term = NativeBridgeTerm { log_receiver };
+    set_term(Some(Box::new(native_term)));
 
-    // let mut ctx = match Context::new(env, log_receiver.clone(), "rammingen_native") {
-    //     Ok(ctx) => ctx,
-    //     Err(code) => return code as i32,
-    // };
-    let r = run("", "", "");
+    let r = run(&mut env, app_dir, access_token, encryption_key, args);
     match r {
         Ok(()) => 1,
         Err(err) => {
-            error!(?err);
+            term().write(Level::ERROR, &format!("{err:?}"));
             0
         }
     }
 }
 
-fn log_to_android(env: &mut JNIEnv<'_>, text: &str) {
+fn setup_logger_and_panic_hook(
+    log_file: Option<&Path>,
+    log_filter: Option<&str>,
+) -> anyhow::Result<()> {
+    static ONCE: Once = Once::new();
+    let mut setup_logger_result = Ok(());
+    ONCE.call_once(|| {
+        setup_logger_result = setup_logger(
+            log_file.map(|p| p.to_owned()),
+            log_filter
+                .map(|p| p.to_owned())
+                .unwrap_or_else(default_log_filter),
+        );
+
+        panic::set_hook(Box::new(|info| {
+            error!(%info, "panic");
+        }));
+    });
+    setup_logger_result
+}
+
+fn log_to_android(env: &mut JNIEnv<'_>, text: impl Display) {
     let log_class = env
         .find_class("android/util/Log")
         .unwrap_or_else(|e| env.fatal_error(format!("find_class(android/util/Log) failed: {e:?}")));
@@ -61,7 +104,7 @@ fn log_to_android(env: &mut JNIEnv<'_>, text: &str) {
         .new_string("rammingen_native")
         .unwrap_or_else(|e| env.fatal_error(format!("new_string failed: {e:?}")));
     let text = env
-        .new_string(text)
+        .new_string(text.to_string())
         .unwrap_or_else(|e| env.fatal_error(format!("new_string failed: {e:?}")));
 
     env.call_static_method(
@@ -73,104 +116,45 @@ fn log_to_android(env: &mut JNIEnv<'_>, text: &str) {
     .unwrap_or_else(|e| env.fatal_error(format!("Log.d failed: {e:?}")));
 }
 
-// struct Context<'a> {
-//     env: JNIEnv<'a>,
-//     log_receiver: GlobalRef,
-//     log_class: JClass<'a>,
-//     tag: JString<'a>,
-// }
-
-// impl<'a> Context<'a> {
-//     fn new(mut env: JNIEnv<'a>, log_receiver: GlobalRef, tag: &str) -> Result<Self, ExitCode> {
-//         let log_class = env
-//             .find_class("android/util/Log")
-//             .map_err(|_| ExitCode::FindClassLogFailed)?;
-//         let tag = env.new_string(tag).map_err(|_| ExitCode::NewStringFailed)?;
-//         Ok(Self {
-//             log_class,
-//             tag,
-//             log_receiver,
-//             env,
-//         })
-//     }
-
-//     fn log(&mut self, level: Level, message: impl Display) {
-//         let Ok(message) = self.env.new_string(message.to_string()) else {
-//             std::process::exit(ExitCode::NewStringFailed as i32);
-//         };
-//         let r = self.env.call_method(
-//             &self.log_receiver,
-//             "onNativeBridgeLog",
-//             "(ILjava/lang/String;)V",
-//             &[JValue::Int(level_to_i32(level)), JValue::Object(&message)],
-//         );
-
-//         if let Err(error) = &r {
-//             let Ok(error_message) = self
-//                 .env
-//                 .new_string(format!("call_method(onNativeBridgeLog) failed: {error:?}"))
-//             else {
-//                 std::process::exit(ExitCode::NewStringFailed as i32);
-//             };
-//             let r = self.env.call_static_method(
-//                 &self.log_class,
-//                 "e",
-//                 "(Ljava/lang/String;Ljava/lang/String;)I",
-//                 &[
-//                     JValue::Object(self.tag.as_ref()),
-//                     JValue::Object(&error_message.into()),
-//                 ],
-//             );
-//             if r.is_err() {
-//                 std::process::exit(ExitCode::CallUtilLogFailed as i32);
-//             }
-
-//             let r = self.env.call_static_method(
-//                 &self.log_class,
-//                 "e",
-//                 "(Ljava/lang/String;Ljava/lang/String;)I",
-//                 &[JValue::Object(self.tag.as_ref()), JValue::Object(&message)],
-//             );
-//             if r.is_err() {
-//                 std::process::exit(ExitCode::CallUtilLogFailed as i32);
-//             }
-//         }
-//     }
-// }
-
 fn run(
-    config_path: impl AsRef<Path>,
-    access_token: &str,
-    encryption_key: &str,
+    env: &mut JNIEnv<'_>,
+    app_dir: JString,
+    access_token: JString,
+    encryption_key: JString,
+    args: JString,
 ) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let mut config: Config = json5::from_str(&fs_err::read_to_string(config_path.as_ref())?)?;
 
-    static ONCE: Once = Once::new();
-    let mut r = None;
-    ONCE.call_once(|| {
-        r = Some(setup_logger(
-            config.log_file.clone(),
-            config.log_filter.clone(),
-        ));
+    let app_dir = env
+        .get_string(&app_dir)
+        .context("failed to get java string")?
+        .into_type::<String>()
+        .into_type::<PathBuf>();
+    let access_token = env
+        .get_string(&access_token)
+        .context("failed to get java string")?
+        .into_type::<String>();
+    let encryption_key = env
+        .get_string(&encryption_key)
+        .context("failed to get java string")?
+        .into_type::<String>();
+    let args = env
+        .get_string(&args)
+        .context("failed to get java string")?
+        .into_type::<String>();
 
-        panic::set_hook(Box::new(|info| {
-            error!(%info, "panic");
-        }));
-    });
-    if let Some(r) = r {
-        r?;
-    }
+    let mut args = shell_words::split(&args).context("failed to parse args into words")?;
+    args.insert(0, "rammingen".to_owned());
+    let cli = Cli::try_parse_from(&args).context("failed to parse args")?;
+    let config_path = app_dir.join(cli.config.as_deref().unwrap_or(Path::new("rammingen.conf")));
+    log_to_android(env, format!("using config at {:?}", config_path));
+    let config = prepare_config(&app_dir, &config_path)?;
+
+    setup_logger_and_panic_hook(config.log_file.as_deref(), Some(&config.log_filter))?;
 
     panic::catch_unwind(|| {
-        ensure!(
-            config.local_db_path.is_none(),
-            "local_db_path cannot be set on Android"
-        );
-        config.local_db_path = Some("".into());
-        //self.log(Level::INFO, "running...");
         runtime.block_on(rammingen::run(
             Command::Sync,
             config,
@@ -256,4 +240,98 @@ impl Term for NativeBridgeTerm {
             log_to_android(&mut env, "ok after term write");
         });
     }
+}
+
+fn prepare_config(app_dir: &Path, config_path: &Path) -> anyhow::Result<Config> {
+    let AndroidConfig {
+        use_keyring,
+        always_exclude,
+        mount_points,
+        encryption_key,
+        server_url,
+        access_token,
+        local_db_path,
+        log_file,
+        log_filter,
+        warn_about_files_larger_than,
+        enable_desktop_notifications,
+        desktop_notification_interval,
+    } = json5::from_str(&fs_err::read_to_string(config_path)?)?;
+
+    if use_keyring.is_some() {
+        bail!("use_keyring is not available on android");
+    }
+    if encryption_key.is_some() {
+        bail!("encryption_key cannot be specified in config on android");
+    }
+    if access_token.is_some() {
+        bail!("access_token cannot be specified in config on android");
+    }
+    if enable_desktop_notifications.is_some() {
+        bail!("enable_desktop_notifications is not available on android");
+    }
+    if desktop_notification_interval.is_some() {
+        bail!("desktop_notification_interval is not available on android");
+    }
+
+    Ok(Config {
+        use_keyring: false,
+        always_exclude,
+        mount_points: mount_points
+            .into_iter()
+            .map(|mount_point| {
+                Ok(MountPoint {
+                    local_path: SanitizedLocalPath::new(app_dir.join(&mount_point.local_path))?,
+                    archive_path: mount_point.archive_path,
+                    exclude: mount_point.exclude,
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?,
+        encryption_key: None,
+        server_url,
+        access_token: None,
+        local_db_path: Some(
+            app_dir.join(
+                local_db_path
+                    .as_deref()
+                    .unwrap_or(Path::new("rammingen.db")),
+            ),
+        ),
+        log_file: log_file.map(|log_file| app_dir.join(log_file)),
+        log_filter,
+        warn_about_files_larger_than,
+        enable_desktop_notifications: false,
+        desktop_notification_interval: default_desktop_notification_interval(),
+    })
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AndroidConfig {
+    #[serde(default)]
+    pub use_keyring: Option<bool>,
+    pub always_exclude: Vec<Rule>,
+    pub mount_points: Vec<AndroidMountPoint>,
+    pub encryption_key: Option<EncryptionKey>,
+    pub server_url: Url,
+    pub access_token: Option<AccessToken>,
+    #[serde(default)]
+    pub local_db_path: Option<PathBuf>,
+    #[serde(default)]
+    pub log_file: Option<PathBuf>,
+    #[serde(default = "default_log_filter")]
+    pub log_filter: String,
+    #[serde(default = "default_warn_about_files_larger_than")]
+    pub warn_about_files_larger_than: Byte,
+    pub enable_desktop_notifications: Option<bool>,
+    #[serde(default, with = "humantime_serde")]
+    pub desktop_notification_interval: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AndroidMountPoint {
+    pub local_path: PathBuf,
+    #[serde(with = "serde_path_with_prefix")]
+    pub archive_path: ArchivePath,
+    #[serde(default)]
+    pub exclude: Vec<Rule>,
 }
