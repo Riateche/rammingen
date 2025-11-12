@@ -159,10 +159,10 @@ pub async fn run(command: Command, config: Config, secrets: Option<Secrets>) -> 
 
     let dry_run = command == cli::Command::DryRun;
     let result = handle_command(command, &ctx).await;
-    info!(
-        "{}",
-        NotificationCounters::from(&ctx.final_counters).report(dry_run, false, &ctx)
-    );
+    let report = NotificationCounters::from(&ctx.final_counters).report(dry_run, false, &ctx);
+    if !report.is_empty() {
+        info!("{}", report);
+    }
     result
 }
 

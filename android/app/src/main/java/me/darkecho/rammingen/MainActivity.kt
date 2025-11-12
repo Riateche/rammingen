@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,6 +48,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowCompat.setDecorFitsSystemWindows
@@ -114,7 +117,7 @@ class MainActivity : ComponentActivity(), Receiver {
                         },
                     )
                 },) { innerPadding ->
-                    Box(Modifier.padding(innerPadding)) {
+                    Box(Modifier.padding(innerPadding).padding(horizontal = 16.dp)) {
                         Greeting(
                             logs = logs,
                             status = status,
@@ -282,16 +285,16 @@ fun Greeting(
     onSync: () -> Unit,
     onSettings: () -> Unit,
     onShowStorage: () -> Unit,
-    modifier: Modifier = Modifier
 ) {
     Column {
-        Text(
-            text = status.value,
-            modifier = modifier,
-        )
+        if (!status.value.isEmpty()) {
+            Text(
+                text = status.value,
+            )
+        }
         Text(
             text = logs.value,
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
                 .horizontalScroll(rememberScrollState())
