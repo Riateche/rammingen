@@ -1,13 +1,20 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package me.darkecho.rammingen
 
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.Menu
+import android.view.MenuInflater
+import android.view.MenuItem
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,9 +22,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -29,8 +47,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowCompat.setDecorFitsSystemWindows
 import me.darkecho.rammingen.ui.theme.RammingenTheme
-
 
 const val TAG = "rammingen"
 
@@ -62,20 +82,48 @@ class MainActivity : ComponentActivity(), Receiver {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         enableEdgeToEdge()
-        setContent {
+        setContent() {
             RammingenTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        modifier = Modifier.padding(innerPadding),
-                        logs = logs,
-                        status = status,
-                        isRunning = isRunning,
-                        onSync = { onSync() },
-                        onSettings = { onSettings() },
-                        onShowStorage = { onShowStorage() },
+                Scaffold(topBar = {
+                    TopAppBar(
+                        title = {
+                            Text("Rammingen file sync")
+                        },
+                        actions = {
+                            IconButton(onClick = { onSync() }) {
+                                Icon(Icons.Default.Sync, contentDescription = "Sync")
+                            }
+                            val expanded = remember { mutableStateOf(false) }
+                            IconButton(onClick = { expanded.value = !expanded.value }) {
+                                 Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                            }
+                            DropdownMenu(
+                                expanded = expanded.value,
+                                onDismissRequest = { expanded.value = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Show storage") },
+                                    onClick = { onShowStorage() }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Settings") },
+                                    onClick = { onSettings() }
+                                )
+                            }
+                        },
                     )
+                },) { innerPadding ->
+                    Box(Modifier.padding(innerPadding)) {
+                        Greeting(
+                            logs = logs,
+                            status = status,
+                            isRunning = isRunning,
+                            onSync = { onSync() },
+                            onSettings = { onSettings() },
+                            onShowStorage = { onShowStorage() },
+                        )
+                    }
                 }
             }
         }
@@ -135,6 +183,28 @@ class MainActivity : ComponentActivity(), Receiver {
 //            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
 //        }
 
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        val inflater: MenuInflater = menuInflater
+        inflater.inflate(R.menu.app_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        Log.i(TAG, "onOptionsItemSelected: ${item.itemId}")
+        // Handle item selection.
+        return when (item.itemId) {
+            R.id.dry_run -> {
+                Log.i(TAG, "dry_run")
+                true
+            }
+            R.id.server_status -> {
+                Log.i(TAG, "server_status")
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
     }
 
     fun onShowStorage() {
@@ -215,26 +285,6 @@ fun Greeting(
     modifier: Modifier = Modifier
 ) {
     Column {
-        Text(
-            text = "Rammingen file sync",
-            modifier = modifier,
-        )
-        Button(
-            onClick = { onSync() },
-            enabled = !isRunning.value
-        ) {
-            Text("Sync")
-        }
-        Button(
-            onClick = { onSettings() },
-        ) {
-            Text("Settings")
-        }
-        Button(
-            onClick = { onShowStorage() },
-        ) {
-            Text("Show storage")
-        }
         Text(
             text = status.value,
             modifier = modifier,

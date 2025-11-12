@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "me.darkecho.rammingen"
-        minSdk = 29
+        minSdk = 21
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -73,6 +73,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.preference)
     implementation(libs.material)
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
