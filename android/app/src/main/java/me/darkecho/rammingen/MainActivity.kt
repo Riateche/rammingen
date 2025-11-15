@@ -2,6 +2,7 @@
 
 package me.darkecho.rammingen
 
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
@@ -23,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,7 +45,9 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import me.darkecho.rammingen.ui.theme.RammingenTheme
+import java.io.File
 
 const val TAG = "rammingen"
 
@@ -53,6 +57,7 @@ class MainActivity : ComponentActivity(), Receiver {
     var status = mutableStateOf("")
     var isRunning = mutableStateOf(false)
     var nativeBridge = NativeBridge()
+    var fileBrowserDirectory: MutableState<File?> = mutableStateOf(null)
 
 //    val openDocumentTreeLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
 //        if (result.resultCode == RESULT_OK) {
@@ -76,6 +81,7 @@ class MainActivity : ComponentActivity(), Receiver {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        fileBrowserDirectory.value = getExternalFilesDir(null)
         setContent {
             RammingenTheme {
                 Scaffold(topBar = {
@@ -114,6 +120,8 @@ class MainActivity : ComponentActivity(), Receiver {
                         Greeting(
                             logs = logs,
                             status = status,
+                            directory = fileBrowserDirectory,
+                            onClick = { f -> onClick(f) },
                         )
                     }
                 }
@@ -272,12 +280,42 @@ class MainActivity : ComponentActivity(), Receiver {
             this.status.value = status
         }
     }
+
+    fun onClick(file: File) {
+        if (file.isDirectory) {
+            fileBrowserDirectory.value = file
+        } else {
+            val fileUri = try {
+                FileProvider.getUriForFile(
+                    this@MainActivity,
+                    applicationContext.applicationInfo.packageName + ".provider",
+                    file
+                )
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG,
+                    "The selected file can't be shared: $file: $e")
+                return
+            }
+
+            val sendIntent = Intent()
+            Log.d(TAG, "fileUri=${fileUri}")
+            Log.d(TAG, "type=${contentResolver.getType(fileUri)}")
+            sendIntent.setDataAndType(fileUri, contentResolver.getType(fileUri))
+            sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            sendIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            sendIntent.action = Intent.ACTION_VIEW
+            sendIntent.putExtra(Intent.EXTRA_STREAM, fileUri)
+            startActivity(Intent.createChooser(sendIntent, null))
+        }
+    }
 }
 
 @Composable
 fun Greeting(
     logs: MutableState<AnnotatedString>,
     status: MutableState<String>,
+    directory: MutableState<File?>,
+    onClick: (File) -> Unit,
 ) {
     Column {
         if (!status.value.isEmpty()) {
@@ -287,22 +325,51 @@ fun Greeting(
         }
         Text(
             text = logs.value,
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .horizontalScroll(rememberScrollState())
-                .verticalScroll(rememberScrollState()),
+//            modifier = Modifier
+//                .fillMaxWidth()
+//                .fillMaxHeight()
+//                .horizontalScroll(rememberScrollState())
+//                .verticalScroll(rememberScrollState()),
         )
+        Files(directory, onClick)
     }
 }
 
-@Preview(showBackground = true)
 @Composable
-fun GreetingPreview() {
-    RammingenTheme {
-        Greeting(
-            remember { mutableStateOf(AnnotatedString("logs\nlogs\nlogs")) },
-            remember { mutableStateOf("status") },
-        )
+fun Files(
+    directory: MutableState<File?>,
+    onClick: (File) -> Unit,
+) {
+    Log.d(TAG, "ok0 ${directory.value}")
+    val directoryValue = directory.value ?: return
+    Log.d(TAG, "ok1 ${directoryValue.absolutePath}")
+    Log.d(TAG, "ok2 ${directoryValue.listFiles()}")
+    val parent = directoryValue.parentFile
+    Text(text = directoryValue.absolutePath)
+    Column {
+        if (parent != null) {
+            Button(
+                onClick = {
+                    onClick(parent);
+                }
+            ) {
+                Text(text = "..")
+            }
+        }
+        for (item in directoryValue.listFiles()) {
+            Log.d(TAG, "ok3 ${item}")
+            Log.d(TAG, "ok4 ${item.name}")
+            Button(
+                onClick = {
+                    onClick(item);
+                }
+            ) {
+                Text(text = item.name)
+            }
+        }
     }
+
+
+
+
 }
