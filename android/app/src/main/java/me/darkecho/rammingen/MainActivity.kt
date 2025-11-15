@@ -3,16 +3,13 @@
 package me.darkecho.rammingen
 
 import android.app.AlertDialog
-import android.content.DialogInterface
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
-import android.view.View
 import android.widget.EditText
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -39,14 +36,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -135,6 +130,7 @@ class MainActivity : ComponentActivity() {
                             directory = fileBrowserDirectory,
                             root = externalDir,
                             onFileClick = { f, share -> onFileClick(f, share) },
+                            editFile = { f -> editFile(f) },
                         )
                     }
                 }
@@ -155,7 +151,7 @@ class MainActivity : ComponentActivity() {
         AlertDialog.Builder(this)
             .setMessage("Input command")
             .setView(edit)
-            .setPositiveButton("Run") { dialog, whichButton ->
+            .setPositiveButton("Run") { _, _ ->
                 val text = edit.text.toString()
                 runCommand(text, text)
             }
@@ -214,10 +210,17 @@ class MainActivity : ComponentActivity() {
                 Intent.ACTION_SEND
             } else {
                 Intent.ACTION_VIEW
-            };
+            }
             sendIntent.putExtra(Intent.EXTRA_STREAM, fileUri)
             startActivity(Intent.createChooser(sendIntent, null))
         }
+    }
+
+    fun editFile(file: File) {
+        startActivity(
+            Intent(this, TextEditorActivity::class.java)
+                .putExtra("filePath", file.absolutePath)
+        )
     }
 }
 
@@ -226,11 +229,9 @@ fun Files(
     directory: MutableState<File?>,
     root: File?,
     onFileClick: (File, Boolean) -> Unit,
+    editFile: (File) -> Unit,
 ) {
-    Log.d(TAG, "ok0 ${directory.value}")
     val directoryValue = directory.value ?: return
-    Log.d(TAG, "ok1 ${directoryValue.absolutePath}")
-    Log.d(TAG, "ok2 ${directoryValue.listFiles()}")
     val parent = if (root?.absolutePath != directoryValue.absolutePath) {
         directoryValue.parentFile
     } else {
@@ -269,14 +270,14 @@ fun Files(
         ) {
             val entries = directoryValue.listFiles()
             if (entries != null) {
-                for (item in entries) {
+                for (entry in entries) {
                     val expanded = remember { mutableStateOf(false) }
 
                     Row(
                         modifier = Modifier.fillMaxWidth()
-                            .padding(0.dp, 8.dp)
+                            .padding(0.dp, 12.dp)
                             .combinedClickable(
-                                onClick = { onFileClick(item, false) },
+                                onClick = { onFileClick(entry, false) },
                                 onLongClick = {
                                     //haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     Log.d(TAG, "onLongClick")
@@ -286,7 +287,7 @@ fun Files(
                             ),
                     ) {
                         Icon(
-                            imageVector = if (item.isDirectory) {
+                            imageVector = if (entry.isDirectory) {
                                 Icons.Default.Folder
                             } else {
                                 Icons.Default.FileOpen
@@ -294,7 +295,7 @@ fun Files(
                             contentDescription = ""
                         )
                         Text(
-                            text = item.name,
+                            text = entry.name,
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Left,
                         )
@@ -302,19 +303,19 @@ fun Files(
                             expanded = expanded.value,
                             onDismissRequest = { expanded.value = false }
                         ) {
-                            if (!item.isDirectory) {
+                            if (!entry.isDirectory) {
                                 DropdownMenuItem(
                                     text = { Text("Share") },
                                     onClick = {
                                         expanded.value = false
-                                        onFileClick(item, true)
+                                        onFileClick(entry, true)
                                     }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Edit as plain text") },
                                     onClick = {
                                         expanded.value = false
-                                        //...
+                                        editFile(entry)
                                     }
                                 )
                             }
