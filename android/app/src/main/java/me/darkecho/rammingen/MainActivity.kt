@@ -12,13 +12,10 @@ import android.view.MenuItem
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -26,17 +23,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -48,11 +42,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowCompat.setDecorFitsSystemWindows
 import me.darkecho.rammingen.ui.theme.RammingenTheme
 
 const val TAG = "rammingen"
@@ -86,7 +76,7 @@ class MainActivity : ComponentActivity(), Receiver {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent() {
+        setContent {
             RammingenTheme {
                 Scaffold(topBar = {
                     TopAppBar(
@@ -94,7 +84,10 @@ class MainActivity : ComponentActivity(), Receiver {
                             Text("Rammingen file sync")
                         },
                         actions = {
-                            IconButton(onClick = { onSync() }) {
+                            IconButton(
+                                onClick = { onSync() },
+                                enabled = !isRunning.value,
+                            ) {
                                 Icon(Icons.Default.Sync, contentDescription = "Sync")
                             }
                             val expanded = remember { mutableStateOf(false) }
@@ -121,10 +114,6 @@ class MainActivity : ComponentActivity(), Receiver {
                         Greeting(
                             logs = logs,
                             status = status,
-                            isRunning = isRunning,
-                            onSync = { onSync() },
-                            onSettings = { onSettings() },
-                            onShowStorage = { onShowStorage() },
                         )
                     }
                 }
@@ -133,7 +122,7 @@ class MainActivity : ComponentActivity(), Receiver {
     }
 
     fun onSync() {
-        logsBuilder = AnnotatedString.Builder()
+        logsBuilder = AnnotatedString.Builder("Logs:\n")
         logs.value = logsBuilder.toAnnotatedString()
 
         val dir = getExternalFilesDir(null)
@@ -146,6 +135,14 @@ class MainActivity : ComponentActivity(), Receiver {
             return
         }
         val dataStore = EncryptedPreferenceDataStore(this)
+        val config = dataStore.getString("config", null)
+        if (config.isNullOrEmpty()) {
+            AlertDialog.Builder(this)
+                .setMessage("Config not specified in settings")
+                .create()
+                .show()
+            return
+        }
         val accessToken = dataStore.getString("access_token", null)
         if (accessToken.isNullOrEmpty()) {
             AlertDialog.Builder(this)
@@ -163,9 +160,11 @@ class MainActivity : ComponentActivity(), Receiver {
             return
         }
         isRunning.value = true
+        status.value = "Launching operation"
         Thread {
             val isOk = nativeBridge.run(
                 dir.absolutePath,
+                config,
                 accessToken,
                 encryptionKey,
                 "sync",
@@ -174,18 +173,12 @@ class MainActivity : ComponentActivity(), Receiver {
             runOnUiThread {
                 isRunning.value = false
                 if (isOk) {
-                    logsBuilder.append("Operation finished successfully.\n")
+                    status.value = "Operation finished successfully."
                 } else {
-                    logsBuilder.append("Operation failed.\n")
+                    status.value = "Operation failed."
                 }
-                logs.value = logsBuilder.toAnnotatedString()
             }
         }.start()
-//        } else {
-//            Log.i(TAG, "requestPermissions")
-//            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
-//        }
-
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -238,7 +231,7 @@ class MainActivity : ComponentActivity(), Receiver {
     override fun onNativeBridgeLog(level: Int, text: String) {
         runOnUiThread {
             var priority: Int
-            var color: Color
+            var color: Color?
             when(level) {
                 0 -> { // TRACE
                     priority = Log.VERBOSE
@@ -250,7 +243,7 @@ class MainActivity : ComponentActivity(), Receiver {
                 }
                 2 -> { // INFO
                     priority = Log.INFO
-                    color = Color.Black
+                    color = null
                 }
                 3 -> { // WARN
                     priority = Log.WARN
@@ -262,8 +255,12 @@ class MainActivity : ComponentActivity(), Receiver {
                 }
             }
             Log.println(priority, "rammingen_native", text)
-            logsBuilder.withStyle(SpanStyle(color)) {
-                append(text + "\n")
+            if (color != null) {
+                logsBuilder.withStyle(SpanStyle(color)) {
+                    append(text + "\n")
+                }
+            } else {
+                logsBuilder.append(text + "\n")
             }
             logs.value = logsBuilder.toAnnotatedString()
         }
@@ -281,10 +278,6 @@ class MainActivity : ComponentActivity(), Receiver {
 fun Greeting(
     logs: MutableState<AnnotatedString>,
     status: MutableState<String>,
-    isRunning: MutableState<Boolean>,
-    onSync: () -> Unit,
-    onSettings: () -> Unit,
-    onShowStorage: () -> Unit,
 ) {
     Column {
         if (!status.value.isEmpty()) {
@@ -310,10 +303,6 @@ fun GreetingPreview() {
         Greeting(
             remember { mutableStateOf(AnnotatedString("logs\nlogs\nlogs")) },
             remember { mutableStateOf("status") },
-            remember { mutableStateOf(false) },
-            {},
-            {},
-            {},
         )
     }
 }

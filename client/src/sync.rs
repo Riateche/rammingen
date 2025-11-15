@@ -12,8 +12,9 @@ use {
     chrono::{TimeDelta, Utc},
     humantime::format_duration,
     itertools::Itertools,
+    rammingen_protocol::util::try_exists,
     std::{collections::HashSet, sync::Arc, time::Duration},
-    tracing::warn,
+    tracing::{info, warn},
 };
 
 pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
@@ -44,16 +45,18 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
         .collect_vec();
 
     for (mount_point, rules) in &mut mount_points {
-        upload(
-            ctx,
-            &mount_point.local_path,
-            &mount_point.archive_path,
-            rules,
-            true,
-            &mut existing_paths,
-            dry_run,
-        )
-        .await?;
+        if try_exists(&mount_point.local_path)? {
+            upload(
+                ctx,
+                &mount_point.local_path,
+                &mount_point.archive_path,
+                rules,
+                true,
+                &mut existing_paths,
+                dry_run,
+            )
+            .await?;
+        }
     }
     find_local_deletions(ctx, &mut mount_points, &existing_paths, dry_run).await?;
     pull_updates(ctx).await?;

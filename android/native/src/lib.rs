@@ -50,6 +50,7 @@ pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
     mut env: JNIEnv,
     _class: JObject,
     app_dir: JString,
+    config: JString,
     access_token: JString,
     encryption_key: JString,
     args: JString,
@@ -65,7 +66,14 @@ pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
     let native_term = NativeBridgeTerm { log_receiver };
     set_term(Some(Box::new(native_term)));
 
-    let r = run(&mut env, app_dir, access_token, encryption_key, args);
+    let r = run(
+        &mut env,
+        app_dir,
+        config,
+        access_token,
+        encryption_key,
+        args,
+    );
     match r {
         Ok(()) => 1,
         Err(err) => {
@@ -119,6 +127,7 @@ fn log_to_android(env: &mut JNIEnv<'_>, text: impl Display) {
 fn run(
     env: &mut JNIEnv<'_>,
     app_dir: JString,
+    config: JString,
     access_token: JString,
     encryption_key: JString,
     args: JString,
@@ -132,6 +141,10 @@ fn run(
         .context("failed to get java string")?
         .into_type::<String>()
         .into_type::<PathBuf>();
+    let config = env
+        .get_string(&config)
+        .context("failed to get java string")?
+        .into_type::<String>();
     let access_token = env
         .get_string(&access_token)
         .context("failed to get java string")?
@@ -148,9 +161,15 @@ fn run(
     let mut args = shell_words::split(&args).context("failed to parse args into words")?;
     args.insert(0, "rammingen".to_owned());
     let cli = Cli::try_parse_from(&args).context("failed to parse args")?;
-    let config_path = app_dir.join(cli.config.as_deref().unwrap_or(Path::new("rammingen.conf")));
-    log_to_android(env, format!("using config at {:?}", config_path));
-    let config = prepare_config(&app_dir, &config_path)?;
+    let config_content = if let Some(config_path) = cli.config {
+        log_to_android(env, format!("using config at {:?}", config_path));
+        fs_err::read_to_string(config_path)?
+    } else {
+        log_to_android(env, "using config content from argument");
+        config
+    };
+    let config = prepare_config(&app_dir, &config_content)?;
+    log_to_android(env, format!("config: {config:?}"));
 
     setup_logger_and_panic_hook(config.log_file.as_deref(), Some(&config.log_filter))?;
 
@@ -242,7 +261,7 @@ impl Term for NativeBridgeTerm {
     }
 }
 
-fn prepare_config(app_dir: &Path, config_path: &Path) -> anyhow::Result<Config> {
+fn prepare_config(app_dir: &Path, config_content: &str) -> anyhow::Result<Config> {
     let AndroidConfig {
         use_keyring,
         always_exclude,
@@ -256,7 +275,7 @@ fn prepare_config(app_dir: &Path, config_path: &Path) -> anyhow::Result<Config> 
         warn_about_files_larger_than,
         enable_desktop_notifications,
         desktop_notification_interval,
-    } = json5::from_str(&fs_err::read_to_string(config_path)?)?;
+    } = json5::from_str(config_content)?;
 
     if use_keyring.is_some() {
         bail!("use_keyring is not available on android");
