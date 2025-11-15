@@ -14,7 +14,7 @@ use {
     itertools::Itertools,
     rammingen_protocol::util::try_exists,
     std::{collections::HashSet, sync::Arc, time::Duration},
-    tracing::{info, warn},
+    tracing::warn,
 };
 
 pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {

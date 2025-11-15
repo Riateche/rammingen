@@ -12,7 +12,7 @@ use {
     },
     rammingen::{
         Secrets,
-        cli::{Cli, Command},
+        cli::Cli,
         config::{
             Config, MountPoint, default_desktop_notification_interval, default_log_filter,
             default_warn_about_files_larger_than,
@@ -175,7 +175,7 @@ fn run(
 
     panic::catch_unwind(|| {
         runtime.block_on(rammingen::run(
-            Command::Sync,
+            cli.command,
             config,
             Some(Secrets {
                 access_token: access_token.parse()?,
