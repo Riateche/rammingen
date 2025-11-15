@@ -16,9 +16,11 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -45,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -131,7 +134,7 @@ class MainActivity : ComponentActivity() {
                         Files(
                             directory = fileBrowserDirectory,
                             root = externalDir,
-                            onFileClick = { f -> onFileClick(f) },
+                            onFileClick = { f, share -> onFileClick(f, share) },
                         )
                     }
                 }
@@ -187,7 +190,7 @@ class MainActivity : ComponentActivity() {
         startActivity(intent)
     }
 
-    fun onFileClick(file: File) {
+    fun onFileClick(file: File, share: Boolean) {
         if (file.isDirectory) {
             fileBrowserDirectory.value = file
         } else {
@@ -204,12 +207,14 @@ class MainActivity : ComponentActivity() {
             }
 
             val sendIntent = Intent()
-            Log.d(TAG, "fileUri=${fileUri}")
-            Log.d(TAG, "type=${contentResolver.getType(fileUri)}")
             sendIntent.setDataAndType(fileUri, contentResolver.getType(fileUri))
             sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             sendIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            sendIntent.action = Intent.ACTION_VIEW
+            sendIntent.action = if (share) {
+                Intent.ACTION_SEND
+            } else {
+                Intent.ACTION_VIEW
+            };
             sendIntent.putExtra(Intent.EXTRA_STREAM, fileUri)
             startActivity(Intent.createChooser(sendIntent, null))
         }
@@ -220,7 +225,7 @@ class MainActivity : ComponentActivity() {
 fun Files(
     directory: MutableState<File?>,
     root: File?,
-    onFileClick: (File) -> Unit,
+    onFileClick: (File, Boolean) -> Unit,
 ) {
     Log.d(TAG, "ok0 ${directory.value}")
     val directoryValue = directory.value ?: return
@@ -231,61 +236,90 @@ fun Files(
     } else {
         null
     }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight()
-            .horizontalScroll(rememberScrollState())
-            .verticalScroll(rememberScrollState())
-    ) {
-        Text("Browsing directory:")
-        Text(
-            text = if (root != null) {
-                if (directoryValue.absolutePath == root.absolutePath) {
-                    "/"
-                } else {
-                    directoryValue.absolutePath.substring(root.absolutePath.length)
-                }
-            } else {
-                directoryValue.absolutePath
-            },
-            fontWeight = FontWeight.Bold,
-        )
-        if (parent != null) {
-            TextButton(
-                onClick = { onFileClick(parent) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RectangleShape,
+    Column {
+        Row {
+            IconButton(
+                onClick = { if (parent != null) { onFileClick(parent, false) } },
+                enabled = parent != null,
             ) {
                 Icon(Icons.Default.ArrowBackIosNew, "")
+            }
+            Column {
+                Text("Browsing directory:")
                 Text(
-                    text = "..",
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Left,
+                    text = if (root != null) {
+                        if (directoryValue.absolutePath == root.absolutePath) {
+                            "/"
+                        } else {
+                            directoryValue.absolutePath.substring(root.absolutePath.length)
+                        }
+                    } else {
+                        directoryValue.absolutePath
+                    },
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
-        val entries = directoryValue.listFiles()
-        if (entries != null) {
-            for (item in entries) {
-                TextButton(
-                    onClick = { onFileClick(item); },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RectangleShape,
-                ) {
-                    Icon(
-                        imageVector = if (item.isDirectory) {
-                            Icons.Default.Folder
-                        } else {
-                            Icons.Default.FileOpen
-                        },
-                        contentDescription = ""
-                    )
-                    Text(
-                        text = item.name,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Left,
-                    )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .horizontalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState())
+        ) {
+            val entries = directoryValue.listFiles()
+            if (entries != null) {
+                for (item in entries) {
+                    val expanded = remember { mutableStateOf(false) }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(0.dp, 8.dp)
+                            .combinedClickable(
+                                onClick = { onFileClick(item, false) },
+                                onLongClick = {
+                                    //haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    Log.d(TAG, "onLongClick")
+                                    expanded.value = true
+                                },
+                                onLongClickLabel = stringResource(R.string.open_context_menu)
+                            ),
+                    ) {
+                        Icon(
+                            imageVector = if (item.isDirectory) {
+                                Icons.Default.Folder
+                            } else {
+                                Icons.Default.FileOpen
+                            },
+                            contentDescription = ""
+                        )
+                        Text(
+                            text = item.name,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Left,
+                        )
+                        DropdownMenu(
+                            expanded = expanded.value,
+                            onDismissRequest = { expanded.value = false }
+                        ) {
+                            if (!item.isDirectory) {
+                                DropdownMenuItem(
+                                    text = { Text("Share") },
+                                    onClick = {
+                                        expanded.value = false
+                                        onFileClick(item, true)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Edit as plain text") },
+                                    onClick = {
+                                        expanded.value = false
+                                        //...
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
