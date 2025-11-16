@@ -149,11 +149,15 @@ impl FromStr for ArchivePath {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let path = s
+        let mut path = s
             .strip_prefix("ar:")
-            .ok_or_else(|| anyhow!("archive path must start with 'ar:'"))?;
-        check_path(path)?;
-        Ok(Self(path.into()))
+            .ok_or_else(|| anyhow!("archive path must start with 'ar:'"))?
+            .to_string();
+        if path.ends_with('/') {
+            path.pop();
+        }
+        check_path(&path)?;
+        Ok(Self(path))
     }
 }
 

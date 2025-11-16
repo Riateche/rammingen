@@ -236,6 +236,11 @@ async fn download_inner(
         }
         let _status = set_status(format!("Scanning remote files: {}", ctx.root_local_path));
 
+        if fs_err::symlink_metadata(&entry_local_path).is_ok_and(|m| m.is_symlink()) {
+            info!("skipping symlink: {entry_local_path}");
+            continue;
+        }
+
         let mut must_delete = false;
         let db_data = if ctx.is_mount {
             ctx.ctx.db.get_local_entry(&entry_local_path)?

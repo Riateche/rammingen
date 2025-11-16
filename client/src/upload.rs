@@ -7,7 +7,7 @@ use {
         term::{set_status, set_status_updater},
         unix_mode, Ctx,
     },
-    anyhow::{anyhow, bail, Result},
+    anyhow::{anyhow, bail, Context, Result},
     fs::symlink_metadata,
     fs_err as fs,
     futures::future::BoxFuture,
@@ -65,14 +65,7 @@ pub async fn find_local_deletions<'a>(
     let mut new_versions = Vec::new();
     let mut local_paths = Vec::new();
 
-    for entry in ctx.db.get_all_local_entries().rev() {
-        let (local_path, _data) = match entry {
-            Ok(r) => r,
-            Err(err) => {
-                warn!("Couldn't load a local entry: {err}");
-                continue;
-            }
-        };
+    for (local_path, _data) in ctx.db.get_all_local_entries()?.into_iter().rev() {
         if existing_paths.contains(&local_path) {
             continue;
         }
@@ -116,7 +109,8 @@ async fn record_deletion_batch(
     let results = ctx
         .client
         .request(&AddVersions(mem::take(new_versions)))
-        .await?;
+        .await
+        .with_context(|| format!("failed to record deletion of paths: {local_paths:?}"))?;
     if results.len() != local_paths.len() {
         bail!("invalid item count in AddVersions response");
     }

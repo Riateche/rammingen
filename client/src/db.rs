@@ -1,12 +1,11 @@
 use {
     crate::{counters::NotificationCounters, path::SanitizedLocalPath},
-    anyhow::{anyhow, Result},
+    anyhow::{anyhow, Context as _, Result},
     byteorder::{ByteOrder, LE},
-    fs_err::symlink_metadata,
     rammingen_protocol::{ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber},
     rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry},
     serde::{Deserialize, Serialize},
-    sled::{transaction::ConflictableTransactionError, Transactional},
+    sled::{transaction::ConflictableTransactionError, IVec, Transactional},
     std::{fmt::Debug, io, iter, path::Path, str, thread::sleep, time::Duration},
     tracing::{info, warn},
 };
@@ -141,23 +140,31 @@ impl Db {
         Ok(())
     }
 
-    pub fn get_all_local_entries(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = Result<(SanitizedLocalPath, LocalEntry)>> {
-        self.local_entries
-            .iter()
-            .map(|pair| {
-                let (key, value) = pair?;
-                let path = str::from_utf8(&key)?;
-                if symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()) {
-                    // Cannot load local entry that currently points to a symlink.
-                    return Ok(None);
+    pub fn get_all_local_entries(&self) -> anyhow::Result<Vec<(SanitizedLocalPath, LocalEntry)>> {
+        let load = |key: &IVec, value: &IVec| {
+            let path = str::from_utf8(key)?;
+            let path = SanitizedLocalPath::new(path)
+                .with_context(|| format!("local entry {path:?} is unsupported"))?;
+            let data = bincode::deserialize::<LocalEntry>(value)
+                .with_context(|| format!("invalid data for local entry {path:?}"))?;
+            anyhow::Ok((path, data))
+        };
+        let mut output = Vec::new();
+        let mut keys_to_remove = Vec::new();
+        for entry in self.local_entries.iter() {
+            let (key, value) = entry.context("database iterator failed")?;
+            match load(&key, &value) {
+                Ok((path, data)) => output.push((path, data)),
+                Err(err) => {
+                    warn!("removing invalid local entry: {err}");
+                    keys_to_remove.push(key);
                 }
-                let path = SanitizedLocalPath::new(path)?;
-                let data = bincode::deserialize::<LocalEntry>(&value)?;
-                Ok(Some((path, data)))
-            })
-            .filter_map(|r| r.transpose())
+            }
+        }
+        for key in keys_to_remove {
+            self.local_entries.remove(key)?;
+        }
+        Ok(output)
     }
 
     pub fn get_local_entry(&self, path: &SanitizedLocalPath) -> Result<Option<LocalEntry>> {
