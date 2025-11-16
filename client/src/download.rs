@@ -5,7 +5,7 @@ use {
         term::{set_status, set_status_updater},
         Ctx,
     },
-    anyhow::{anyhow, bail, Result},
+    anyhow::{anyhow, bail, Context, Result},
     fs_err::{create_dir, metadata, remove_dir, remove_file, rename},
     futures::{stream, Stream, TryStreamExt},
     rammingen_protocol::{
@@ -379,7 +379,8 @@ async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
     }
     ctx.client
         .download_and_decrypt(&item.content, &tmp_path, &ctx.cipher)
-        .await?;
+        .await
+        .with_context(|| format!("failed to download file {}", item.local_path))?;
     let _ = item.sender.send(tmp_guard);
     Ok(())
 }

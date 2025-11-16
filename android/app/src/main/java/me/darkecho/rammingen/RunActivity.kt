@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,7 +47,9 @@ class RunActivity : ComponentActivity(), Receiver {
 
         val title = intent.getStringExtra("title") ?: return
         val command = intent.getStringExtra("command") ?: return
+        val storageRoot = intent.getStringExtra("storageRoot") ?: return
         Log.d(TAG, "t2 $command, $title")
+
         enableEdgeToEdge()
         setContent {
             RammingenTheme {
@@ -98,9 +101,9 @@ class RunActivity : ComponentActivity(), Receiver {
         logsBuilder = AnnotatedString.Builder("")
         logs.value = logsBuilder.toAnnotatedString()
 
-        val dir = getExternalFilesDir(null)
-        Log.d(TAG, "externalFilesDir: $dir")
-        if (dir == null) {
+        val externalFilesDir = getExternalFilesDir(null)
+        Log.d(TAG, "externalFilesDir: $externalFilesDir")
+        if (externalFilesDir == null) {
             AlertDialog.Builder(this)
                 .setMessage("Shared storage is not currently available")
                 .create()
@@ -136,7 +139,8 @@ class RunActivity : ComponentActivity(), Receiver {
         status.value = "Launching operation"
         Thread {
             val isOk = nativeBridge.run(
-                dir.absolutePath,
+                externalFilesDir.absolutePath,
+                storageRoot,
                 config,
                 accessToken,
                 encryptionKey,

@@ -15,6 +15,7 @@ class NativeBridge {
     @JvmName("run")
     external fun run(
         appDir: String,
+        storageRoot: String,
         config: String,
         accessToken: String,
         encryptionKey: String,

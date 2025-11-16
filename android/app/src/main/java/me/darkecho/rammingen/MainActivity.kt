@@ -10,7 +10,9 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.widget.EditText
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.combinedClickable
@@ -54,13 +56,34 @@ import java.io.File
 const val TAG = "rammingen"
 
 class MainActivity : ComponentActivity() {
+    var storageRoot: File? = null
     var fileBrowserDirectory: MutableState<File?> = mutableStateOf(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val externalDir = getExternalFilesDir(null)
-        fileBrowserDirectory.value = externalDir
+        if (externalDir == null) {
+            Toast.makeText(this, "External storage is currently unavailable", 10).show()
+        } else {
+            val storageRoot = File("${externalDir.absolutePath}/storage")
+            if (!storageRoot.exists()) {
+                if (storageRoot.mkdirs()) {
+                    Log.i(TAG, "storageRoot created: $storageRoot")
+                } else {
+                    Toast.makeText(this, "Failed to create storage root dir", 10).show()
+                }
+            }
+            this.storageRoot = storageRoot
+            fileBrowserDirectory.value = storageRoot
+        }
+
+        this.onBackPressedDispatcher.addCallback(this, object: OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                backPressed()
+            }
+        })
+
         setContent {
             RammingenTheme {
                 Scaffold(
@@ -128,7 +151,7 @@ class MainActivity : ComponentActivity() {
                         .padding(horizontal = 16.dp)) {
                         Files(
                             directory = fileBrowserDirectory,
-                            root = externalDir,
+                            storageRoot = storageRoot,
                             onFileClick = { f, share -> onFileClick(f, share) },
                             editFile = { f -> editFile(f) },
                         )
@@ -138,11 +161,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun backPressed() {
+        val directoryValue = fileBrowserDirectory.value ?: return
+        if (storageRoot?.absolutePath == directoryValue.absolutePath) {
+            return
+        }
+        val parent = directoryValue.parentFile ?: return
+        fileBrowserDirectory.value = parent
+    }
+
     fun runCommand(command: String, title: String) {
         startActivity(
             Intent(this, RunActivity::class.java)
                 .putExtra("command", command)
                 .putExtra("title", title)
+                .putExtra("storageRoot", storageRoot?.absolutePath ?: "")
         )
     }
 
@@ -227,17 +260,21 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun Files(
     directory: MutableState<File?>,
-    root: File?,
+    storageRoot: File?,
     onFileClick: (File, Boolean) -> Unit,
     editFile: (File) -> Unit,
 ) {
     val directoryValue = directory.value ?: return
-    val parent = if (root?.absolutePath != directoryValue.absolutePath) {
+    val parent = if (storageRoot?.absolutePath != directoryValue.absolutePath) {
         directoryValue.parentFile
     } else {
         null
     }
-    Column {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+    ) {
         Row {
             IconButton(
                 onClick = { if (parent != null) { onFileClick(parent, false) } },
@@ -248,11 +285,11 @@ fun Files(
             Column {
                 Text("Browsing directory:")
                 Text(
-                    text = if (root != null) {
-                        if (directoryValue.absolutePath == root.absolutePath) {
+                    text = if (storageRoot != null) {
+                        if (directoryValue.absolutePath == storageRoot.absolutePath) {
                             "/"
                         } else {
-                            directoryValue.absolutePath.substring(root.absolutePath.length)
+                            directoryValue.absolutePath.substring(storageRoot.absolutePath.length)
                         }
                     } else {
                         directoryValue.absolutePath
@@ -265,7 +302,6 @@ fun Files(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
-                .horizontalScroll(rememberScrollState())
                 .verticalScroll(rememberScrollState())
         ) {
             val entries = directoryValue.listFiles()
@@ -279,7 +315,6 @@ fun Files(
                             .combinedClickable(
                                 onClick = { onFileClick(entry, false) },
                                 onLongClick = {
-                                    //haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     Log.d(TAG, "onLongClick")
                                     expanded.value = true
                                 },

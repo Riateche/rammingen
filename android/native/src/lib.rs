@@ -50,6 +50,7 @@ pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
     mut env: JNIEnv,
     _class: JObject,
     app_dir: JString,
+    storage_root: JString,
     config: JString,
     access_token: JString,
     encryption_key: JString,
@@ -69,6 +70,7 @@ pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
     let r = run(
         &mut env,
         app_dir,
+        storage_root,
         config,
         access_token,
         encryption_key,
@@ -127,6 +129,7 @@ fn log_to_android(env: &mut JNIEnv<'_>, text: impl Display) {
 fn run(
     env: &mut JNIEnv<'_>,
     app_dir: JString,
+    storage_root: JString,
     config: JString,
     access_token: JString,
     encryption_key: JString,
@@ -138,6 +141,11 @@ fn run(
 
     let app_dir = env
         .get_string(&app_dir)
+        .context("failed to get java string")?
+        .into_type::<String>()
+        .into_type::<PathBuf>();
+    let storage_root = env
+        .get_string(&storage_root)
         .context("failed to get java string")?
         .into_type::<String>()
         .into_type::<PathBuf>();
@@ -168,7 +176,7 @@ fn run(
         log_to_android(env, "using config content from argument");
         config
     };
-    let config = prepare_config(&app_dir, &config_content)?;
+    let config = prepare_config(&app_dir, &storage_root, &config_content)?;
     log_to_android(env, format!("config: {config:?}"));
 
     setup_logger_and_panic_hook(config.log_file.as_deref(), Some(&config.log_filter))?;
@@ -261,7 +269,11 @@ impl Term for NativeBridgeTerm {
     }
 }
 
-fn prepare_config(app_dir: &Path, config_content: &str) -> anyhow::Result<Config> {
+fn prepare_config(
+    app_dir: &Path,
+    storage_root: &Path,
+    config_content: &str,
+) -> anyhow::Result<Config> {
     let AndroidConfig {
         use_keyring,
         always_exclude,
@@ -300,7 +312,9 @@ fn prepare_config(app_dir: &Path, config_content: &str) -> anyhow::Result<Config
             .into_iter()
             .map(|mount_point| {
                 Ok(MountPoint {
-                    local_path: SanitizedLocalPath::new(app_dir.join(&mount_point.local_path))?,
+                    local_path: SanitizedLocalPath::new(
+                        storage_root.join(&mount_point.local_path),
+                    )?,
                     archive_path: mount_point.archive_path,
                     exclude: mount_point.exclude,
                 })
