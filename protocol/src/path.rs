@@ -151,9 +151,12 @@ impl FromStr for ArchivePath {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut path = s
             .strip_prefix("ar:")
-            .ok_or_else(|| anyhow!("archive path must start with 'ar:'"))?
+            .ok_or_else(|| anyhow!("archive path must start with 'ar:/'"))?
             .to_string();
-        if path.ends_with('/') {
+        if !path.starts_with('/') {
+            bail!("archive path must start with 'ar:/'");
+        }
+        if path.ends_with('/') && path != "/" {
             path.pop();
         }
         check_path(&path)?;
