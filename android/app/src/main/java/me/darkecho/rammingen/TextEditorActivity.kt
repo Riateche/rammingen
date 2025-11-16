@@ -2,6 +2,8 @@
 
 package me.darkecho.rammingen
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -42,13 +44,25 @@ import java.time.format.TextStyle
 
 
 class TextEditorActivity: ComponentActivity() {
+    companion object {
+        private val ARG_FILE_PATH = "filePath"
+
+        fun createIntent(
+            context: Context,
+            filePath: String,
+        ): Intent {
+            return Intent(context, TextEditorActivity::class.java)
+                .putExtra(ARG_FILE_PATH, filePath)
+        }
+    }
+
     val textState = TextFieldState("")
     var filePath: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val filePath = intent.getStringExtra("filePath") ?: return
+        val filePath = intent.getStringExtra(ARG_FILE_PATH) ?: return
         this.filePath = filePath
         val file = File(filePath)
         val text = file.readText(Charsets.UTF_8)

@@ -2,6 +2,7 @@
 
 package me.darkecho.rammingen
 
+import android.app.PendingIntent.getActivity
 import android.util.Log
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,7 @@ data class FileActionRequest(
 )
 
 data class FileBrowserState(
+    val externalFileDir: File? = null,
     val storageRoot: File? = null,
     val currentDir: File? = null,
     val contextMenuEntryPath: String? = null,
@@ -110,7 +112,6 @@ data class FileBrowserState(
 class FileBrowserViewModel: ViewModel() {
     private val _uiState = MutableStateFlow(FileBrowserState())
     val uiState: StateFlow<FileBrowserState> = _uiState.asStateFlow()
-
 
     fun requestRunCommand(command: String, title: String) {
         _uiState.update { state ->

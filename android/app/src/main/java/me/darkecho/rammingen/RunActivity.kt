@@ -3,6 +3,8 @@
 package me.darkecho.rammingen
 
 import android.app.AlertDialog
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -37,6 +39,24 @@ import androidx.compose.ui.unit.dp
 import me.darkecho.rammingen.ui.theme.RammingenTheme
 
 class RunActivity : ComponentActivity(), Receiver {
+    companion object {
+        private val ARG_COMMAND = "command"
+        private val ARG_TITLE = "title"
+        private val ARG_STORAGE_ROOT = "storageRoot"
+        private val ARG_CURRENT_DIR = "currentDir"
+
+        fun createIntent(
+            context: Context,
+            request: RunCommandRequest,
+        ): Intent {
+            return Intent(context, RunActivity::class.java)
+                .putExtra(ARG_COMMAND, request.command)
+                .putExtra(ARG_TITLE, request.title)
+                .putExtra(ARG_STORAGE_ROOT, request.storageRoot)
+                .putExtra(ARG_CURRENT_DIR, request.currentDir)
+        }
+    }
+
     var logsBuilder = AnnotatedString.Builder()
     val logs = mutableStateOf(logsBuilder.toAnnotatedString())
     val status = mutableStateOf("")
@@ -46,10 +66,11 @@ class RunActivity : ComponentActivity(), Receiver {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val title = intent.getStringExtra("title") ?: return
-        val command = intent.getStringExtra("command") ?: return
-        val storageRoot = intent.getStringExtra("storageRoot") ?: return
-        Log.d(TAG, "t2 $command, $title")
+        val command = intent.getStringExtra(ARG_COMMAND) ?: return
+        val title = intent.getStringExtra(ARG_TITLE) ?: return
+        val storageRoot = intent.getStringExtra(ARG_STORAGE_ROOT) ?: return
+        // TODO: use for custom commands
+        val currentDir = intent.getStringExtra(ARG_CURRENT_DIR) ?: return
 
         enableEdgeToEdge()
         setContent {

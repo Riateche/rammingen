@@ -23,6 +23,7 @@ import java.io.File
 
 
 const val TAG = "rammingen"
+const val STORAGE_DIR_NAME = "storage"
 
 class MainActivity : ComponentActivity() {
     private val viewModel: FileBrowserViewModel by viewModels()
@@ -30,34 +31,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val externalDir = getExternalFilesDir(null)
-        if (externalDir == null) {
-            Toast.makeText(
-                this,
-                "External storage is currently unavailable",
-                Toast.LENGTH_LONG
-            ).show()
-        } else {
-            val storageRoot = File(externalDir.absolutePath, "storage")
-            if (!storageRoot.exists()) {
-                if (storageRoot.mkdirs()) {
-                    Log.i(TAG, "storageRoot created: $storageRoot")
-                } else {
-                    Toast.makeText(
-                        this,
-                        "Failed to create storage root dir",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
+        val storageRoot = prepareStorageRoot()
+        if (storageRoot != null) {
             viewModel.setStorageRoot(storageRoot)
             viewModel.setCurrentDir(storageRoot)
         }
 
-        val backPressedCallback = object : OnBackPressedCallback(true) {
+        val backPressedCallback = object : OnBackPressedCallback(false) {
             override fun handleOnBackPressed() = viewModel.goToParentDir()
         }
-        this.onBackPressedDispatcher.addCallback(this, backPressedCallback)
+        onBackPressedDispatcher.addCallback(this, backPressedCallback)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -84,14 +67,36 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun prepareStorageRoot(): File? {
+        val externalDir = getExternalFilesDir(null)
+        if (externalDir == null) {
+            Toast.makeText(
+                this,
+                R.string.external_storage_is_currently_unavailable,
+                Toast.LENGTH_LONG
+            ).show()
+            return null
+        }
+
+        val storageRoot = File(externalDir.absolutePath, STORAGE_DIR_NAME)
+        if (!storageRoot.exists()) {
+            if (storageRoot.mkdirs()) {
+                Log.i(TAG, "storageRoot created: $storageRoot")
+            } else {
+                Toast.makeText(
+                    this,
+                    R.string.failed_to_create_storage_root_dir,
+                    Toast.LENGTH_LONG
+                ).show()
+                return null
+            }
+        }
+
+        return storageRoot
+    }
+
     private fun runCommand(request: RunCommandRequest) {
-        startActivity(
-            Intent(this, RunActivity::class.java)
-                .putExtra("command", request.command)
-                .putExtra("title", request.title)
-                .putExtra("storageRoot", request.storageRoot)
-                .putExtra("currentDir", request.currentDir) // TODO: use for custom commands
-        )
+        startActivity(RunActivity.createIntent(this, request))
     }
 
     private fun goToSettings() {
@@ -115,7 +120,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val sendIntent = Intent()
-                sendIntent.setDataAndType(fileUri, contentResolver.getType(fileUri))
+                sendIntent.setDataAndType(
+                    fileUri,
+                    contentResolver.getType(fileUri) ?: "*/*",
+                )
                 sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 sendIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 sendIntent.action = when(request.action) {
@@ -133,14 +141,17 @@ class MainActivity : ComponentActivity() {
                 try {
                     startActivity(Intent.createChooser(sendIntent, null))
                 } catch (e: ActivityNotFoundException) {
-                    Toast.makeText(this, "Failed to open file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this,
+                        R.string.failed_to_open_file,
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
 
             }
             FileAction.EDIT -> {
                 startActivity(
-                    Intent(this, TextEditorActivity::class.java)
-                        .putExtra("filePath", request.file.absolutePath)
+                    TextEditorActivity.createIntent(this, request.file.absolutePath)
                 )
             }
         }
