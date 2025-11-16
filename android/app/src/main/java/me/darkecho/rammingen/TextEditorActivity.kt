@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -85,8 +86,7 @@ class TextEditorActivity: ComponentActivity() {
                     Column(
                         Modifier
                             .padding(innerPadding)
-                            .fillMaxWidth()
-                            .fillMaxHeight()
+                            .fillMaxSize()
                             .horizontalScroll(rememberScrollState())
                             .verticalScroll(rememberScrollState())
                     ) {
@@ -114,6 +114,6 @@ class TextEditorActivity: ComponentActivity() {
         writer.use { writer ->
             writer.write(textState.text.toString())
         }
-        Toast.makeText(this, "Saved", 5).show()
+        Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
     }
 }

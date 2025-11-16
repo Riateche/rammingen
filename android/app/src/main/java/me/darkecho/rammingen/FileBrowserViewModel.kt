@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -98,7 +99,11 @@ data class FileBrowserState(
         } else {
             currentDir.absolutePath.substring(storageRoot.absolutePath.length)
         }
+    }
 
+    fun entries(): List<File> {
+        val entries = currentDir?.listFiles() ?: emptyArray()
+        return entries.sortedBy { it.name.lowercase() }
     }
 }
 
@@ -304,9 +309,8 @@ fun FileBrowserScreen(
             .padding(innerPadding)
             .padding(horizontal = 16.dp)) {
             Files(
-                currentDir = state.currentDir,
-                storageRoot = state.storageRoot,
                 currentDirText = state.currentDirText(),
+                entries = state.entries(),
                 hasValidParent = state.hasValidParent(),
                 goToParentDir = { viewModel.goToParentDir() },
                 openFile = { file -> viewModel.openFile(file) },
@@ -362,9 +366,8 @@ fun FileBrowserScreen(
 
 @Composable
 fun Files(
-    currentDir: File?,
-    storageRoot: File?,
     currentDirText: String,
+    entries: List<File>,
     hasValidParent: Boolean,
     goToParentDir: () -> Unit,
     openFile: (File) -> Unit,
@@ -373,11 +376,7 @@ fun Files(
     openContextMenu: (File) -> Unit,
     dismissContextMenu: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight()
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Row {
             IconButton(
                 onClick = { goToParentDir() },
@@ -395,58 +394,57 @@ fun Files(
         }
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight()
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            val entries = currentDir?.listFiles()
-            if (entries != null) {
-                for (entry in entries) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                            .padding(0.dp, 12.dp)
-                            .combinedClickable(
-                                onClick = { openFile(entry) },
-                                onLongClick = {
-                                    Log.d(TAG, "onLongClick")
-                                    openContextMenu(entry)
-                                },
-                                onLongClickLabel = stringResource(R.string.open_context_menu)
-                            ),
-                    ) {
-                        Icon(
-                            imageVector = if (entry.isDirectory) {
-                                Icons.Default.Folder
-                            } else {
-                                Icons.Default.FileOpen
+            for (entry in entries) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(0.dp, 12.dp)
+                        .combinedClickable(
+                            onClick = { openFile(entry) },
+                            onLongClick = {
+                                Log.d(TAG, "onLongClick")
+                                openContextMenu(entry)
                             },
-                            contentDescription = ""
+                            onLongClickLabel = stringResource(R.string.open_context_menu)
+                        ),
+                ) {
+                    if (entry.isDirectory) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = "folder",
                         )
-                        Text(
-                            text = entry.name,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Left,
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.FileOpen,
+                            contentDescription = "file",
                         )
-                        DropdownMenu(
-                            expanded = isContextMenuOpen(entry),
-                            onDismissRequest = dismissContextMenu
-                        ) {
-                            if (!entry.isDirectory) {
-                                DropdownMenuItem(
-                                    text = { Text("Share") },
-                                    onClick = {
-                                        dismissContextMenu()
-                                        requestFileAction(entry, FileAction.SHARE)
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Edit as plain text") },
-                                    onClick = {
-                                        dismissContextMenu()
-                                        requestFileAction(entry, FileAction.EDIT)
-                                    }
-                                )
-                            }
+                    }
+                    Text(
+                        text = entry.name,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Left,
+                    )
+                    DropdownMenu(
+                        expanded = isContextMenuOpen(entry),
+                        onDismissRequest = dismissContextMenu
+                    ) {
+                        if (!entry.isDirectory) {
+                            DropdownMenuItem(
+                                text = { Text("Share") },
+                                onClick = {
+                                    dismissContextMenu()
+                                    requestFileAction(entry, FileAction.SHARE)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Edit as plain text") },
+                                onClick = {
+                                    dismissContextMenu()
+                                    requestFileAction(entry, FileAction.EDIT)
+                                }
+                            )
                         }
                     }
                 }

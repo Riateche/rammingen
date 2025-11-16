@@ -38,6 +38,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     val buildNativeLibrary = tasks.register<Exec>("buildNativeLibrary") {

@@ -2,6 +2,7 @@
 
 package me.darkecho.rammingen
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -31,14 +32,22 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val externalDir = getExternalFilesDir(null)
         if (externalDir == null) {
-            Toast.makeText(this, "External storage is currently unavailable", 10).show()
+            Toast.makeText(
+                this,
+                "External storage is currently unavailable",
+                Toast.LENGTH_LONG
+            ).show()
         } else {
-            val storageRoot = File("${externalDir.absolutePath}/storage")
+            val storageRoot = File(externalDir.absolutePath, "storage")
             if (!storageRoot.exists()) {
                 if (storageRoot.mkdirs()) {
                     Log.i(TAG, "storageRoot created: $storageRoot")
                 } else {
-                    Toast.makeText(this, "Failed to create storage root dir", 10).show()
+                    Toast.makeText(
+                        this,
+                        "Failed to create storage root dir",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
             viewModel.setStorageRoot(storageRoot)
@@ -57,7 +66,7 @@ class MainActivity : ComponentActivity() {
                         runCommand(uiState.runCommandRequest)
                     }
                     if (uiState.settingsRequest) {
-                        onSettings()
+                        goToSettings()
                     }
                     if (uiState.fileActionRequest != null) {
                         runFileAction(uiState.fileActionRequest)
@@ -75,7 +84,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun runCommand(request: RunCommandRequest) {
+    private fun runCommand(request: RunCommandRequest) {
         startActivity(
             Intent(this, RunActivity::class.java)
                 .putExtra("command", request.command)
@@ -85,18 +94,18 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    fun onSettings() {
+    private fun goToSettings() {
         val intent = Intent(this, SettingsActivity::class.java)
         startActivity(intent)
     }
 
-    fun runFileAction(request: FileActionRequest) {
+    private fun runFileAction(request: FileActionRequest) {
         when(request.action) {
             FileAction.OPEN, FileAction.SHARE -> {
                 val fileUri = try {
                     FileProvider.getUriForFile(
                         this@MainActivity,
-                        applicationContext.applicationInfo.packageName + ".provider",
+                        "${BuildConfig.APPLICATION_ID}.provider",
                         request.file,
                     )
                 } catch (e: IllegalArgumentException) {
@@ -110,7 +119,9 @@ class MainActivity : ComponentActivity() {
                 sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 sendIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 sendIntent.action = when(request.action) {
-                    FileAction.OPEN -> Intent.ACTION_VIEW
+                    FileAction.OPEN -> {
+                        Intent.ACTION_VIEW
+                    }
                     FileAction.SHARE -> Intent.ACTION_SEND
                     else -> {
                         Log.e(TAG, "unreachable")
@@ -118,7 +129,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 sendIntent.putExtra(Intent.EXTRA_STREAM, fileUri)
-                startActivity(Intent.createChooser(sendIntent, null))
+
+                try {
+                    startActivity(Intent.createChooser(sendIntent, null))
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(this, "Failed to open file", Toast.LENGTH_SHORT).show()
+                }
 
             }
             FileAction.EDIT -> {
