@@ -21,7 +21,6 @@ import kotlinx.coroutines.launch
 import me.darkecho.rammingen.ui.theme.RammingenTheme
 import java.io.File
 
-
 const val TAG = "rammingen"
 const val STORAGE_DIR_NAME = "storage"
 
@@ -33,8 +32,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val storageRoot = prepareStorageRoot()
         if (storageRoot != null) {
-            viewModel.setStorageRoot(storageRoot)
-            viewModel.setCurrentDir(storageRoot)
+            viewModel.setStorageRoot(storageRoot.absolutePath)
+            viewModel.setCurrentDir(storageRoot.absolutePath)
         }
 
         val backPressedCallback = object : OnBackPressedCallback(false) {
@@ -111,7 +110,7 @@ class MainActivity : ComponentActivity() {
                     FileProvider.getUriForFile(
                         this@MainActivity,
                         "${BuildConfig.APPLICATION_ID}.provider",
-                        request.file,
+                        File(request.filePath),
                     )
                 } catch (e: IllegalArgumentException) {
                     Log.e(TAG,
@@ -140,18 +139,17 @@ class MainActivity : ComponentActivity() {
 
                 try {
                     startActivity(Intent.createChooser(sendIntent, null))
-                } catch (e: ActivityNotFoundException) {
+                } catch (_: ActivityNotFoundException) {
                     Toast.makeText(
                         this,
                         R.string.failed_to_open_file,
                         Toast.LENGTH_SHORT
                     ).show()
                 }
-
             }
             FileAction.EDIT -> {
                 startActivity(
-                    TextEditorActivity.createIntent(this, request.file.absolutePath)
+                    TextEditorActivity.createIntent(this, request.filePath)
                 )
             }
         }

@@ -4,4 +4,20 @@
     <string name="external_storage_is_currently_unavailable">External storage is currently unavailable</string>
     <string name="failed_to_create_storage_root_dir">Failed to create storage root dir</string>
     <string name="failed_to_open_file">Failed to open file</string>
+    <string name="long_app_title">Rammingen file sync</string>
+    <string name="sync">Sync</string>
+    <string name="menu">Menu</string>
+    <string name="settings">Settings</string>
+    <string name="dry_run">Dry run</string>
+    <string name="server_status">Server status</string>
+    <string name="command_line_help">Command line help</string>
+    <string name="run_custom_command">Run custom command</string>
+    <string name="run">Run</string>
+    <string name="cancel">Cancel</string>
+    <string name="browsing_directory">Browsing directory:</string>
+    <string name="folder">folder</string>
+    <string name="file">file</string>
+    <string name="share">Share</string>
+    <string name="edit_as_plain_text">Edit as plain text</string>
+    <string name="go_to_parent_directory">Go to parent directory</string>
 </resources>

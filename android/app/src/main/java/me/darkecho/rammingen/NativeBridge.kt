@@ -7,6 +7,13 @@ interface Receiver {
     fun onNativeBridgeStatus(status: String)
 }
 class NativeBridge {
+    companion object {
+        const val COMMAND_SYNC = "sync"
+        const val COMMAND_DRY_RUN = "dry-run"
+        const val COMMAND_SERVER_STATUS = "status"
+        const val COMMAND_HELP = "help"
+    }
+
     init {
         Os.setenv("RUST_BACKTRACE", "1", true)
         System.loadLibrary("rammingen_android")
