@@ -15,6 +15,8 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
       - run: |
           cargo test --locked --all-targets --all-features
           docker run --rm --name rammingen_autotest -e POSTGRES_HOST_AUTH_METHOD=trust -p 6123:5432 -d postgres:alpine
@@ -25,12 +27,14 @@ jobs:
           sleep 1
           cargo run --locked --release --bin rammingen_tests -- --database-url postgres://postgres@127.0.0.1:6123/ --seed 4226198923619095502 shuffle
 
-  fmt:
+  format:
     name: Check formatting
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
       - run: cargo fmt --check
 
   lint:
@@ -40,4 +44,6 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
       - run: cargo clippy --locked --all-targets --all-features -- --deny warnings

@@ -1,0 +1,46 @@
+name: Check Android app
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  android:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: true
+      - name: Add Rust targets
+        run: |
+          rustup target add \
+            aarch64-linux-android \
+            armv7-linux-androideabi \
+            i686-linux-android \
+            x86_64-linux-android
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719 # 16.0
+      - name: Build and test
+        run: |
+          export ANDROID_TOOLCHAINS='/usr/local/lib/android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin'
+          ./gradlew assembleRelease
+          ./gradlew test
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned.apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
