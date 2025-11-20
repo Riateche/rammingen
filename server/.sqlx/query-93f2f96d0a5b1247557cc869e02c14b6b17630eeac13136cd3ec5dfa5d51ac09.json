@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE entries SET\n                        update_number = nextval('entry_update_numbers'),\n                        recorded_at = now(),\n                        kind = $1,\n                        source_id = $2,\n                        record_trigger = $3\n                    WHERE id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "93f2f96d0a5b1247557cc869e02c14b6b17630eeac13136cd3ec5dfa5d51ac09"
+}

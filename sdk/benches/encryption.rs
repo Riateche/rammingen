@@ -1,13 +1,10 @@
 use {
-    aes_siv::{
-        aead::{Aead, OsRng},
-        Aes256SivAead, KeyInit, Nonce,
-    },
+    aes_siv::{aead::Aead, Aes256SivAead, KeyInit, Nonce},
     criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion},
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let key = Aes256SivAead::generate_key(&mut OsRng);
+    let key = Aes256SivAead::generate_key().unwrap();
     let cipher = Aes256SivAead::new(&key);
     let nonce = Nonce::default();
 

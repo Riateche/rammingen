@@ -2,7 +2,7 @@ use {
     crate::{counters::NotificationCounters, path::SanitizedLocalPath},
     anyhow::{anyhow, Context as _, Result},
     byteorder::{ByteOrder, LE},
-    rammingen_protocol::{ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber},
+    rammingen_protocol::{encoding, ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber},
     rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry},
     serde::{Deserialize, Serialize},
     sled::{transaction::ConflictableTransactionError, IVec, Transactional},
@@ -51,7 +51,7 @@ impl Db {
     ) -> impl DoubleEndedIterator<Item = Result<DecryptedEntryVersion>> {
         self.archive_entries
             .iter()
-            .map(|pair| Ok(bincode::deserialize::<DecryptedEntryVersion>(&pair?.1)?))
+            .map(|pair| Ok(encoding::deserialize::<DecryptedEntryVersion>(&pair?.1)?))
     }
 
     pub fn get_archive_entry(&self, path: &ArchivePath) -> Result<Option<DecryptedEntryVersion>> {
@@ -59,7 +59,9 @@ impl Db {
             .archive_entries
             .get(path.to_str_without_prefix().as_bytes())?
         {
-            Ok(Some(bincode::deserialize::<DecryptedEntryVersion>(&value)?))
+            Ok(Some(encoding::deserialize::<DecryptedEntryVersion>(
+                &value,
+            )?))
         } else {
             Ok(None)
         }
@@ -74,7 +76,7 @@ impl Db {
                 .archive_entries
                 .get(path.to_str_without_prefix().as_bytes())?
                 .ok_or_else(|| anyhow!("no such archive path: {}", path))?;
-            anyhow::Ok(bincode::deserialize::<DecryptedEntryVersion>(&value)?)
+            anyhow::Ok(encoding::deserialize::<DecryptedEntryVersion>(&value)?)
         })();
         let children = if root_entry
             .as_ref()
@@ -85,7 +87,7 @@ impl Db {
             Some(
                 self.archive_entries
                     .scan_prefix(prefix)
-                    .map(|pair| Ok(bincode::deserialize::<DecryptedEntryVersion>(&pair?.1)?)),
+                    .map(|pair| Ok(encoding::deserialize::<DecryptedEntryVersion>(&pair?.1)?)),
             )
         } else {
             None
@@ -114,7 +116,7 @@ impl Db {
             for update in updates {
                 archive_entries.insert(
                     update.path.to_str_without_prefix().as_bytes(),
-                    bincode::serialize(update).map_err(into_abort_err)?,
+                    encoding::serialize(update).map_err(into_abort_err)?,
                 )?;
             }
             db.insert(
@@ -145,7 +147,7 @@ impl Db {
             let path = str::from_utf8(key)?;
             let path = SanitizedLocalPath::new(path)
                 .with_context(|| format!("local entry {path:?} is unsupported"))?;
-            let data = bincode::deserialize::<LocalEntry>(value)
+            let data = encoding::deserialize::<LocalEntry>(value)
                 .with_context(|| format!("invalid data for local entry {path:?}"))?;
             anyhow::Ok((path, data))
         };
@@ -169,14 +171,15 @@ impl Db {
 
     pub fn get_local_entry(&self, path: &SanitizedLocalPath) -> Result<Option<LocalEntry>> {
         if let Some(value) = self.local_entries.get(path)? {
-            Ok(Some(bincode::deserialize::<LocalEntry>(&value)?))
+            Ok(Some(encoding::deserialize::<LocalEntry>(&value)?))
         } else {
             Ok(None)
         }
     }
 
     pub fn set_local_entry(&self, path: &SanitizedLocalPath, data: &LocalEntry) -> Result<()> {
-        self.local_entries.insert(path, bincode::serialize(data)?)?;
+        self.local_entries
+            .insert(path, encoding::serialize(data)?)?;
         Ok(())
     }
 

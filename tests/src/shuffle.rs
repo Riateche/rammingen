@@ -3,9 +3,9 @@ use {
     anyhow::Result,
     fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write},
     rand::{
-        distributions::{Alphanumeric, DistString, WeightedIndex},
+        distr::{weighted::WeightedIndex, Alphanumeric, SampleString},
         prelude::Distribution,
-        seq::SliceRandom,
+        seq::IndexedRandom,
         Rng,
     },
     std::{
@@ -48,20 +48,20 @@ fn find_paths_inner(
 }
 
 pub fn random_name(allow_ignored: bool, rng: &mut impl Rng) -> String {
-    if allow_ignored && rng.gen_bool(0.1) {
+    if allow_ignored && rng.random_bool(0.1) {
         // ignored name
         "target".into()
-    } else if allow_ignored && rng.gen_bool(0.1) {
+    } else if allow_ignored && rng.random_bool(0.1) {
         // ignored name
-        format!("build_{}", rng.gen_range(0..1000))
+        format!("build_{}", rng.random_range(0..1000))
     } else {
-        let name_len = rng.gen_range(1..=10);
+        let name_len = rng.random_range(1..=10);
         Alphanumeric.sample_string(rng, name_len)
     }
 }
 
 pub fn random_content(rng: &mut impl Rng) -> String {
-    let content_len = rng.gen_range(0..=3_000_000);
+    let content_len = rng.random_range(0..=3_000_000);
     Alphanumeric.sample_string(rng, content_len)
 }
 
@@ -94,7 +94,7 @@ fn create(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     if path.exists() {
         return Ok(());
     }
-    if rng.gen_bool(0.1) {
+    if rng.random_bool(0.1) {
         // dir
         create_dir(&path)?;
         debug!("Created dir {}", path.display());
@@ -130,7 +130,7 @@ fn random_rename(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     let Some(from) = choose_path(dir, true, true, false, true, rng)? else {
         return Ok(());
     };
-    let to = if rng.gen_bool(0.2) {
+    let to = if rng.random_bool(0.2) {
         choose_path(dir, false, true, true, true, rng)?
             .unwrap()
             .join(random_name(true, rng))
@@ -176,7 +176,7 @@ fn change_mode(_dir: &Path, rng: &mut impl Rng) -> Result<()> {
 }
 
 fn delete(dir: &Path, rng: &mut impl Rng) -> Result<()> {
-    if rng.gen_bool(0.1) {
+    if rng.random_bool(0.1) {
         // dir
         let Some(path) = choose_path(dir, false, true, false, true, rng)? else {
             return Ok(());
@@ -197,7 +197,7 @@ fn delete(dir: &Path, rng: &mut impl Rng) -> Result<()> {
 type Shuffler<R> = fn(dir: &Path, &mut R) -> Result<()>;
 
 pub fn shuffle<R: Rng>(dir: &Path, rng: &mut R) -> Result<()> {
-    let num_mutations = rng.gen_range(1..=30);
+    let num_mutations = rng.random_range(1..=30);
     let shufflers: &[(Shuffler<R>, i32)] = &[
         (create, 10),
         (random_rename, 5),

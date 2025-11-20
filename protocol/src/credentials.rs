@@ -1,32 +1,41 @@
 use {
-    aes_siv::{Aes256SivAead, KeyInit},
-    anyhow::{bail, ensure, format_err, Error},
+    aes_siv::{aead::array::Array, Aes256SivAead, KeyInit},
+    anyhow::{anyhow, bail, ensure, format_err, Error},
     base64::{display::Base64Display, prelude::BASE64_URL_SAFE_NO_PAD, Engine},
-    derive_more::AsRef,
     generic_array::typenum::U64,
     rand::{
-        distributions::{Alphanumeric, DistString},
+        distr::{Alphanumeric, SampleString},
+        rand_core,
         rngs::OsRng,
     },
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     std::{
+        any::Any,
         borrow::Cow,
         fmt::{self, Debug, Display},
+        panic::catch_unwind,
         str::FromStr,
     },
 };
-
-#[allow(deprecated, reason = "aes-siv doesn't support generic-array 1.x")]
-use generic_array::GenericArray;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct AccessToken(String);
 
 const ACCESS_TOKEN_LENGTH: usize = 64;
 
+fn format_panic_message(err: Box<dyn Any + Send + 'static>) -> String {
+    err.downcast_ref::<&'static str>()
+        .map(|s| s.to_string())
+        .or_else(|| err.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| format!("{err:?}"))
+}
+
 impl AccessToken {
-    pub fn generate() -> Self {
-        Self(Alphanumeric.sample_string(&mut OsRng, ACCESS_TOKEN_LENGTH))
+    pub fn generate() -> anyhow::Result<Self> {
+        catch_unwind(|| {
+            Self(Alphanumeric.sample_string(&mut rand_core::UnwrapErr(OsRng), ACCESS_TOKEN_LENGTH))
+        })
+        .map_err(|err| anyhow!(format_panic_message(err)))
     }
 
     pub fn as_unmasked_str(&self) -> &str {
@@ -58,15 +67,15 @@ impl Debug for AccessToken {
 
 #[derive(Clone)]
 #[allow(deprecated)]
-pub struct EncryptionKey(GenericArray<u8, U64>);
+pub struct EncryptionKey(Array<u8, U64>);
 
 impl EncryptionKey {
-    pub fn generate() -> Self {
-        Self(Aes256SivAead::generate_key(&mut OsRng))
+    pub fn generate() -> anyhow::Result<Self> {
+        Ok(Self(Aes256SivAead::generate_key()?))
     }
 
     #[allow(deprecated)]
-    pub fn get(&self) -> &GenericArray<u8, U64> {
+    pub fn get(&self) -> &Array<u8, U64> {
         &self.0
     }
 

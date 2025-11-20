@@ -6,6 +6,7 @@ use {
     futures::{Stream, StreamExt},
     rammingen_protocol::{
         credentials::AccessToken,
+        encoding::{self, deserialize},
         endpoints::{RequestToResponse, RequestToStreamingResponse},
         util::stream_file,
         EncryptedContentHash,
@@ -65,7 +66,7 @@ impl Client {
         R::Response: DeserializeOwned,
     {
         let url = self.server_url.join(R::PATH)?;
-        let body = bincode::serialize(&request)?;
+        let body = encoding::serialize(&request)?;
         let bytes = ok_or_retry(|| async {
             let mut request = self
                 .reqwest
@@ -87,8 +88,7 @@ impl Client {
                 .map_err(RequestError::transport)
         })
         .await?;
-        bincode::deserialize::<Result<_, String>>(&bytes)?
-            .map_err(|msg| format_err!("server error: {msg}"))
+        deserialize::<Result<_, String>>(&bytes)?.map_err(|msg| format_err!("server error: {msg}"))
     }
 
     pub async fn request<R>(&self, request: &R) -> Result<R::Response>
@@ -105,7 +105,7 @@ impl Client {
         R::ResponseItem: DeserializeOwned + Send + Sync + 'static,
     {
         let this = self.clone();
-        let request = bincode::serialize(&request);
+        let request = encoding::serialize(&request);
         generate_try_stream(|mut y| async move {
             let mut response = timeout(
                 DEFAULT_TIMEOUT,
@@ -122,10 +122,7 @@ impl Client {
             while let Some(chunk) = timeout(DEFAULT_TIMEOUT, response.chunk()).await?? {
                 buf.extend_from_slice(&chunk);
                 while let Some((chunk, index)) = take_chunk(&buf) {
-                    let data =
-                        bincode::deserialize::<Result<Option<Vec<R::ResponseItem>>, String>>(
-                            chunk,
-                        )?
+                    let data = deserialize::<Result<Option<Vec<R::ResponseItem>>, String>>(chunk)?
                         .map_err(|msg| format_err!("server error: {msg}"))?;
 
                     buf.drain(..index);

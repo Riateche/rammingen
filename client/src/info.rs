@@ -4,7 +4,7 @@ use {
         upload::to_archive_path, Ctx,
     },
     anyhow::{anyhow, Result},
-    byte_unit::Byte,
+    byte_unit::{Byte, UnitType},
     chrono::{DateTime, Local, SubsecRound, Timelike},
     futures::TryStreamExt,
     itertools::Itertools,
@@ -203,8 +203,8 @@ fn pretty_status(data: &DecryptedEntryVersion) -> Result<String> {
 }
 
 pub fn pretty_size(size: u64) -> impl Display {
-    Byte::from_bytes(size)
-        .get_appropriate_unit(false)
+    Byte::from_u64(size)
+        .get_appropriate_unit(UnitType::Binary)
         .to_string()
 }
 

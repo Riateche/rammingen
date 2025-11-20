@@ -24,7 +24,7 @@ use {
         ArchivePath, DateTimeUtc,
     },
     rammingen_server::util::{add_source, migrate},
-    rand::{seq::SliceRandom, thread_rng, Rng, SeedableRng},
+    rand::{seq::IndexedRandom, Rng, SeedableRng},
     rand_chacha::ChaCha12Rng,
     reqwest::Url,
     shuffle::{choose_path, random_content, random_name, shuffle},
@@ -146,7 +146,7 @@ async fn try_main() -> Result<()> {
         bail!("required to specify either database_url or server_url");
     };
 
-    let encryption_key = EncryptionKey::generate();
+    let encryption_key = EncryptionKey::generate()?;
     let mut clients = Vec::new();
     let archive_mount_path: ArchivePath = "ar:/my_files".parse()?;
     for client_index in 0..3 {
@@ -185,7 +185,7 @@ async fn try_main() -> Result<()> {
         archive_mount_path,
     };
     let seed = cli.seed.unwrap_or_else(|| {
-        let v: u64 = thread_rng().gen();
+        let v: u64 = rand::rng().random();
         info!("No seed provided, choosing random seed = {}", v);
         v
     });
@@ -216,7 +216,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
     let steps = 100;
     'outer: for step in 1..=steps {
         info!("Step {step} / {steps}");
-        if rng.gen_bool(0.2) {
+        if rng.random_bool(0.2) {
             // mutate through server command
             let expected = ctx.dir.join("expected");
             if expected.exists() {
@@ -224,7 +224,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
             }
             copy_dir_all(&ctx.clients[0].mount_dir, &expected)?;
             let client1 = ctx.clients.choose(rng).unwrap();
-            match rng.gen_range(0..=4) {
+            match rng.random_range(0..=4) {
                 0 => {
                     // reset
                     let Some(snapshot_time_value) = snapshot_time else {
@@ -269,7 +269,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                     if path_for_upload.exists() {
                         remove_dir_all_or_file(&path_for_upload)?;
                     }
-                    if rng.gen_bool(0.3) {
+                    if rng.random_bool(0.3) {
                         write(&path_for_upload, random_content(rng))?;
                     } else {
                         create_dir(&path_for_upload)?;
@@ -382,8 +382,8 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
             }
         } else {
             // edit mount
-            let index = rng.gen_range(0..ctx.clients.len());
-            for _ in 0..rng.gen_range(1..=3) {
+            let index = rng.random_range(0..ctx.clients.len());
+            for _ in 0..rng.random_range(1..=3) {
                 debug!("Shuffling mount for client {index}");
                 shuffle(&ctx.clients[index].mount_dir, rng)?;
                 debug!("Syncing client {index}");
@@ -398,7 +398,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                     }
                     copy_dir_all(&client.mount_dir, &before_sync_snapshot)?;
 
-                    if rng.gen_bool(0.2) {
+                    if rng.random_bool(0.2) {
                         client.dry_run().await?;
                         diff(&client.mount_dir, &before_sync_snapshot)?;
                     }
@@ -420,7 +420,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
             rng,
         )
         .await?;
-        if rng.gen_bool(0.3) {
+        if rng.random_bool(0.3) {
             if let Some(snapshot_time_value) = snapshot_time {
                 check_download(
                     &ctx.dir,

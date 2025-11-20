@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (path) *\n        FROM entry_versions\n        WHERE recorded_at <= $1 AND snapshot_id IS NULL\n        ORDER BY path, recorded_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "entry_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "update_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "snapshot_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "path",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "recorded_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "source_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "record_trigger",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "kind",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "original_size",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "encrypted_size",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "modified_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "content_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 13,
+        "name": "unix_mode",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "fb5d51955b7e5f84f94dcaebb2b1d83dd709ccaf5fd734ad9c4840265fbfad4f"
+}

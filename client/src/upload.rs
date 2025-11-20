@@ -284,8 +284,8 @@ fn upload_inner<'a>(
 
                 if changed {
                     if ctx.dry_run {
-                        if file_data.encrypted_size
-                            > ctx.ctx.config.warn_about_files_larger_than.get_bytes()
+                        if u128::from(file_data.encrypted_size)
+                            > ctx.ctx.config.warn_about_files_larger_than.as_u128()
                         {
                             warn!(
                                 "Would upload {} file: {}",
@@ -439,7 +439,8 @@ async fn content_upload_item_task(ctx: Arc<Ctx>, item: ContentUploadTaskItem) ->
         return Ok(());
     }
 
-    if item.file_data.encrypted_size > ctx.config.warn_about_files_larger_than.get_bytes() {
+    if u128::from(item.file_data.encrypted_size) > ctx.config.warn_about_files_larger_than.as_u128()
+    {
         warn!(
             "Uploading {} file: {}",
             pretty_size(item.file_data.encrypted_size),

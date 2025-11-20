@@ -19,6 +19,7 @@ use {
         Method, Request, Response, StatusCode,
     },
     rammingen_protocol::{
+        encoding,
         endpoints::{
             AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions,
             GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries, GetServerStatus,
@@ -336,14 +337,14 @@ async fn parse_request<T: DeserializeOwned>(
             StatusCode::BAD_REQUEST
         })?
         .to_bytes();
-    bincode::deserialize(&bytes).map_err(|err| {
+    encoding::deserialize(&bytes).map_err(|err| {
         warn!(?err, "failed to deserialize request body");
         StatusCode::BAD_REQUEST
     })
 }
 
 fn serialize_response<T: Serialize>(data: Result<T>) -> Bytes {
-    bincode::serialize(&data.map_err(|err| {
+    encoding::serialize(&data.map_err(|err| {
         warn!(?err, "handler error");
         format!("{err:?}")
     }))
@@ -353,7 +354,7 @@ fn serialize_response<T: Serialize>(data: Result<T>) -> Bytes {
 
 fn serialize_response_with_length<T: Serialize>(data: Result<T>) -> Bytes {
     let mut buf = BytesMut::zeroed(4);
-    bincode::serialize_into(
+    encoding::serialize_into(
         (&mut buf).writer(),
         &data.map_err(|err| {
             warn!(?err, "handler error");

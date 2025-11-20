@@ -105,7 +105,7 @@ fn get_parent_dir<'a>(
             "SELECT id, kind FROM entries WHERE path = $1",
             parent.to_str_without_prefix()
         )
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?;
         let entry_id = if let Some(entry) = entry {
             if entry.kind == EntryKind::File as i32 {
@@ -128,7 +128,7 @@ fn get_parent_dir<'a>(
                     request.record_trigger as i32,
                     entry.id,
                 )
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
                 entry.id
             } else {
@@ -169,7 +169,7 @@ fn get_parent_dir<'a>(
                 ctx.source_id.to_db(),
                 request.record_trigger as i32,
             )
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?
         };
 
@@ -199,7 +199,7 @@ async fn add_version_inner<'a>(
         "SELECT * FROM entries WHERE path = $1",
         request.path.to_str_without_prefix()
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
     let original_size_db = request.content.as_ref().map(|c| c.original_size.as_slice());
     let encrypted_size_db = request
@@ -224,7 +224,7 @@ async fn add_version_inner<'a>(
                 WHERE kind != 0 AND parent_dir = $1",
                 entry.id.to_db()
             )
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?
             .ok_or_else(|| anyhow!("missing row in response"))?;
             if child_count > 0 {
@@ -268,7 +268,7 @@ async fn add_version_inner<'a>(
             unix_mode_db,
             entry.id.to_db(),
         )
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     } else {
         let unix_mode_db = request
@@ -306,7 +306,7 @@ async fn add_version_inner<'a>(
             content_hash_db,
             unix_mode_db,
         )
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
     };
     Ok(AddVersionResponse { added: true })
@@ -377,7 +377,7 @@ async fn get_versions_inner<'a>(
         starts_with(&path),
         recorded_at.to_db()?,
     )
-    .fetch(tx)
+    .fetch(&mut **tx)
     .map_err(anyhow::Error::from)
     .and_then(|row| async move { Ok(convert_entry_version!(row)) });
     Ok(stream)
@@ -469,7 +469,7 @@ async fn remove_entries_in_dir<'a>(
         path.to_str_without_prefix(),
         starts_with(path),
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     Ok(r.rows_affected())
 }
@@ -483,7 +483,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
             request.new_path.to_str_without_prefix(),
             starts_with(&request.new_path)
         )
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await?
         .ok_or_else(|| anyhow!("expected 1 row in SELECT COUNT query"))?;
 
@@ -496,7 +496,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
             request.old_path.to_str_without_prefix(),
             starts_with(&request.old_path),
         )
-        .fetch(&mut tx);
+        .fetch(&mut *tx);
         while let Some(row) = entries.try_next().await? {
             old_entries.push(convert_entry!(row));
         }
@@ -547,7 +547,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
         request.path.to_str_without_prefix(),
         starts_with(&request.path),
     )
-    .fetch_all(&mut tx)
+    .fetch_all(&mut *tx)
     .await?;
 
     let entries: Vec<_> = get_versions_inner(request.recorded_at, &request.path, &mut tx)

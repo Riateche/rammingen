@@ -128,7 +128,7 @@ mod test {
 
     #[test]
     pub fn str_roundtrip() {
-        let key = EncryptionKey::generate();
+        let key = EncryptionKey::generate().unwrap();
         let cipher = Cipher::new(&key);
         let value = "abcd1";
         let encrypted = cipher.encrypt_str(value).unwrap();
@@ -139,7 +139,7 @@ mod test {
 
     #[test]
     pub fn path_roundtrip() {
-        let key = EncryptionKey::generate();
+        let key = EncryptionKey::generate().unwrap();
         let cipher = Cipher::new(&key);
         let value: ArchivePath = "ar:/ab/cd/ef".parse().unwrap();
         let encrypted = cipher.encrypt_path(&value).unwrap();
@@ -153,7 +153,7 @@ mod test {
 
     #[test]
     pub fn file_roundtrip() {
-        let key = EncryptionKey::generate();
+        let key = EncryptionKey::generate().unwrap();
         let cipher = Cipher::new(&key);
 
         let mut file = NamedTempFile::new().unwrap();

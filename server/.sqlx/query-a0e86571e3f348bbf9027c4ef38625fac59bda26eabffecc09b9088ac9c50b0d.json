@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sources SET access_token = $1 WHERE name = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a0e86571e3f348bbf9027c4ef38625fac59bda26eabffecc09b9088ac9c50b0d"
+}

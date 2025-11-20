@@ -1,6 +1,6 @@
 use {
     crate::{content::EncryptedFileHead, crypto::Cipher},
-    aes_siv::{aead::OsRng, AeadCore, Aes256SivAead, Nonce},
+    aes_siv::{AeadCore, Aes256SivAead, Nonce},
     anyhow::Result,
     byteorder::{ByteOrder, WriteBytesExt, LE},
     deflate::{write::DeflateEncoder, CompressionOptions},
@@ -8,7 +8,7 @@ use {
     generic_array::typenum::ToInt,
     inflate::InflateWriter,
     rammingen_protocol::ContentHash,
-    rand::RngCore,
+    rand::{rngs::OsRng, TryRngCore},
     sha2::{Digest, Sha256},
     std::{
         cmp::min,
@@ -99,7 +99,9 @@ impl<'a, W: Write> EncryptingWriter<'a, W> {
         }
         let input_len = min(self.buf.len(), BLOCK_SIZE);
         let mut nonce = Nonce::default();
-        OsRng.fill_bytes(&mut nonce);
+        OsRng
+            .try_fill_bytes(&mut nonce)
+            .map_err(|err| io::Error::other(format!("OsRng error: {err:?}")))?;
 
         let ciphertext = self
             .cipher

@@ -36,4 +36,4 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.4.0"
+criterion = "0.7.0"

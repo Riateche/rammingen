@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Command::AddSource { name } => {
-            let token = AccessToken::generate();
+            let token = AccessToken::generate()?;
             add_source(&pool, &name, &token).await?;
             println!(
                 "Successfully added new source. New access token:\n{}",
@@ -66,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
             );
         }
         Command::UpdateAccessToken { name } => {
-            let token = AccessToken::generate();
+            let token = AccessToken::generate()?;
             set_access_token(&pool, &name, &token).await?;
             println!(
                 "Successfully updated access token. New access token:\n{}",

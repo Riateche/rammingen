@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 aes-siv = { workspace = true }
 anyhow = { workspace = true }
 base64 = { workspace = true }
+bincode = { workspace = true }
 byte-unit = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }

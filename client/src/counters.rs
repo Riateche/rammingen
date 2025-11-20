@@ -58,7 +58,7 @@ impl NotificationCounters {
             ));
         }
         if self.uploaded_large_files > 0 {
-            let size = pretty_size(ctx.config.warn_about_files_larger_than.get_bytes());
+            let size = pretty_size(ctx.config.warn_about_files_larger_than.as_u64());
             if dry_run {
                 output.push(format!(
                     "WARN: Would upload {} files larger than {}",

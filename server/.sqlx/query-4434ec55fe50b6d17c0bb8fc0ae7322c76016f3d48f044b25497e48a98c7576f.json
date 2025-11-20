@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM entry_versions WHERE path = $1 ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "entry_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "update_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "snapshot_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "path",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "recorded_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "source_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "record_trigger",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "kind",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "original_size",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "encrypted_size",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "modified_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "content_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 13,
+        "name": "unix_mode",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "4434ec55fe50b6d17c0bb8fc0ae7322c76016f3d48f044b25497e48a98c7576f"
+}

@@ -17,12 +17,12 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
 
     let previous_snapshot_timestamp = if let Some(ts) =
         query_scalar!("SELECT max(timestamp) FROM snapshots")
-            .fetch_one(&mut tx)
+            .fetch_one(&mut *tx)
             .await?
     {
         ts
     } else if let Some(ts) = query_scalar!("SELECT min(recorded_at) FROM entry_versions")
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await?
     {
         ts
@@ -46,7 +46,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         ORDER BY path, recorded_at DESC",
         next_snapshot_timestamp_db,
     )
-    .fetch(&mut tx)
+    .fetch(&mut *tx)
     .map_err(anyhow::Error::from)
     .try_collect()
     .await?;
@@ -61,7 +61,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
             RETURNING content_hash",
             next_snapshot_timestamp_db,
         )
-        .fetch(&mut tx);
+        .fetch(&mut *tx);
         while let Some(hash) = deleted_rows.try_next().await? {
             num_deleted += 1;
             if let Some(hash) = hash {
@@ -74,7 +74,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         "INSERT INTO snapshots(timestamp) VALUES ($1) RETURNING id",
         next_snapshot_timestamp_db
     )
-    .fetch_one(&mut tx)
+    .fetch_one(&mut *tx)
     .await?;
 
     let mut hashes_to_remove = Vec::new();
@@ -99,7 +99,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
             version.modified_at,
             version.content_hash,
             version.unix_mode,
-        ).execute(&mut tx)
+        ).execute(&mut *tx)
         .await?;
         if let Some(hash) = version.content_hash {
             hashes_to_check.insert(EncryptedContentHash::from_encrypted(hash));
@@ -110,7 +110,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
             "SELECT 1 FROM entry_versions WHERE content_hash = $1 LIMIT 1",
             hash.as_slice()
         )
-        .fetch_optional(&mut tx)
+        .fetch_optional(&mut *tx)
         .await?
         .is_some();
         if !exists {
