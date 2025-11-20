@@ -37,7 +37,9 @@ jobs:
       - name: Build and test
         run: |
           export ANDROID_TOOLCHAINS='/usr/local/lib/android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin'
-          ./gradlew assembleRelease
+          ./gradlew lint
+          ./gradlew check
+          ./gradlew build
           ./gradlew test
       - name: Upload APK
         uses: actions/upload-artifact@v4

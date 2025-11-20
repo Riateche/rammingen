@@ -19,7 +19,9 @@ data class RunCommandRequest(
 )
 
 enum class FileAction {
-    OPEN, SHARE, EDIT,
+    OPEN,
+    SHARE,
+    EDIT,
 }
 
 data class FileActionRequest(
@@ -37,9 +39,7 @@ data class FileBrowserState(
     val settingsRequest: Boolean = false,
     val fileActionRequest: FileActionRequest? = null,
 ) {
-    fun isContextMenuOpen(path: String): Boolean {
-        return path == contextMenuEntryPath
-    }
+    fun isContextMenuOpen(path: String): Boolean = path == contextMenuEntryPath
 
     fun validParent(): String? {
         val currentDir = this.currentDir ?: return null
@@ -49,6 +49,7 @@ data class FileBrowserState(
         }
         return File(currentDir).parent
     }
+
     fun hasValidParent() = validParent() != null
 
     fun currentDirText(): String {
@@ -66,21 +67,25 @@ data class FileBrowserState(
     }
 }
 
-class FileBrowserViewModel: ViewModel() {
+class FileBrowserViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(FileBrowserState())
     val uiState: StateFlow<FileBrowserState> = _uiState.asStateFlow()
 
-    fun requestRunCommand(command: String, title: String) {
+    fun requestRunCommand(
+        command: String,
+        title: String,
+    ) {
         _uiState.update f@{ state ->
             val storageRoot = state.storageRoot ?: return@f state
             val currentDirectory = state.currentDir ?: return@f state
             state.copy(
-                runCommandRequest = RunCommandRequest(
-                    command = command,
-                    title = title,
-                    storageRoot = storageRoot,
-                    currentDir = currentDirectory,
-                )
+                runCommandRequest =
+                    RunCommandRequest(
+                        command = command,
+                        title = title,
+                        storageRoot = storageRoot,
+                        currentDir = currentDirectory,
+                    ),
             )
         }
     }
@@ -112,10 +117,13 @@ class FileBrowserViewModel: ViewModel() {
         }
     }
 
-    fun requestFileAction(filePath: String, action: FileAction) {
+    fun requestFileAction(
+        filePath: String,
+        action: FileAction,
+    ) {
         _uiState.update { state ->
             state.copy(
-                fileActionRequest = FileActionRequest(filePath, action)
+                fileActionRequest = FileActionRequest(filePath, action),
             )
         }
     }

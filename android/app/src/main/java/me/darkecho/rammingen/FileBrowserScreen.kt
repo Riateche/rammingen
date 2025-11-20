@@ -40,7 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,9 +50,7 @@ import androidx.compose.ui.unit.dp
 import java.io.File
 
 @Composable
-fun FileBrowserScreen(
-    viewModel: FileBrowserViewModel
-) {
+fun FileBrowserScreen(viewModel: FileBrowserViewModel) {
     val state by viewModel.uiState.collectAsState()
 
     Scaffold(
@@ -85,7 +83,7 @@ fun FileBrowserScreen(
 
 @Composable
 fun TopBar(viewModel: FileBrowserViewModel) {
-    val context = LocalContext.current
+    val resources = LocalResources.current
 
     TopAppBar(
         title = { Text(stringResource(R.string.long_app_title)) },
@@ -94,7 +92,7 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                 onClick = {
                     viewModel.requestRunCommand(
                         NativeBridge.COMMAND_SYNC,
-                        context.resources.getString(R.string.sync)
+                        resources.getString(R.string.sync),
                     )
                 },
             ) {
@@ -104,19 +102,19 @@ fun TopBar(viewModel: FileBrowserViewModel) {
             IconButton(onClick = { setExpanded(!expanded) }) {
                 Icon(
                     Icons.Default.MoreVert,
-                    contentDescription = stringResource(R.string.menu)
+                    contentDescription = stringResource(R.string.menu),
                 )
             }
             DropdownMenu(
                 expanded = expanded,
-                onDismissRequest = { setExpanded(false) }
+                onDismissRequest = { setExpanded(false) },
             ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.settings)) },
                     onClick = {
                         setExpanded(false)
                         viewModel.requestSettings()
-                    }
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.dry_run)) },
@@ -124,9 +122,9 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                         setExpanded(false)
                         viewModel.requestRunCommand(
                             NativeBridge.COMMAND_DRY_RUN,
-                            context.resources.getString(R.string.dry_run),
+                            resources.getString(R.string.dry_run),
                         )
-                    }
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.server_status)) },
@@ -134,9 +132,9 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                         setExpanded(false)
                         viewModel.requestRunCommand(
                             NativeBridge.COMMAND_SERVER_STATUS,
-                            context.resources.getString(R.string.server_status)
+                            resources.getString(R.string.server_status),
                         )
-                    }
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.command_line_help)) },
@@ -144,16 +142,16 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                         setExpanded(false)
                         viewModel.requestRunCommand(
                             NativeBridge.COMMAND_HELP,
-                            context.resources.getString(R.string.command_line_help)
+                            resources.getString(R.string.command_line_help),
                         )
-                    }
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.run_custom_command)) },
                     onClick = {
                         setExpanded(false)
                         viewModel.openCustomCommandDialog()
-                    }
+                    },
                 )
             }
         },
@@ -180,13 +178,14 @@ fun RunCustomCommandDialog(
                 onValueChange = setCustomCommandText,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { confirm() }),
-                modifier = Modifier
-                    .focusRequester(focusRequester)
-                    .onFocusChanged {
-                        if (it.isFocused) {
-                            keyboardController?.show()
-                        }
-                    }
+                modifier =
+                    Modifier
+                        .focusRequester(focusRequester)
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                keyboardController?.show()
+                            }
+                        },
             )
             LaunchedEffect(Unit) {
                 focusRequester.requestFocus()
@@ -219,7 +218,7 @@ fun Files(
     requestFileAction: (String, FileAction) -> Unit,
     isContextMenuOpen: (String) -> Boolean,
     openContextMenu: (String) -> Unit,
-    dismissContextMenu: () -> Unit
+    dismissContextMenu: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row {
@@ -240,19 +239,22 @@ fun Files(
                 )
             }
         }
-        Column(Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
             for (entry in entries) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(0.dp, 12.dp)
-                        .combinedClickable(
-                            onClick = { openFile(entry.absolutePath) },
-                            onLongClick = { openContextMenu(entry.absolutePath) },
-                            onLongClickLabel = stringResource(R.string.open_context_menu)
-                        ),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(0.dp, 12.dp)
+                            .combinedClickable(
+                                onClick = { openFile(entry.absolutePath) },
+                                onLongClick = { openContextMenu(entry.absolutePath) },
+                                onLongClickLabel = stringResource(R.string.open_context_menu),
+                            ),
                 ) {
                     if (entry.isDirectory) {
                         Icon(
@@ -272,7 +274,7 @@ fun Files(
                     )
                     DropdownMenu(
                         expanded = isContextMenuOpen(entry.absolutePath),
-                        onDismissRequest = dismissContextMenu
+                        onDismissRequest = dismissContextMenu,
                     ) {
                         if (!entry.isDirectory) {
                             DropdownMenuItem(
@@ -280,14 +282,14 @@ fun Files(
                                 onClick = {
                                     dismissContextMenu()
                                     requestFileAction(entry.absolutePath, FileAction.SHARE)
-                                }
+                                },
                             )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.edit_as_plain_text)) },
                                 onClick = {
                                     dismissContextMenu()
                                     requestFileAction(entry.absolutePath, FileAction.EDIT)
-                                }
+                                },
                             )
                         }
                     }

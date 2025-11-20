@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ktlint)
 }
 
 android {
@@ -25,7 +26,7 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
@@ -36,18 +37,23 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+    lint {
+        warningsAsErrors = true
+        disable.addAll(arrayOf("AndroidGradlePluginVersion", "GradleDependency"))
+    }
     buildFeatures {
         compose = true
         buildConfig = true
     }
 
-    val buildNativeLibrary = tasks.register<Exec>("buildNativeLibrary") {
-        println(">>> Building native library")
-        workingDir = rootDir
-        commandLine("native/build.sh")
-    }
+    val buildNativeLibrary =
+        tasks.register<Exec>("buildNativeLibrary") {
+            println(">>> Building native library")
+            workingDir = rootDir
+            commandLine("native/build.sh")
+        }
 
-// Ensure it runs before every build
+    // Ensure it runs before every build
     tasks.named("preBuild") {
         dependsOn(buildNativeLibrary)
     }
@@ -74,7 +80,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.preference)
     implementation(libs.material)
-    implementation("androidx.compose.material:material-icons-extended:1.7.8")
+    implementation(libs.androidx.compose.material.icons.extended)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

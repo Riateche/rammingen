@@ -36,9 +36,10 @@ class MainActivity : ComponentActivity() {
             viewModel.setCurrentDir(storageRoot.absolutePath)
         }
 
-        val backPressedCallback = object : OnBackPressedCallback(false) {
-            override fun handleOnBackPressed() = viewModel.goToParentDir()
-        }
+        val backPressedCallback =
+            object : OnBackPressedCallback(false) {
+                override fun handleOnBackPressed() = viewModel.goToParentDir()
+            }
         onBackPressedDispatcher.addCallback(this, backPressedCallback)
 
         lifecycleScope.launch {
@@ -69,11 +70,12 @@ class MainActivity : ComponentActivity() {
     fun prepareStorageRoot(): File? {
         val externalDir = getExternalFilesDir(null)
         if (externalDir == null) {
-            Toast.makeText(
-                this,
-                R.string.external_storage_is_currently_unavailable,
-                Toast.LENGTH_LONG
-            ).show()
+            Toast
+                .makeText(
+                    this,
+                    R.string.external_storage_is_currently_unavailable,
+                    Toast.LENGTH_LONG,
+                ).show()
             return null
         }
 
@@ -82,11 +84,12 @@ class MainActivity : ComponentActivity() {
             if (storageRoot.mkdirs()) {
                 Log.i(TAG, "storageRoot created: $storageRoot")
             } else {
-                Toast.makeText(
-                    this,
-                    R.string.failed_to_create_storage_root_dir,
-                    Toast.LENGTH_LONG
-                ).show()
+                Toast
+                    .makeText(
+                        this,
+                        R.string.failed_to_create_storage_root_dir,
+                        Toast.LENGTH_LONG,
+                    ).show()
                 return null
             }
         }
@@ -104,19 +107,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runFileAction(request: FileActionRequest) {
-        when(request.action) {
+        when (request.action) {
             FileAction.OPEN, FileAction.SHARE -> {
-                val fileUri = try {
-                    FileProvider.getUriForFile(
-                        this@MainActivity,
-                        "${BuildConfig.APPLICATION_ID}.provider",
-                        File(request.filePath),
-                    )
-                } catch (e: IllegalArgumentException) {
-                    Log.e(TAG,
-                        "The selected file can't be shared: $request.file: $e")
-                    return
-                }
+                val fileUri =
+                    try {
+                        FileProvider.getUriForFile(
+                            this@MainActivity,
+                            "${BuildConfig.APPLICATION_ID}.provider",
+                            File(request.filePath),
+                        )
+                    } catch (e: IllegalArgumentException) {
+                        Log.e(
+                            TAG,
+                            "The selected file can't be shared: $request.file: $e",
+                        )
+                        return
+                    }
 
                 val sendIntent = Intent()
                 sendIntent.setDataAndType(
@@ -125,31 +131,33 @@ class MainActivity : ComponentActivity() {
                 )
                 sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 sendIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                sendIntent.action = when(request.action) {
-                    FileAction.OPEN -> {
-                        Intent.ACTION_VIEW
+                sendIntent.action =
+                    when (request.action) {
+                        FileAction.OPEN -> {
+                            Intent.ACTION_VIEW
+                        }
+                        FileAction.SHARE -> Intent.ACTION_SEND
+                        else -> {
+                            Log.e(TAG, "unreachable")
+                            return
+                        }
                     }
-                    FileAction.SHARE -> Intent.ACTION_SEND
-                    else -> {
-                        Log.e(TAG, "unreachable")
-                        return
-                    }
-                }
                 sendIntent.putExtra(Intent.EXTRA_STREAM, fileUri)
 
                 try {
                     startActivity(Intent.createChooser(sendIntent, null))
                 } catch (_: ActivityNotFoundException) {
-                    Toast.makeText(
-                        this,
-                        R.string.failed_to_open_file,
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    Toast
+                        .makeText(
+                            this,
+                            R.string.failed_to_open_file,
+                            Toast.LENGTH_SHORT,
+                        ).show()
                 }
             }
             FileAction.EDIT -> {
                 startActivity(
-                    TextEditorActivity.createIntent(this, request.filePath)
+                    TextEditorActivity.createIntent(this, request.filePath),
                 )
             }
         }

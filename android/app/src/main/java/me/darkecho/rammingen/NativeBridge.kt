@@ -3,9 +3,14 @@ package me.darkecho.rammingen
 import android.system.Os
 
 interface Receiver {
-    fun onNativeBridgeLog(level: Int, text: String)
+    fun onNativeBridgeLog(
+        level: Int,
+        text: String,
+    )
+
     fun onNativeBridgeStatus(status: String)
 }
+
 class NativeBridge {
     companion object {
         const val COMMAND_SYNC = "sync"
@@ -27,6 +32,6 @@ class NativeBridge {
         accessToken: String,
         encryptionKey: String,
         args: String,
-        receiver: Receiver
+        receiver: Receiver,
     ): Boolean
 }

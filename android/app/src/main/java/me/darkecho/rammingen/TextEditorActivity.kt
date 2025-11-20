@@ -11,9 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -28,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -40,20 +37,17 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
-import java.time.format.TextStyle
 
-
-class TextEditorActivity: ComponentActivity() {
+class TextEditorActivity : ComponentActivity() {
     companion object {
         private val ARG_FILE_PATH = "filePath"
 
         fun createIntent(
             context: Context,
             filePath: String,
-        ): Intent {
-            return Intent(context, TextEditorActivity::class.java)
+        ): Intent =
+            Intent(context, TextEditorActivity::class.java)
                 .putExtra(ARG_FILE_PATH, filePath)
-        }
     }
 
     val textState = TextFieldState("")
@@ -83,7 +77,7 @@ class TextEditorActivity: ComponentActivity() {
                                 }) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = "Back"
+                                        contentDescription = "Back",
                                     )
                                 }
                             },
@@ -93,7 +87,7 @@ class TextEditorActivity: ComponentActivity() {
                                 ) {
                                     Icon(Icons.Default.Save, contentDescription = "Save")
                                 }
-                            }
+                            },
                         )
                     },
                 ) { innerPadding ->
@@ -102,14 +96,15 @@ class TextEditorActivity: ComponentActivity() {
                             .padding(innerPadding)
                             .fillMaxSize()
                             .horizontalScroll(rememberScrollState())
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(rememberScrollState()),
                     ) {
                         Column(
-                            Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+                            Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
                         ) {
-                            val localStyle = LocalTextStyle.current.copy(
-                                color = LocalContentColor.current
-                            )
+                            val localStyle =
+                                LocalTextStyle.current.copy(
+                                    color = LocalContentColor.current,
+                                )
                             BasicTextField(
                                 textState,
                                 textStyle = localStyle,

@@ -10,13 +10,10 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -38,7 +35,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import me.darkecho.rammingen.ui.theme.RammingenTheme
 
-class RunActivity : ComponentActivity(), Receiver {
+class RunActivity :
+    ComponentActivity(),
+    Receiver {
     companion object {
         private val ARG_COMMAND = "command"
         private val ARG_TITLE = "title"
@@ -48,13 +47,12 @@ class RunActivity : ComponentActivity(), Receiver {
         fun createIntent(
             context: Context,
             request: RunCommandRequest,
-        ): Intent {
-            return Intent(context, RunActivity::class.java)
+        ): Intent =
+            Intent(context, RunActivity::class.java)
                 .putExtra(ARG_COMMAND, request.command)
                 .putExtra(ARG_TITLE, request.title)
                 .putExtra(ARG_STORAGE_ROOT, request.storageRoot)
                 .putExtra(ARG_CURRENT_DIR, request.currentDir)
-        }
     }
 
     var logsBuilder = AnnotatedString.Builder()
@@ -87,16 +85,18 @@ class RunActivity : ComponentActivity(), Receiver {
                                 }) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = "Back"
+                                        contentDescription = "Back",
                                     )
                                 }
                             },
                         )
                     },
                 ) { innerPadding ->
-                    Box(Modifier
-                        .padding(innerPadding)
-                        .padding(horizontal = 16.dp)) {
+                    Box(
+                        Modifier
+                            .padding(innerPadding)
+                            .padding(horizontal = 16.dp),
+                    ) {
                         Column {
                             if (!status.value.isEmpty()) {
                                 Text(
@@ -107,10 +107,11 @@ class RunActivity : ComponentActivity(), Receiver {
                                 Text("Logs:")
                                 Text(
                                     text = logs.value,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .horizontalScroll(rememberScrollState())
-                                        .verticalScroll(rememberScrollState()),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxSize()
+                                            .horizontalScroll(rememberScrollState())
+                                            .verticalScroll(rememberScrollState()),
                                 )
                             }
                         }
@@ -125,7 +126,8 @@ class RunActivity : ComponentActivity(), Receiver {
         val externalFilesDir = getExternalFilesDir(null)
         Log.d(TAG, "externalFilesDir: $externalFilesDir")
         if (externalFilesDir == null) {
-            AlertDialog.Builder(this)
+            AlertDialog
+                .Builder(this)
                 .setMessage("Shared storage is not currently available")
                 .create()
                 .show()
@@ -134,7 +136,8 @@ class RunActivity : ComponentActivity(), Receiver {
         val dataStore = EncryptedPreferenceDataStore(this)
         val config = dataStore.getString("config", null)
         if (config.isNullOrEmpty()) {
-            AlertDialog.Builder(this)
+            AlertDialog
+                .Builder(this)
                 .setMessage("Config not specified in settings")
                 .create()
                 .show()
@@ -142,7 +145,8 @@ class RunActivity : ComponentActivity(), Receiver {
         }
         val accessToken = dataStore.getString("access_token", null)
         if (accessToken.isNullOrEmpty()) {
-            AlertDialog.Builder(this)
+            AlertDialog
+                .Builder(this)
                 .setMessage("Access token not specified in settings")
                 .create()
                 .show()
@@ -150,7 +154,8 @@ class RunActivity : ComponentActivity(), Receiver {
         }
         val encryptionKey = dataStore.getString("encryption_key", null)
         if (encryptionKey.isNullOrEmpty()) {
-            AlertDialog.Builder(this)
+            AlertDialog
+                .Builder(this)
                 .setMessage("Encryption key not specified in settings")
                 .create()
                 .show()
@@ -159,15 +164,16 @@ class RunActivity : ComponentActivity(), Receiver {
         isRunning.value = true
         status.value = "Launching operation"
         Thread {
-            val isOk = nativeBridge.run(
-                externalFilesDir.absolutePath,
-                storageRoot,
-                config,
-                accessToken,
-                encryptionKey,
-                command,
-                this
-            )
+            val isOk =
+                nativeBridge.run(
+                    externalFilesDir.absolutePath,
+                    storageRoot,
+                    config,
+                    accessToken,
+                    encryptionKey,
+                    command,
+                    this,
+                )
             runOnUiThread {
                 isRunning.value = false
                 if (isOk) {
@@ -179,11 +185,14 @@ class RunActivity : ComponentActivity(), Receiver {
         }.start()
     }
 
-    override fun onNativeBridgeLog(level: Int, text: String) {
+    override fun onNativeBridgeLog(
+        level: Int,
+        text: String,
+    ) {
         runOnUiThread {
             var priority: Int
             var color: Color?
-            when(level) {
+            when (level) {
                 0 -> { // TRACE
                     priority = Log.VERBOSE
                     color = Color.Gray
@@ -224,4 +233,3 @@ class RunActivity : ComponentActivity(), Receiver {
         }
     }
 }
-
