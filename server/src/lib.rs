@@ -123,7 +123,10 @@ async fn load_sources(db_pool: &PgPool) -> Result<HashMap<String, SourceId>> {
         .map_err(Into::into)
 }
 
-pub async fn run(config: Config) -> Result<()> {
+pub async fn run(
+    config: Config,
+    mut test_snapshot_tick_receiver: Option<mpsc::Receiver<()>>,
+) -> Result<()> {
     info!("Connecting to database...");
     let db_pool = PgPool::connect(&config.database_url).await?;
     info!("Connected to database.");
@@ -145,7 +148,11 @@ pub async fn run(config: Config) -> Result<()> {
     task::spawn(async move {
         let mut interval = interval(snapshot_check_interval);
         loop {
-            interval.tick().await;
+            if let Some(test_snapshot_tick_receiver) = &mut test_snapshot_tick_receiver {
+                test_snapshot_tick_receiver.recv().await;
+            } else {
+                interval.tick().await;
+            }
             if let Err(err) = make_snapshot(&ctx2).await {
                 error!(?err, "error while making snapshot");
             }

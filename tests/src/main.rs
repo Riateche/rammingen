@@ -2,7 +2,7 @@ mod diff;
 mod shuffle;
 
 use {
-    anyhow::{bail, Result},
+    anyhow::{bail, Context as _, Result},
     chrono::{DateTime, FixedOffset, Utc},
     clap::{Parser, Subcommand},
     diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files},
@@ -35,7 +35,10 @@ use {
         time::Duration,
     },
     tempfile::TempDir,
-    tokio::time::{interval, sleep},
+    tokio::{
+        sync::mpsc,
+        time::{interval, sleep},
+    },
     tracing::{debug, error, info},
 };
 
@@ -91,6 +94,8 @@ async fn try_main() -> Result<()> {
         "info,sqlx=warn,rammingen_server=debug".into(),
     )?;
 
+    let mut test_snapshot_tick_sender = None;
+    let mut test_snapshot_tick_receiver = None;
     let server_url = if let Some(database_url) = cli.database_url {
         let db_pool = PgPool::connect(&database_url).await?;
         migrate(&db_pool).await?;
@@ -103,7 +108,7 @@ async fn try_main() -> Result<()> {
             bind_addr
         } else {
             let port = pick_unused_port().expect("failed to pick port");
-            SocketAddr::new("0.0.0.0".parse()?, port) // TMP!
+            SocketAddr::new("0.0.0.0".parse()?, port)
         };
         let server_config = rammingen_server::Config {
             bind_addr,
@@ -113,11 +118,11 @@ async fn try_main() -> Result<()> {
             log_filter: String::new(),
             retain_detailed_history_for: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(20),
+                Command::Snapshot => Duration::from_secs(10),
             },
             snapshot_interval: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(10),
+                Command::Snapshot => Duration::from_secs(5),
             },
         };
         write(
@@ -132,8 +137,15 @@ async fn try_main() -> Result<()> {
             )
             .await?;
         }
+        if matches!(&cli.command, Command::Snapshot) {
+            let (sender, receiver) = mpsc::channel(100);
+            test_snapshot_tick_sender = Some(sender);
+            test_snapshot_tick_receiver = Some(receiver);
+        }
         tokio::spawn(async move {
-            if let Err(err) = rammingen_server::run(server_config).await {
+            if let Err(err) =
+                rammingen_server::run(server_config, test_snapshot_tick_receiver).await
+            {
                 clear_status();
                 error!("server failed: {err:?}");
                 std::process::exit(1);
@@ -192,7 +204,14 @@ async fn try_main() -> Result<()> {
     let mut rng = ChaCha12Rng::seed_from_u64(seed);
     match cli.command {
         Command::Shuffle => test_shuffle(ctx, &mut rng).await,
-        Command::Snapshot => test_snapshot(ctx, &mut rng).await,
+        Command::Snapshot => {
+            test_snapshot(
+                ctx,
+                &mut rng,
+                test_snapshot_tick_sender.context("expected tick sender")?,
+            )
+            .await
+        }
         Command::ServerOnly => {
             info!("Started server at {server_url}");
             pending().await
@@ -448,10 +467,14 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
     Ok(())
 }
 
-async fn test_snapshot(ctx: Context, rng: &mut impl Rng) -> Result<()> {
+async fn test_snapshot(
+    ctx: Context,
+    rng: &mut impl Rng,
+    test_snapshot_tick_sender: mpsc::Sender<()>,
+) -> Result<()> {
     let index = 0;
     let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
-    let mut interval = interval(Duration::from_secs(2));
+    let mut interval = interval(Duration::from_secs(1));
     let steps = 30;
     for i in 0..steps {
         interval.tick().await;
@@ -474,6 +497,7 @@ async fn test_snapshot(ctx: Context, rng: &mut impl Rng) -> Result<()> {
         copy_dir_all(&ctx.clients[index].mount_dir, &snapshot_path)?;
         snapshots.push((snapshot_path, Utc::now()));
         ctx.clients[0].check_integrity().await?;
+        test_snapshot_tick_sender.send(()).await?;
     }
     let download_path = ctx.dir.join("download");
     let mut results = Vec::new();
