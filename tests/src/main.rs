@@ -474,7 +474,7 @@ async fn test_snapshot(
 ) -> Result<()> {
     let index = 0;
     let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
-    let mut interval = interval(Duration::from_secs(2));
+    let mut interval = interval(Duration::from_secs(1));
     let steps = 30;
     for i in 0..steps {
         interval.tick().await;
@@ -497,6 +497,8 @@ async fn test_snapshot(
         copy_dir_all(&ctx.clients[index].mount_dir, &snapshot_path)?;
         snapshots.push((snapshot_path, Utc::now()));
         ctx.clients[0].check_integrity().await?;
+
+        interval.tick().await;
         test_snapshot_tick_sender.send(()).await?;
     }
     let download_path = ctx.dir.join("download");
