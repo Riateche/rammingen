@@ -113,11 +113,11 @@ async fn try_main() -> Result<()> {
             log_filter: String::new(),
             retain_detailed_history_for: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(10),
+                Command::Snapshot => Duration::from_secs(20),
             },
             snapshot_interval: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(5),
+                Command::Snapshot => Duration::from_secs(10),
             },
         };
         write(
@@ -451,10 +451,16 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
 async fn test_snapshot(ctx: Context, rng: &mut impl Rng) -> Result<()> {
     let index = 0;
     let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
-    let mut interval = interval(Duration::from_secs(1));
-    for i in 0..30 {
+    let mut interval = interval(Duration::from_secs(2));
+    let steps = 30;
+    for i in 0..steps {
         interval.tick().await;
-        debug!("Shuffling mount for client {index}");
+        info!(
+            "Shuffling mount: step {} / {} at {}",
+            i + 1,
+            steps,
+            Utc::now()
+        );
         while snapshots
             .iter()
             .any(|(path, _)| diff(path, &ctx.clients[index].mount_dir).is_ok())

@@ -71,6 +71,6 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 url = { version = "2.5.7", features = ["serde"] }
 
-[profile.release]
-debug = true
-lto = true
+# [profile.release]
+# debug = true
+# lto = true
