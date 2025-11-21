@@ -118,11 +118,11 @@ async fn try_main() -> Result<()> {
             log_filter: String::new(),
             retain_detailed_history_for: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(10),
+                Command::Snapshot => Duration::from_secs(20),
             },
             snapshot_interval: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(5),
+                Command::Snapshot => Duration::from_secs(10),
             },
         };
         write(
@@ -474,7 +474,7 @@ async fn test_snapshot(
 ) -> Result<()> {
     let index = 0;
     let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
-    let mut interval = interval(Duration::from_secs(1));
+    let mut interval = interval(Duration::from_secs(2));
     let steps = 30;
     for i in 0..steps {
         interval.tick().await;
