@@ -20,21 +20,27 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
             .fetch_one(&mut *tx)
             .await?
     {
+        info!("Previous snapshot timestamp: {ts}");
         ts
     } else if let Some(ts) = query_scalar!("SELECT min(recorded_at) FROM entry_versions")
         .fetch_one(&mut *tx)
         .await?
     {
+        info!("First entry_versions timestamp: {ts}");
         ts
     } else {
+        info!("Not creating snapshot: no snapshots or entry versions found");
         // There are no entries, so there is no need for a snapshot.
         return Ok(());
     };
     let next_snapshot_timestamp = previous_snapshot_timestamp.from_db()
         + chrono::Duration::from_std(ctx.config.snapshot_interval)?;
+    info!("Next snapshot timestamp: {next_snapshot_timestamp}");
     let latest_allowed_snapshot =
         Utc::now() - chrono::Duration::from_std(ctx.config.retain_detailed_history_for)?;
+    info!("Latest allowed snapshot: {latest_allowed_snapshot}");
     if next_snapshot_timestamp > latest_allowed_snapshot {
+        info!("Not creating snapshot: too early");
         return Ok(());
     }
     let next_snapshot_timestamp_db = next_snapshot_timestamp.to_db()?;
