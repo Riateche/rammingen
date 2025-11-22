@@ -118,11 +118,11 @@ async fn try_main() -> Result<()> {
             log_filter: String::new(),
             retain_detailed_history_for: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(20),
+                Command::Snapshot => Duration::from_secs(40),
             },
             snapshot_interval: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(10),
+                Command::Snapshot => Duration::from_secs(20),
             },
         };
         write(
@@ -158,7 +158,13 @@ async fn try_main() -> Result<()> {
         bail!("required to specify either database_url or server_url");
     };
 
-    let encryption_key = EncryptionKey::generate()?;
+    let seed = cli.seed.unwrap_or_else(|| {
+        let v: u64 = rand::rng().random();
+        info!("No seed provided, choosing random seed = {}", v);
+        v
+    });
+    let mut rng = ChaCha12Rng::seed_from_u64(seed);
+    let encryption_key = EncryptionKey::generate_key_with_rng(&mut rng);
     let mut clients = Vec::new();
     let archive_mount_path: ArchivePath = "ar:/my_files".parse()?;
     for client_index in 0..3 {
@@ -196,12 +202,6 @@ async fn try_main() -> Result<()> {
         dir,
         archive_mount_path,
     };
-    let seed = cli.seed.unwrap_or_else(|| {
-        let v: u64 = rand::rng().random();
-        info!("No seed provided, choosing random seed = {}", v);
-        v
-    });
-    let mut rng = ChaCha12Rng::seed_from_u64(seed);
     match cli.command {
         Command::Shuffle => test_shuffle(ctx, &mut rng).await,
         Command::Snapshot => {
@@ -474,7 +474,7 @@ async fn test_snapshot(
 ) -> Result<()> {
     let index = 0;
     let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
-    let mut interval = interval(Duration::from_secs(1));
+    let mut interval = interval(Duration::from_secs(2));
     let steps = 30;
     for i in 0..steps {
         interval.tick().await;

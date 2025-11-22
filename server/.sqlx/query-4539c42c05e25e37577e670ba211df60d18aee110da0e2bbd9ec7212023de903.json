@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM entry_versions\n            WHERE recorded_at <= $1 AND snapshot_id IS NULL\n            RETURNING content_hash, recorded_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "recorded_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "4539c42c05e25e37577e670ba211df60d18aee110da0e2bbd9ec7212023de903"
+}

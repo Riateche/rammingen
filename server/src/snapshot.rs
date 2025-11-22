@@ -70,16 +70,17 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         info!("");
     }
     {
-        let mut deleted_rows = query_scalar!(
+        let mut deleted_rows = query!(
             "DELETE FROM entry_versions
             WHERE recorded_at <= $1 AND snapshot_id IS NULL
-            RETURNING content_hash",
+            RETURNING content_hash, recorded_at",
             next_snapshot_timestamp_db,
         )
         .fetch(&mut *tx);
-        while let Some(hash) = deleted_rows.try_next().await? {
+        while let Some(row) = deleted_rows.try_next().await? {
+            info!("Deleted entry for {}", row.recorded_at);
             num_deleted += 1;
-            if let Some(hash) = hash {
+            if let Some(hash) = row.content_hash {
                 hashes_to_check.insert(EncryptedContentHash::from_encrypted(hash));
             }
         }
