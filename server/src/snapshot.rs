@@ -60,6 +60,15 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
 
     let mut hashes_to_check = HashSet::new();
     let mut num_deleted = 0;
+
+    {
+        let mut debug_rows = query!("SELECT * FROM entry_versions ORDER BY path").fetch(&mut *tx);
+        info!("entry_versions:");
+        while let Some(row) = debug_rows.try_next().await? {
+            info!("    {row:?}");
+        }
+        info!("");
+    }
     {
         let mut deleted_rows = query_scalar!(
             "DELETE FROM entry_versions
