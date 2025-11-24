@@ -35,6 +35,6 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::try_new(&config.log_filter)?)
         .finish()
         .init();
-    rammingen_server::run(config).await?;
+    rammingen_server::run(config, None).await?;
     Ok(())
 }

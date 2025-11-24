@@ -1,5 +1,5 @@
 use {
-    aes_siv::{aead::array::Array, Aes256SivAead, KeyInit},
+    aes_siv::{aead::array::Array, Aes256SivAead, Key, KeyInit},
     anyhow::{anyhow, bail, ensure, format_err, Error},
     base64::{display::Base64Display, prelude::BASE64_URL_SAFE_NO_PAD, Engine},
     generic_array::typenum::U64,
@@ -7,6 +7,7 @@ use {
         distr::{Alphanumeric, SampleString},
         rand_core,
         rngs::OsRng,
+        CryptoRng,
     },
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     std::{
@@ -72,6 +73,12 @@ pub struct EncryptionKey(Array<u8, U64>);
 impl EncryptionKey {
     pub fn generate() -> anyhow::Result<Self> {
         Ok(Self(Aes256SivAead::generate_key()?))
+    }
+
+    pub fn generate_with_rng<R: CryptoRng + ?Sized>(rng: &mut R) -> Self {
+        let mut key = Key::<Aes256SivAead>::default();
+        rng.fill_bytes(&mut key);
+        Self(key)
     }
 
     #[allow(deprecated)]
