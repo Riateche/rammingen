@@ -8,7 +8,7 @@ pub mod util;
 
 use {
     crate::snapshot::make_snapshot,
-    anyhow::{anyhow, Result},
+    anyhow::{Context as _, Result},
     bytes::{BufMut, BytesMut},
     futures_util::{Future, StreamExt, TryStreamExt},
     http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody},
@@ -378,11 +378,11 @@ async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<Source
     let auth = request
         .headers()
         .get(AUTHORIZATION)
-        .ok_or_else(|| anyhow!("missing authorization header"))?
+        .context("missing authorization header")?
         .to_str()?;
     let access_token = auth
         .strip_prefix("Bearer ")
-        .ok_or_else(|| anyhow!("authorization header is not Bearer"))?;
+        .context("authorization header is not Bearer")?;
     let mut sources = ctx.sources.lock().await;
     if sources.updated_at.elapsed() > SOURCES_CACHE_INTERVAL {
         sources.sources = load_sources(&ctx.db_pool).await?;
@@ -392,7 +392,7 @@ async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<Source
         .sources
         .get(access_token)
         .copied()
-        .ok_or_else(|| anyhow!("invalid bearer token"))
+        .context("invalid bearer token")
 }
 
 pub fn config_path(config: Option<PathBuf>) -> Result<PathBuf> {

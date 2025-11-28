@@ -131,10 +131,18 @@ pub enum RecordTrigger {
     Remove,
 }
 
-impl TryFrom<i32> for RecordTrigger {
-    type Error = anyhow::Error;
+impl RecordTrigger {
+    pub fn to_db(self) -> i32 {
+        match self {
+            RecordTrigger::Sync => 0,
+            RecordTrigger::Upload => 1,
+            RecordTrigger::Reset => 2,
+            RecordTrigger::Move => 3,
+            RecordTrigger::Remove => 4,
+        }
+    }
 
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+    pub fn from_db(value: i32) -> anyhow::Result<Self> {
         match value {
             0 => Ok(Self::Sync),
             1 => Ok(Self::Upload),
@@ -153,6 +161,16 @@ pub enum EntryKind {
 }
 
 impl EntryKind {
+    pub fn to_db(self) -> i32 {
+        match self {
+            EntryKind::File => 1,
+            EntryKind::Directory => 2,
+        }
+    }
+}
+
+impl EntryKind {
+    /// Database value for a non-existing entry.
     pub const NOT_EXISTS: i32 = 0;
 }
 
@@ -168,8 +186,7 @@ pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
 pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
     match value {
         None => 0,
-        Some(EntryKind::File) => 1,
-        Some(EntryKind::Directory) => 2,
+        Some(value) => value.to_db(),
     }
 }
 

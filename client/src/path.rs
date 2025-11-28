@@ -1,5 +1,5 @@
 use {
-    anyhow::{anyhow, bail, Result},
+    anyhow::{anyhow, bail, Context as _, Result},
     fs_err::symlink_metadata,
     serde::{de::Error, Deserialize, Serialize},
     std::{
@@ -62,7 +62,7 @@ fn canonicalize(path: &Path) -> Result<PathBuf> {
     // Should always work if `file_name()` works.
     let parent = path
         .parent()
-        .ok_or_else(|| anyhow!("unsupported path (couldn't get parent): {:?}", path))?;
+        .with_context(|| format!("unsupported path (couldn't get parent): {:?}", path))?;
 
     Ok(canonicalize(parent)?.join(file_name))
 }

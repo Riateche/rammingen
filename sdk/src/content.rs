@@ -1,6 +1,6 @@
 use {
     crate::crypto::Cipher,
-    anyhow::{anyhow, Result},
+    anyhow::{Context as _, Result},
     rammingen_protocol::{
         ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryVersionData, RecordTrigger, SourceId,
     },
@@ -56,10 +56,7 @@ impl LocalEntry {
             return Ok(false);
         }
         if self.kind == EntryKind::File {
-            let content = self
-                .content
-                .as_ref()
-                .ok_or_else(|| anyhow!("missing content for file"))?;
+            let content = self.content.as_ref().context("missing content for file")?;
             if DateTimeUtc::from(metadata.modified()?) != content.modified_at {
                 return Ok(false);
             }

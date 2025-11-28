@@ -3,7 +3,7 @@ use {
         path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules,
         upload::to_archive_path, Ctx,
     },
-    anyhow::{anyhow, Result},
+    anyhow::{Context as _, Result},
     byte_unit::{Byte, UnitType},
     chrono::{DateTime, Local, SubsecRound, Timelike},
     futures::TryStreamExt,
@@ -95,7 +95,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
                 info!("Current status: existing file");
                 let content = main_entry
                     .content
-                    .ok_or_else(|| anyhow!("missing content for file entry"))?;
+                    .context("missing content for file entry")?;
                 info!("FS modified at: {}", pretty_time(content.modified_at));
                 info!(
                     "Original size: {} ({} bytes)",
@@ -144,10 +144,9 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     table.set_format(FormatBuilder::new().column_separator(' ').build());
     let mut num_hidden_deleted = 0;
     for entry in entries {
-        let name = entry
-            .path
-            .last_name()
-            .ok_or_else(|| anyhow!("any child entry must have last name (path: {}", entry.path))?;
+        let name = entry.path.last_name().with_context(|| {
+            format!("any child entry must have last name (path: {})", entry.path)
+        })?;
         let recorded_at = pretty_time(entry.recorded_at);
         if entry.kind.is_none() && !show_deleted {
             num_hidden_deleted += 1;
@@ -186,7 +185,7 @@ fn pretty_status(data: &DecryptedEntryVersion) -> Result<String> {
                 let content = data
                     .content
                     .as_ref()
-                    .ok_or_else(|| anyhow!("missing content for file entry"))?;
+                    .context("missing content for file entry")?;
                 let mode = if let Some(unix_mode) = content.unix_mode {
                     format!("{:o}", unix_mode & 0o777)
                 } else {
@@ -232,7 +231,7 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
             let relative_path = if let Some(parent) = &parent {
                 data.path
                     .strip_prefix(parent)
-                    .ok_or_else(|| anyhow!("strip_prefix({:?}, {:?}) failed", data.path, parent))?
+                    .with_context(|| format!("strip_prefix({:?}, {:?}) failed", data.path, parent))?
                     .to_string()
             } else {
                 data.path.to_str_without_prefix().to_string()

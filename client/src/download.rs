@@ -37,7 +37,7 @@ fn archive_to_local_path(
     } else {
         let relative_path = path
             .strip_prefix(root_archive_path)
-            .ok_or_else(|| anyhow!("failed to strip path prefix from child"))?;
+            .context("failed to strip path prefix from child")?;
         root_local_path.join(&*archive_to_native_relative_path(relative_path))
     }
 }
@@ -278,7 +278,7 @@ async fn download_inner(
                     let content = entry
                         .content
                         .clone()
-                        .ok_or_else(|| anyhow!("missing content info for existing file"))?;
+                        .context("missing content info for existing file")?;
                     let (sender, receiver) = oneshot::channel();
                     file_receiver = Some(receiver);
                     let _ = ctx
@@ -423,7 +423,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
     let kind = item
         .entry
         .kind
-        .ok_or_else(|| anyhow!("missing kind in finalize_item_download"))?;
+        .context("missing kind in finalize_item_download")?;
     match kind {
         EntryKind::Directory => {
             if let Some(db_data) = &item.db_data {
@@ -453,10 +453,10 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
             let mut content = item
                 .entry
                 .content
-                .ok_or_else(|| anyhow!("missing content info for existing file"))?;
+                .context("missing content info for existing file")?;
             let file_receiver = item
                 .file_receiver
-                .ok_or_else(|| anyhow!("missing file_receiver for existing file"))?;
+                .context("missing file_receiver for existing file")?;
             let tmp_file = file_receiver.await?;
             if let Some(db_data) = &item.db_data {
                 // Check again just in case.

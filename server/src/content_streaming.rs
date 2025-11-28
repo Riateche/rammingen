@@ -16,6 +16,7 @@ use {
     tracing::warn,
 };
 
+/// Read file content from `request` and save it to the file storage.
 pub async fn upload(
     ctx: handler::Context,
     mut request: Request<body::Incoming>,
@@ -66,6 +67,11 @@ pub async fn upload(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    maybe_block_in_place(|| file.as_file().sync_all()).map_err(|err| {
+        warn!(?err, "failed to sync content file");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     maybe_block_in_place(|| ctx.storage.commit_file(file, hash)).map_err(|err| {
         warn!(?err, "failed to commit content file");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -74,6 +80,7 @@ pub async fn upload(
     Ok(Response::new(BodyExt::boxed(Empty::new())))
 }
 
+/// Read file content from storage and construct a response to the client.
 pub async fn download(
     ctx: handler::Context,
     hash: &EncryptedContentHash,

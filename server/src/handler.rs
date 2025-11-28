@@ -1,6 +1,10 @@
 use {
     crate::storage::Storage,
-    anyhow::{anyhow, bail, Result},
+    anyhow::{bail, Context as _, Result},
+    cadd::{
+        ops::{Cadd, Cmul},
+        prelude::IntoType,
+    },
     chrono::{TimeZone, Utc},
     futures_util::{future::BoxFuture, Stream, TryStreamExt},
     rammingen_protocol::{
@@ -22,13 +26,19 @@ use {
     tokio::sync::mpsc::Sender,
 };
 
+/// Context for handling requests from a client.
 #[derive(Debug, Clone)]
 pub struct Context {
     pub db_pool: PgPool,
     pub storage: Arc<Storage>,
+    /// ID of the connected client.
     pub source_id: SourceId,
 }
 
+/// Convert a database row into an `Entry`.
+///
+/// `sqlx` macros generate a separate row type for every query, even if the fields are the same.
+/// These conversion macros are the easiest way to convert all of them to our internal types.
 macro_rules! convert_entry {
     ($row:expr) => {{
         let row = $row;
@@ -41,6 +51,7 @@ macro_rules! convert_entry {
     }};
 }
 
+/// Convert a database row into an `EntryVersion`.
 macro_rules! convert_entry_version {
     ($row:expr) => {{
         let row = $row;
@@ -52,33 +63,33 @@ macro_rules! convert_entry_version {
     }};
 }
 
+/// Convert a database row into an `EntryVersionData`.
 macro_rules! convert_version_data {
     ($row:expr) => {{
         let row = $row;
         let kind = entry_kind_from_db(row.kind)?;
         EntryVersionData {
             path: EncryptedArchivePath::from_encrypted_without_prefix(&row.path)?,
-            recorded_at: row.recorded_at.from_db(),
+            recorded_at: DateTimeUtc::from_db(row.recorded_at)?,
             source_id: row.source_id.into(),
-            record_trigger: row.record_trigger.try_into()?,
+            record_trigger: RecordTrigger::from_db(row.record_trigger)?,
             kind,
             content: if kind == Some(EntryKind::File) {
                 Some(FileContent {
-                    modified_at: row
-                        .modified_at
-                        .ok_or_else(|| anyhow!("missing modified_at for file"))?
-                        .from_db(),
+                    modified_at: DateTimeUtc::from_db(
+                        row.modified_at.context("missing modified_at for file")?,
+                    )?,
                     original_size: EncryptedSize::from_encrypted(
                         row.original_size
-                            .ok_or_else(|| anyhow!("missing original_size for file"))?,
+                            .context("missing original_size for file")?,
                     ),
                     encrypted_size: row
                         .encrypted_size
-                        .ok_or_else(|| anyhow!("missing encrypted_size for file"))?
+                        .context("missing encrypted_size for file")?
                         .try_into()?,
                     hash: EncryptedContentHash::from_encrypted(
                         row.content_hash
-                            .ok_or_else(|| anyhow!("missing content_hash for file"))?
+                            .context("missing content_hash for file")?
                             .into(),
                     ),
                     unix_mode: row.unix_mode.map(TryInto::try_into).transpose()?,
@@ -91,6 +102,9 @@ macro_rules! convert_version_data {
 }
 pub(crate) use {convert_entry_version, convert_version_data};
 
+/// Find or create a database entry corresponding to the parent path of `path`.
+///
+/// Returns the ID of the entry, or `None` if `path` is the root path.
 fn get_parent_dir<'a>(
     ctx: &'a Context,
     path: &'a EncryptedArchivePath,
@@ -108,7 +122,7 @@ fn get_parent_dir<'a>(
         .fetch_optional(&mut **tx)
         .await?;
         let entry_id = if let Some(entry) = entry {
-            if entry.kind == EntryKind::File as i32 {
+            if entry.kind == EntryKind::File.to_db() {
                 bail!("cannot save entry {} because {} is a file", path, parent);
             }
             if request.kind.is_some() && entry.kind == EntryKind::NOT_EXISTS {
@@ -123,9 +137,9 @@ fn get_parent_dir<'a>(
                         source_id = $2,
                         record_trigger = $3
                     WHERE id = $4",
-                    EntryKind::Directory as i32,
+                    EntryKind::Directory.to_db(),
                     ctx.source_id.to_db(),
-                    request.record_trigger as i32,
+                    request.record_trigger.to_db(),
                     entry.id,
                 )
                 .execute(&mut **tx)
@@ -137,7 +151,7 @@ fn get_parent_dir<'a>(
         } else {
             let parent_of_parent = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
             let kind = if request.kind.is_some() {
-                EntryKind::Directory as i32
+                EntryKind::Directory.to_db()
             } else {
                 EntryKind::NOT_EXISTS
             };
@@ -167,7 +181,7 @@ fn get_parent_dir<'a>(
                 parent_of_parent,
                 parent.to_str_without_prefix(),
                 ctx.source_id.to_db(),
-                request.record_trigger as i32,
+                request.record_trigger.to_db(),
             )
             .fetch_one(&mut **tx)
             .await?
@@ -177,6 +191,7 @@ fn get_parent_dir<'a>(
     })
 }
 
+/// Create or update an entry in the database with data from `request`.
 async fn add_version_inner<'a>(
     ctx: &'a Context,
     request: AddVersion,
@@ -205,7 +220,7 @@ async fn add_version_inner<'a>(
     let encrypted_size_db = request
         .content
         .as_ref()
-        .map(|c| i64::try_from(c.encrypted_size))
+        .map(|c| c.encrypted_size.try_into_type::<i64>())
         .transpose()?;
     let modified_at_db = request
         .content
@@ -214,6 +229,7 @@ async fn add_version_inner<'a>(
         .transpose()?;
     let content_hash_db = request.content.as_ref().map(|c| c.hash.as_slice());
     if let Some(entry) = entry {
+        // Updating an existing entry.
         let entry = convert_entry!(entry);
         if entry.data.is_same(&request) {
             return Ok(AddVersionResponse { added: false });
@@ -226,7 +242,7 @@ async fn add_version_inner<'a>(
             )
             .fetch_one(&mut **tx)
             .await?
-            .ok_or_else(|| anyhow!("missing row in response"))?;
+            .context("missing row in response")?;
             if child_count > 0 {
                 bail!(
                     "cannot mark {} as deleted because it has existing children (request: {:?})",
@@ -259,7 +275,7 @@ async fn add_version_inner<'a>(
                 unix_mode = $8
             WHERE id = $9",
             ctx.source_id.to_db(),
-            request.record_trigger as i32,
+            request.record_trigger.to_db(),
             entry_kind_to_db(request.kind),
             original_size_db,
             encrypted_size_db,
@@ -271,6 +287,7 @@ async fn add_version_inner<'a>(
         .execute(&mut **tx)
         .await?;
     } else {
+        // Creating a new entry.
         let unix_mode_db = request
             .content
             .as_ref()
@@ -298,7 +315,7 @@ async fn add_version_inner<'a>(
             parent,
             request.path.to_str_without_prefix(),
             ctx.source_id.to_db(),
-            request.record_trigger as i32,
+            request.record_trigger.to_db(),
             entry_kind_to_db(request.kind),
             original_size_db,
             encrypted_size_db,
@@ -312,6 +329,7 @@ async fn add_version_inner<'a>(
     Ok(AddVersionResponse { added: true })
 }
 
+/// Add multiple entry versions in a single transaction.
 pub async fn add_versions(ctx: Context, request: AddVersions) -> Result<Response<AddVersions>> {
     let mut tx = ctx.db_pool.begin().await?;
     let mut results = Vec::new();
@@ -323,6 +341,7 @@ pub async fn add_versions(ctx: Context, request: AddVersions) -> Result<Response
     Ok(results)
 }
 
+/// Get entries added or updated since the specified update number.
 pub async fn get_new_entries(
     ctx: Context,
     request: GetNewEntries,
@@ -339,6 +358,7 @@ pub async fn get_new_entries(
     Ok(())
 }
 
+/// Get content of a directory.
 pub async fn get_direct_child_entries(
     ctx: Context,
     request: GetDirectChildEntries,
@@ -350,7 +370,7 @@ pub async fn get_direct_child_entries(
     )
     .fetch_optional(&ctx.db_pool)
     .await?
-    .ok_or_else(|| anyhow!("entry not found"))?;
+    .context("entry not found")?;
 
     let mut rows = query!(
         "SELECT * FROM entries WHERE parent_dir = $1 ORDER BY path",
@@ -363,6 +383,8 @@ pub async fn get_direct_child_entries(
     Ok(())
 }
 
+/// Get the last version at or before `recorded_at` of the entry for `path` and
+/// all entries for direct or indirect subdirectories of `path`.
 async fn get_versions_inner<'a>(
     recorded_at: DateTimeUtc,
     path: &'a EncryptedArchivePath,
@@ -383,6 +405,8 @@ async fn get_versions_inner<'a>(
     Ok(stream)
 }
 
+/// Get the last version at or before `request.recorded_at` of the entry for `request.path` and
+/// all entries for direct or indirect subdirectories of `request.path`.
 pub async fn get_entry_versions_at_time(
     ctx: Context,
     request: GetEntryVersionsAtTime,
@@ -400,6 +424,8 @@ pub async fn get_entry_versions_at_time(
     Ok(())
 }
 
+/// Get all versions of an entry for `request.path`. If `request.recursive` is `true`,
+/// also get all versions of all entries for direct or indirect subdirectories of `request.path`.
 pub async fn get_all_entry_versions(
     ctx: Context,
     request: GetAllEntryVersions,
@@ -430,6 +456,7 @@ pub async fn get_all_entry_versions(
     Ok(())
 }
 
+/// Returns a SQL LIKE pattern that matches any path inside `path`, excluding the path itself.
 fn starts_with(path: &EncryptedArchivePath) -> String {
     if path.to_str_without_prefix() == "/" {
         "/%".into()
@@ -444,6 +471,7 @@ fn starts_with(path: &EncryptedArchivePath) -> String {
     }
 }
 
+/// Marks entries for `path` and all its content as deleted.
 async fn remove_entries_in_dir<'a>(
     ctx: &'a Context,
     path: &'a EncryptedArchivePath,
@@ -464,7 +492,7 @@ async fn remove_entries_in_dir<'a>(
             unix_mode = NULL
         WHERE (path = $4 OR path LIKE $5) AND kind > 0",
         ctx.source_id.to_db(),
-        trigger as i32,
+        trigger.to_db(),
         EntryKind::NOT_EXISTS,
         path.to_str_without_prefix(),
         starts_with(path),
@@ -474,6 +502,8 @@ async fn remove_entries_in_dir<'a>(
     Ok(r.rows_affected())
 }
 
+/// Copy all entries at `request.old_path` (including subdirectories) to `request.new_path`.
+/// Mark all entries at `request.old_path` as deleted.
 pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MovePath>> {
     let mut tx = ctx.db_pool.begin().await?;
     let mut old_entries = Vec::new();
@@ -485,7 +515,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
         )
         .fetch_one(&mut *tx)
         .await?
-        .ok_or_else(|| anyhow!("expected 1 row in SELECT COUNT query"))?;
+        .context("expected 1 row in SELECT COUNT query")?;
 
         if count_existing > 0 {
             bail!("destination path already exists");
@@ -529,6 +559,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
     Ok(BulkActionStats { affected_paths })
 }
 
+/// Marks entries for `path` and all its content as deleted.
 pub async fn remove_path(ctx: Context, request: RemovePath) -> Result<Response<RemovePath>> {
     let mut tx = ctx.db_pool.begin().await?;
     let affected_paths =
@@ -537,6 +568,7 @@ pub async fn remove_path(ctx: Context, request: RemovePath) -> Result<Response<R
     Ok(BulkActionStats { affected_paths })
 }
 
+/// Restore `request.path` (including subdirectories) to the latest state recorded at or before `request.recorded_at`.
 pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Response<ResetVersion>> {
     let mut tx = ctx.db_pool.begin().await?;
 
@@ -578,7 +610,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
                     unix_mode = NULL
                 WHERE id = $4",
                 ctx.source_id.to_db(),
-                RecordTrigger::Reset as i32,
+                RecordTrigger::Reset.to_db(),
                 EntryKind::NOT_EXISTS,
                 id,
             )
@@ -610,6 +642,9 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
     Ok(BulkActionStats { affected_paths })
 }
 
+/// Verifies storage invariants:
+/// - for any recorded content hash, there is a corresponding content file in file storage with the matching size;
+/// - for any file in file storage, there is a corresponding content hash in the database.
 pub async fn check_integrity(
     ctx: Context,
     _request: CheckIntegrity,
@@ -622,12 +657,12 @@ pub async fn check_integrity(
     while let Some(row) = rows.try_next().await? {
         let hash = EncryptedContentHash::from_encrypted(
             row.content_hash
-                .ok_or_else(|| anyhow!("expected hash to exist in query output"))?,
+                .context("expected hash to exist in query output")?,
         );
-        let size: u64 = row
+        let size = row
             .encrypted_size
-            .ok_or_else(|| anyhow!("expected size to exist in query output"))?
-            .try_into()?;
+            .context("expected size to exist in query output")?
+            .try_into_type::<u64>()?;
         db_hashes.insert(hash, size);
     }
 
@@ -655,6 +690,7 @@ pub async fn check_integrity(
     Ok(())
 }
 
+/// Get ID and name of configured sources (clients).
 pub async fn get_sources(ctx: Context, _request: GetSources) -> Result<Response<GetSources>> {
     let mut sources = Vec::new();
     let mut rows = query!("SELECT id, name FROM sources ORDER BY id").fetch(&ctx.db_pool);
@@ -668,36 +704,29 @@ pub async fn get_sources(ctx: Context, _request: GetSources) -> Result<Response<
     Ok(sources)
 }
 
-pub trait ToDb {
-    type Output;
-    fn to_db(&self) -> Self::Output;
+pub trait DateTimeUtcExt: Sized {
+    fn to_db(&self) -> Result<OffsetDateTime>;
+    fn from_db(value: OffsetDateTime) -> Result<Self>;
 }
 
-impl ToDb for DateTimeUtc {
-    type Output = Result<OffsetDateTime>;
-
-    fn to_db(&self) -> Self::Output {
+impl DateTimeUtcExt for DateTimeUtc {
+    fn to_db(&self) -> Result<OffsetDateTime> {
         const NANOS_IN_SECOND: i128 = 1_000_000_000;
-        let ts_nanos = i128::from(self.timestamp()) * NANOS_IN_SECOND
-            + i128::from(self.timestamp_subsec_nanos());
+        let ts_nanos = self
+            .timestamp()
+            .into_type::<i128>()
+            .cmul(NANOS_IN_SECOND)?
+            .cadd(self.timestamp_subsec_nanos().into_type::<i128>())?;
         OffsetDateTime::from_unix_timestamp_nanos(ts_nanos).map_err(Into::into)
     }
-}
 
-pub trait FromDb {
-    type Output;
-    #[allow(clippy::wrong_self_convention)]
-    fn from_db(&self) -> Self::Output;
-}
-
-impl FromDb for OffsetDateTime {
-    type Output = DateTimeUtc;
-
-    fn from_db(&self) -> Self::Output {
-        Utc.timestamp_nanos(self.unix_timestamp_nanos() as i64)
+    fn from_db(value: OffsetDateTime) -> Result<Self> {
+        let ts_nanos = value.unix_timestamp_nanos().try_into()?;
+        Ok(Utc.timestamp_nanos(ts_nanos))
     }
 }
 
+/// Check if content hash exists in file storage.
 pub async fn content_hash_exists(
     ctx: Context,
     request: ContentHashExists,
@@ -705,6 +734,7 @@ pub async fn content_hash_exists(
     ctx.storage.exists(&request.0)
 }
 
+/// Get available space on the server.
 pub async fn get_server_status(
     ctx: Context,
     _request: GetServerStatus,

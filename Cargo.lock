@@ -2914,6 +2914,7 @@ dependencies = [
  "base64",
  "bincode",
  "bytes",
+ "cadd",
  "chrono",
  "clap",
  "dirs",

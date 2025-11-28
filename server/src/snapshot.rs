@@ -1,12 +1,9 @@
 use {
-    crate::{
-        handler::{FromDb, ToDb},
-        Context,
-    },
+    crate::{handler::DateTimeUtcExt, Context},
     anyhow::Result,
     chrono::Utc,
     futures_util::TryStreamExt,
-    rammingen_protocol::EncryptedContentHash,
+    rammingen_protocol::{DateTimeUtc, EncryptedContentHash},
     sqlx::{query, query_scalar},
     std::collections::HashSet,
     tracing::{info, warn},
@@ -30,7 +27,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         // There are no entries, so there is no need for a snapshot.
         return Ok(());
     };
-    let next_snapshot_timestamp = previous_snapshot_timestamp.from_db()
+    let next_snapshot_timestamp = DateTimeUtc::from_db(previous_snapshot_timestamp)?
         + chrono::Duration::from_std(ctx.config.snapshot_interval)?;
     let latest_allowed_snapshot =
         Utc::now() - chrono::Duration::from_std(ctx.config.retain_detailed_history_for)?;

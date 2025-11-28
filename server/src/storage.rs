@@ -1,5 +1,5 @@
 use {
-    anyhow::{anyhow, bail, Result},
+    anyhow::{bail, Context as _, Result},
     fs2::available_space,
     fs_err::{create_dir_all, read_dir, remove_file, rename, symlink_metadata, File},
     rammingen_protocol::{util::try_exists, EncryptedContentHash},
@@ -104,9 +104,9 @@ impl Storage {
             } else {
                 let name = path
                     .file_name()
-                    .ok_or_else(|| anyhow!("found path without file name: {:?}", path))?
+                    .with_context(|| format!("found path without file name: {:?}", path))?
                     .to_str()
-                    .ok_or_else(|| anyhow!("invalid file name: {:?}", path))?;
+                    .with_context(|| format!("invalid file name: {:?}", path))?;
                 let hash = EncryptedContentHash::from_url_safe(name)?;
                 let size = meta.len();
                 out.insert(hash, size);

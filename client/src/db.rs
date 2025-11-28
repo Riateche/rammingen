@@ -1,6 +1,6 @@
 use {
     crate::{counters::NotificationCounters, path::SanitizedLocalPath},
-    anyhow::{anyhow, Context as _, Result},
+    anyhow::{Context as _, Result},
     byteorder::{ByteOrder, LE},
     rammingen_protocol::{encoding, ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber},
     rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry},
@@ -75,7 +75,7 @@ impl Db {
             let value = self
                 .archive_entries
                 .get(path.to_str_without_prefix().as_bytes())?
-                .ok_or_else(|| anyhow!("no such archive path: {}", path))?;
+                .with_context(|| format!("no such archive path: {}", path))?;
             anyhow::Ok(encoding::deserialize::<DecryptedEntryVersion>(&value)?)
         })();
         let children = if root_entry

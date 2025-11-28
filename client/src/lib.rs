@@ -20,7 +20,7 @@ use {
         pull_updates::pull_updates,
         upload::upload,
     },
-    anyhow::{anyhow, bail, Context as _, Result},
+    anyhow::{bail, Context as _, Result},
     cli::default_log_path,
     config::Config,
     counters::{FinalCounters, IntermediateCounters, NotificationCounters},
@@ -112,7 +112,7 @@ pub async fn run(command: Command, config: Config, secrets: Option<Secrets>) -> 
     let local_db_path = if let Some(v) = &config.local_db_path {
         v.clone()
     } else {
-        let data_dir = dirs::data_dir().ok_or_else(|| anyhow!("cannot find config dir"))?;
+        let data_dir = dirs::data_dir().context("cannot find config dir")?;
         data_dir.join("rammingen.db")
     };
 

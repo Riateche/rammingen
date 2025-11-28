@@ -1,6 +1,6 @@
 use {
     crate::{info::DATE_TIME_FORMAT, path::SanitizedLocalPath},
-    anyhow::{anyhow, Context, Result},
+    anyhow::{ Context, Result},
     chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone},
     clap::{Parser, Subcommand},
     derive_more::{From, Into},
@@ -114,7 +114,7 @@ impl FromStr for DateTimeArg {
             Local
                 .from_local_datetime(&naive)
                 .single()
-                .ok_or_else(|| anyhow!("ambiguous time"))?
+                .context("ambiguous time")?
                 .into(),
         ))
     }

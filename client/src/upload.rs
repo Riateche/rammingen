@@ -242,7 +242,7 @@ fn upload_inner<'a>(
                 }
             }
             let modified =
-                modified.ok_or_else(|| anyhow!("file {:?} keeps updating", local_path))?;
+                modified.with_context(|| format!("file {:?} keeps updating", local_path))?;
             let modified_datetime = DateTimeUtc::from(modified);
             let unix_mode = unix_mode(&metadata);
 
@@ -385,7 +385,7 @@ fn upload_inner<'a>(
                 let file_name = entry.file_name();
                 let file_name_str = file_name
                     .to_str()
-                    .ok_or_else(|| anyhow!("Unsupported file name: {:?}", entry_path))?;
+                    .with_context(|| format!("Unsupported file name: {:?}", entry_path))?;
                 let entry_local_path = local_path.join(file_name_str)?;
                 let entry_archive_path = archive_path.join_one(file_name_str).map_err(|err| {
                     anyhow!(

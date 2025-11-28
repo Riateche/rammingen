@@ -1,5 +1,5 @@
 use {
-    anyhow::{anyhow, bail, Result},
+    anyhow::{bail, Context as _, Result},
     bytes::Bytes,
     fs_err::OpenOptions,
     futures::future,
@@ -71,7 +71,7 @@ pub fn native_to_archive_relative_path(relative_path: &Path) -> Result<String> {
             result.push(
                 component
                     .to_str()
-                    .ok_or_else(|| anyhow!("unsupported path: {:?}", relative_path))?,
+                    .with_context(|| format!("unsupported path: {:?}", relative_path))?,
             );
         } else {
             bail!("found invalid component in {:?}", relative_path);
