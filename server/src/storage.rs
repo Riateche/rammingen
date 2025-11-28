@@ -11,20 +11,35 @@ use {
     tempfile::NamedTempFile,
 };
 
+/// Manager of the file storage.
+///
+/// File storage contains a collection of content files identified by `EncryptedContentHash`.
+/// These files are arranged in subdirectories to improve performance. The server treats
+/// both `EncryptedContentHash` and the content itself as opaque data and doesn't make any assumptions
+/// about them (except that `hash.to_url_safe()` must be more than 3 characters long).
 #[derive(Debug)]
 pub struct Storage {
     root: PathBuf,
     tmp: PathBuf,
 }
 
-fn storage_paths(root: &Path, hash: &EncryptedContentHash) -> (PathBuf, PathBuf) {
+struct StoragePaths {
+    dir_path: PathBuf,
+    file_path: PathBuf,
+}
+
+/// Returns path to the directory and file where content for `hash` should be stored.
+fn storage_paths(root: &Path, hash: &EncryptedContentHash) -> anyhow::Result<StoragePaths> {
     let hash_str = hash.to_url_safe();
-    let dir = root
-        .join(&hash_str[0..1])
-        .join(&hash_str[1..2])
-        .join(&hash_str[2..3]);
-    let file_path = dir.join(hash_str);
-    (dir, file_path)
+    let dir_path = root
+        .join(hash_str.get(0..1).context("content hash is too short")?)
+        .join(hash_str.get(1..2).context("content hash is too short")?)
+        .join(hash_str.get(2..3).context("content hash is too short")?);
+    let file_path = dir_path.join(hash_str);
+    Ok(StoragePaths {
+        dir_path,
+        file_path,
+    })
 }
 
 impl Storage {
@@ -43,12 +58,13 @@ impl Storage {
         Ok(NamedTempFile::new_in(&self.tmp)?)
     }
 
-    pub fn commit_file(&self, mut file: NamedTempFile, hash: &EncryptedContentHash) -> Result<()> {
-        file.flush()?;
-        let (dir, new_file_path) = storage_paths(&self.root, hash);
-        create_dir_all(dir)?;
+    pub fn commit_file(&self, file: NamedTempFile, hash: &EncryptedContentHash) -> Result<()> {
+        file.as_file().flush()?;
+        file.as_file().sync_all()?;
+        let paths = storage_paths(&self.root, hash)?;
+        create_dir_all(&paths.dir_path)?;
         let (_, old_path) = file.keep()?;
-        if let Err(err) = rename(&old_path, new_file_path) {
+        if let Err(err) = rename(&old_path, &paths.file_path) {
             let _ = remove_file(&old_path);
             return Err(err.into());
         }
@@ -56,22 +72,22 @@ impl Storage {
     }
 
     pub fn open_file(&self, hash: &EncryptedContentHash) -> Result<File> {
-        let (_, path) = storage_paths(&self.root, hash);
+        let path = storage_paths(&self.root, hash)?.file_path;
         Ok(File::open(path)?)
     }
 
     pub fn remove_file(&self, hash: &EncryptedContentHash) -> Result<()> {
-        let (_, path) = storage_paths(&self.root, hash);
+        let path = storage_paths(&self.root, hash)?.file_path;
         Ok(remove_file(path)?)
     }
 
     pub fn exists(&self, hash: &EncryptedContentHash) -> Result<bool> {
-        let (_, path) = storage_paths(&self.root, hash);
+        let path = storage_paths(&self.root, hash)?.file_path;
         try_exists(path)
     }
 
     pub fn file_size(&self, hash: &EncryptedContentHash) -> Result<u64> {
-        let (_, path) = storage_paths(&self.root, hash);
+        let path = storage_paths(&self.root, hash)?.file_path;
         Ok(symlink_metadata(path)?.len())
     }
 

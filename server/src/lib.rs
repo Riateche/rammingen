@@ -10,7 +10,8 @@ use {
     crate::snapshot::make_snapshot,
     anyhow::{Context as _, Result},
     bytes::{BufMut, BytesMut},
-    futures_util::{Future, StreamExt, TryStreamExt},
+    cadd::prelude::IntoType,
+    futures::{Future, StreamExt, TryStreamExt},
     http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody},
     humantime_serde::re::humantime::parse_duration,
     hyper::{
@@ -57,23 +58,31 @@ use {
         time::interval,
     },
     tracing::{error, info, warn},
-    util::default_config_dir,
 };
 
+/// Time between reloading the list of sources from the database.
 const SOURCES_CACHE_INTERVAL: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// URL of the database, e.g.
+    /// "postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
     pub database_url: String,
+    /// Path to the local file storage.
     pub storage_path: PathBuf,
+    /// IP and port that the server will listen.
     pub bind_addr: SocketAddr,
-    #[serde(default)]
+    /// Path to the log file. If not specified, log will be written to stdout.
     pub log_file: Option<PathBuf>,
+    /// Log filter in [tracing format](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html).
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
-
+    /// Time between snapshots. A snapshot is a copy of the state of all archive entries at a certain time.
+    /// Snapshots are not deleted automatically.
     #[serde(with = "humantime_serde", default = "default_snapshot_interval")]
     pub snapshot_interval: Duration,
+    /// Time during which all recorded entry versions are stored in the database. Entry versions that are older than
+    /// `retain_detailed_history_for` will eventually be deleted, except for entry versions that are part of a snapshot.
     #[serde(
         with = "humantime_serde",
         default = "default_retain_detailed_history_for"
@@ -100,6 +109,7 @@ fn default_log_filter() -> String {
         .to_owned()
 }
 
+/// Server state.
 #[derive(Debug, Clone)]
 pub struct Context {
     db_pool: PgPool,
@@ -108,9 +118,10 @@ pub struct Context {
     config: Config,
 }
 
+/// List of configured sources (clients).
 #[derive(Debug)]
 struct CachedSources {
-    sources: HashMap<String, SourceId>,
+    access_token_to_source_id: HashMap<String, SourceId>,
     updated_at: Instant,
 }
 
@@ -134,7 +145,7 @@ pub async fn run(
         config: config.clone(),
         storage: Arc::new(Storage::new(config.storage_path)?),
         sources: Arc::new(Mutex::new(CachedSources {
-            sources: load_sources(&db_pool).await?,
+            access_token_to_source_id: load_sources(&db_pool).await?,
             updated_at: Instant::now(),
         })),
         db_pool,
@@ -170,7 +181,7 @@ pub async fn run(
                         handle_request(ctx.clone(), request)
                     }));
                 }
-                Err(err) => warn!(?err, "failed to accept"),
+                Err(error) => warn!(?error, "failed to accept"),
             },
             signal = &mut shutdown => {
                 info!(signal = %signal?, "shutting down");
@@ -213,6 +224,7 @@ async fn try_handle_request(
 
     let path = request.uri().path();
     if let Some(hash) = path.strip_prefix("/content/") {
+        // Content file upload and download.
         let hash = EncryptedContentHash::from_url_safe(hash).map_err(|err| {
             warn!(?err, "invalid hash");
             StatusCode::BAD_REQUEST
@@ -255,6 +267,7 @@ async fn try_handle_request(
     }
 }
 
+/// Run a non-streaming request handler `f` and convert the result into a response.
 async fn wrap_request<T, F, Fut>(
     ctx: handler::Context,
     request: Request<body::Incoming>,
@@ -262,19 +275,46 @@ async fn wrap_request<T, F, Fut>(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode>
 where
     T: RequestToResponse + DeserializeOwned,
-    <T as RequestToResponse>::Response: Serialize,
+    T::Response: Serialize,
     F: FnOnce(handler::Context, T) -> Fut,
-    Fut: Future<Output = Result<<T as RequestToResponse>::Response>>,
+    Fut: Future<Output = Result<T::Response>>,
 {
     let request = parse_request(request).await?;
     let response = f(ctx, request).await;
     Ok(Response::new(BodyExt::boxed(Full::new(
-        serialize_response(response),
+        serialize_response(response).map_err(|error| {
+            warn!(?error, "failed to serialize response");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?,
     ))))
 }
 
 const ITEMS_PER_CHUNK: usize = 1024;
 
+/// Serialize a streaming response item and send it to the stream.
+/// Ensures that the passed `data` is of the expected stream item type.
+async fn serialize_and_send<T>(
+    y: &mut Yielder<Bytes>,
+    data: Result<Option<&[StreamingResponseItem<T>]>>,
+) where
+    T: RequestToStreamingResponse,
+    StreamingResponseItem<T>: Serialize,
+{
+    match serialize_response_with_length(data) {
+        Ok(v) => y.send(v).await,
+        Err(error) => {
+            let error_data: Result<Option<&[StreamingResponseItem<T>]>> = Err(error);
+            match serialize_response_with_length(error_data) {
+                Ok(v) => y.send(v).await,
+                Err(error) => {
+                    error!(?error, "failed to serialize error response");
+                }
+            }
+        }
+    }
+}
+
+/// Run a streaming request handler `f` and convert the result into a response.
 async fn wrap_stream<F, Fut, T>(
     ctx: handler::Context,
     request: Request<body::Incoming>,
@@ -297,34 +337,26 @@ where
     });
 
     let body_stream = generate_stream(move |mut y| async move {
-        async fn send<T>(y: &mut Yielder<Bytes>, data: Result<Option<&[StreamingResponseItem<T>]>>)
-        where
-            T: RequestToStreamingResponse,
-            StreamingResponseItem<T>: Serialize,
-        {
-            y.send(serialize_response_with_length(data)).await;
-        }
-
         let mut buf = Vec::new();
         while let Some(item) = rx.recv().await {
             match item {
                 Ok(item) => {
                     buf.push(item);
                     if buf.len() >= ITEMS_PER_CHUNK {
-                        send::<T>(&mut y, Ok(Some(&buf))).await;
+                        serialize_and_send::<T>(&mut y, Ok(Some(&buf))).await;
                         buf.clear();
                     }
                 }
                 Err(err) => {
-                    send::<T>(&mut y, Err(err)).await;
+                    serialize_and_send::<T>(&mut y, Err(err)).await;
                     return;
                 }
             }
         }
         if !buf.is_empty() {
-            send::<T>(&mut y, Ok(Some(&buf))).await;
+            serialize_and_send::<T>(&mut y, Ok(Some(&buf))).await;
         }
-        send::<T>(&mut y, Ok(None)).await;
+        serialize_and_send::<T>(&mut y, Ok(None)).await;
     });
 
     Ok(Response::new(BodyExt::boxed(StreamBody::new(
@@ -332,6 +364,7 @@ where
     ))))
 }
 
+/// Fetch request body and deserialize it to `T`.
 async fn parse_request<T: DeserializeOwned>(
     request: Request<body::Incoming>,
 ) -> Result<T, StatusCode> {
@@ -350,30 +383,32 @@ async fn parse_request<T: DeserializeOwned>(
     })
 }
 
-fn serialize_response<T: Serialize>(data: Result<T>) -> Bytes {
+fn serialize_response<T: Serialize>(data: Result<T>) -> anyhow::Result<Bytes> {
     encoding::serialize(&data.map_err(|err| {
         warn!(?err, "handler error");
         format!("{err:?}")
     }))
-    .expect("bincode serialization failed")
-    .into()
+    .context("bincode serialization failed")
+    .map(Into::into)
 }
 
-fn serialize_response_with_length<T: Serialize>(data: Result<T>) -> Bytes {
+/// Create a buffer the contains the serialized size (4 bytes LE) followed by the serialized data.
+fn serialize_response_with_length<T: Serialize>(data: Result<T>) -> anyhow::Result<Bytes> {
+    // Reserve empty space for length at the beginning to avoid reallocation later.
     let mut buf = BytesMut::zeroed(4);
-    encoding::serialize_into(
+    let len = encoding::serialize_into(
         (&mut buf).writer(),
         &data.map_err(|err| {
             warn!(?err, "handler error");
             format!("{err:?}")
         }),
-    )
-    .expect("bincode serialization failed");
-    let len = (buf.len() - 4) as u32;
-    buf[0..4].copy_from_slice(&len.to_le_bytes());
-    buf.freeze()
+    )?;
+    // Write the actual length.
+    buf[0..4].copy_from_slice(&len.try_into_type::<u32>()?.to_le_bytes());
+    Ok(buf.freeze())
 }
 
+/// Verify access token provided by the client and return the corresponding `SourceId`.
 async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<SourceId> {
     let auth = request
         .headers()
@@ -385,20 +420,28 @@ async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<Source
         .context("authorization header is not Bearer")?;
     let mut sources = ctx.sources.lock().await;
     if sources.updated_at.elapsed() > SOURCES_CACHE_INTERVAL {
-        sources.sources = load_sources(&ctx.db_pool).await?;
+        sources.access_token_to_source_id = load_sources(&ctx.db_pool).await?;
         sources.updated_at = Instant::now();
     }
     sources
-        .sources
+        .access_token_to_source_id
         .get(access_token)
         .copied()
         .context("invalid bearer token")
 }
 
-pub fn config_path(config: Option<PathBuf>) -> Result<PathBuf> {
-    if let Some(path) = config {
-        Ok(path)
-    } else {
-        Ok(default_config_dir()?.join("rammingen-server.conf"))
-    }
+#[cfg(target_os = "linux")]
+fn default_config_dir() -> Result<PathBuf> {
+    Ok("/etc".into())
+}
+
+// Windows: %APPDATA% (%USERPROFILE%\AppData\Roaming);
+// macOS: $HOME/Library/Application Support
+#[cfg(not(target_os = "linux"))]
+fn default_config_dir() -> Result<PathBuf> {
+    dirs::config_dir().ok_or_else(|| anyhow::anyhow!("failed to get config dir"))
+}
+
+pub fn default_config_path() -> Result<PathBuf> {
+    Ok(default_config_dir()?.join("rammingen-server.conf"))
 }

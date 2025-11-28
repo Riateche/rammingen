@@ -2,7 +2,7 @@ use {
     clap::{Parser, Subcommand},
     rammingen_protocol::credentials::AccessToken,
     rammingen_server::{
-        config_path,
+        default_config_path,
         util::{add_source, set_access_token, sources},
         Config,
     },
@@ -44,7 +44,11 @@ pub enum Command {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config_path = config_path(cli.config)?;
+    let config_path = if let Some(path) = cli.config {
+        path
+    } else {
+        default_config_path()?
+    };
     let config = Config::parse(&config_path)?;
     let pool = PgPool::connect(&config.database_url).await?;
     match cli.command {

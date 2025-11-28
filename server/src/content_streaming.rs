@@ -1,6 +1,7 @@
 use {
     crate::handler,
-    futures_util::StreamExt,
+    anyhow::Context as _,
+    futures::StreamExt,
     http_body_util::{combinators::BoxBody, BodyExt, Empty, StreamBody},
     hyper::{
         body::{self, Bytes, Frame},
@@ -67,12 +68,14 @@ pub async fn upload(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    maybe_block_in_place(|| file.as_file().sync_all()).map_err(|err| {
-        warn!(?err, "failed to sync content file");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    maybe_block_in_place(|| ctx.storage.commit_file(file, hash)).map_err(|err| {
+    maybe_block_in_place(|| {
+        file.as_file().flush().context("flush failed")?;
+        file.as_file().sync_all().context("sync_all failed")?;
+        ctx.storage
+            .commit_file(file, hash)
+            .context("commit_file failed")
+    })
+    .map_err(|err| {
         warn!(?err, "failed to commit content file");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

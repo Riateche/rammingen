@@ -6,7 +6,7 @@ use {
         prelude::IntoType,
     },
     chrono::{TimeZone, Utc},
-    futures_util::{future::BoxFuture, Stream, TryStreamExt},
+    futures::{future::BoxFuture, Stream, TryStreamExt},
     rammingen_protocol::{
         endpoints::{
             AddVersion, AddVersionResponse, AddVersions, BulkActionStats, CheckIntegrity,

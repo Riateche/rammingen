@@ -2,7 +2,7 @@ use {
     anyhow::Result,
     clap::Parser,
     rammingen_protocol::util::log_writer,
-    rammingen_server::{config_path, Config},
+    rammingen_server::{default_config_path, Config},
     std::{path::PathBuf, sync::Mutex},
     tracing_subscriber::{util::SubscriberInitExt, EnvFilter},
 };
@@ -27,7 +27,11 @@ pub struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let config_path = config_path(cli.config)?;
+    let config_path = if let Some(path) = cli.config {
+        path
+    } else {
+        default_config_path()?
+    };
     let config = Config::parse(config_path)?;
 
     tracing_subscriber::fmt()

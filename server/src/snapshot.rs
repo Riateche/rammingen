@@ -1,14 +1,16 @@
 use {
     crate::{handler::DateTimeUtcExt, Context},
-    anyhow::Result,
+    anyhow::{Context as _, Result},
     chrono::Utc,
-    futures_util::TryStreamExt,
+    futures::TryStreamExt,
     rammingen_protocol::{DateTimeUtc, EncryptedContentHash},
     sqlx::{query, query_scalar},
     std::collections::HashSet,
     tracing::{info, warn},
 };
 
+/// Create a new snapshot if the configuration and current time allows.
+/// Delete older entry versions that are not part of a snapshot.
 pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     let mut tx = ctx.db_pool.begin().await?;
 
@@ -28,14 +30,20 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         return Ok(());
     };
     let next_snapshot_timestamp = DateTimeUtc::from_db(previous_snapshot_timestamp)?
-        + chrono::Duration::from_std(ctx.config.snapshot_interval)?;
-    let latest_allowed_snapshot =
-        Utc::now() - chrono::Duration::from_std(ctx.config.retain_detailed_history_for)?;
+        .checked_add_signed(chrono::Duration::from_std(ctx.config.snapshot_interval)?)
+        .context("next_snapshot_timestamp overflow")?;
+    let latest_allowed_snapshot = Utc::now()
+        .checked_sub_signed(chrono::Duration::from_std(
+            ctx.config.retain_detailed_history_for,
+        )?)
+        .context("latest_allowed_snapshot underflow")?;
     if next_snapshot_timestamp > latest_allowed_snapshot {
         return Ok(());
     }
     let next_snapshot_timestamp_db = next_snapshot_timestamp.to_db()?;
 
+    // Get latest version at or before the new snapshot's timestamp
+    // for every entry. Excludes entries that haven't changed since the last snapshot.
     let versions: Vec<_> = query!(
         "SELECT DISTINCT ON (path) *
         FROM entry_versions
@@ -52,6 +60,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     let mut hashes_to_check = HashSet::new();
     let mut num_deleted = 0;
     {
+        // Delete all non-snapshot entry versions at or before the new snapshot's timestamp.
         let mut deleted_rows = query_scalar!(
             "DELETE FROM entry_versions
             WHERE recorded_at <= $1 AND snapshot_id IS NULL
@@ -67,6 +76,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         }
     }
 
+    // Add a snapshot record.
     let snapshot_id = query_scalar!(
         "INSERT INTO snapshots(timestamp) VALUES ($1) RETURNING id",
         next_snapshot_timestamp_db
@@ -76,6 +86,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
 
     let mut hashes_to_remove = Vec::new();
     for version in versions {
+        // Insert all previously found entry versions as new versions linked to the new snapshot.
         query!("
             INSERT INTO entry_versions (
                 entry_id, update_number, snapshot_id, path, recorded_at, source_id,
@@ -102,6 +113,8 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
             hashes_to_check.insert(EncryptedContentHash::from_encrypted(hash));
         }
     }
+    // For every hash that was affected by previous modifications,
+    // check if there are any remaining entry versions that use that hash.
     for hash in hashes_to_check {
         let exists = query_scalar!(
             "SELECT 1 FROM entry_versions WHERE content_hash = $1 LIMIT 1",
@@ -117,6 +130,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
 
     tx.commit().await?;
 
+    // Remove files that are no longer referenced by any entry versions.
     let mut num_removed_files = 0;
     for hash in hashes_to_remove {
         match ctx.storage.remove_file(&hash) {
