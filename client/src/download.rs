@@ -10,7 +10,7 @@ use {
     futures::{stream, Stream, TryStreamExt},
     rammingen_protocol::{
         endpoints::GetEntryVersionsAtTime,
-        util::{archive_to_native_relative_path, interrupt_on_error, try_exists, ErrorSender},
+        util::{archive_to_native_relative_path, interrupt_on_error, ErrorSender},
         ArchivePath, DateTimeUtc, EntryKind,
     },
     rammingen_sdk::content::{DecryptedContentHead, DecryptedEntryVersion, LocalEntry},
@@ -197,7 +197,7 @@ async fn download_inner(
             let Some(db_data) = ctx.ctx.db.get_local_entry(&entry_local_path)? else {
                 continue;
             };
-            if try_exists(entry_local_path.as_path())? {
+            if entry_local_path.exists()? {
                 if ctx.dry_run {
                     info!("Would delete {}", entry_local_path);
                 } else {
@@ -320,7 +320,7 @@ impl TmpGuard {
         &self.0
     }
     fn clean(&mut self) -> Result<()> {
-        if try_exists(&self.0)? {
+        if self.0.exists()? {
             remove_file(&self.0)?;
         }
         Ok(())
@@ -374,7 +374,7 @@ async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
     let tmp_path =
         tmp_parent_dir.join(format!(".{}.rammingen.part", path_hash(&item.local_path)))?;
     let tmp_guard = TmpGuard(tmp_path.clone());
-    if try_exists(&tmp_path)? {
+    if tmp_path.exists()? {
         remove_file(&tmp_path)?;
     }
     ctx.client
@@ -412,7 +412,7 @@ struct FinalizeDownloadTaskItem {
 }
 
 async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Result<()> {
-    if !item.must_delete && try_exists(&item.local_path)? {
+    if !item.must_delete && item.local_path.exists()? {
         bail!(
             "local entry already exists at {:?} (while processing entry: {:?})",
             item.local_path,

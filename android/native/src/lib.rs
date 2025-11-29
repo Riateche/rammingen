@@ -22,11 +22,7 @@ use {
         setup_logger,
         term::{Term, set_term, term},
     },
-    rammingen_protocol::{
-        ArchivePath,
-        credentials::{AccessToken, EncryptionKey},
-        serde_path_with_prefix,
-    },
+    rammingen_protocol::{AccessToken, ArchivePath, EncryptionKey, serde_path_with_prefix},
     scopeguard::defer,
     serde::{Deserialize, Serialize},
     std::{

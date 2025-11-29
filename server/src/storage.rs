@@ -1,8 +1,8 @@
 use {
     anyhow::{bail, Context as _, Result},
     fs2::available_space,
-    fs_err::{create_dir_all, read_dir, remove_file, rename, symlink_metadata, File},
-    rammingen_protocol::{util::try_exists, EncryptedContentHash},
+    fs_err::{create_dir_all, read_dir, remove_file, rename, symlink_metadata, File, PathExt},
+    rammingen_protocol::EncryptedContentHash,
     std::{
         collections::HashMap,
         io::Write,
@@ -44,7 +44,7 @@ fn storage_paths(root: &Path, hash: &EncryptedContentHash) -> anyhow::Result<Sto
 
 impl Storage {
     pub fn new(root: PathBuf) -> Result<Self> {
-        if !try_exists(&root)? {
+        if !root.fs_err_try_exists()? {
             bail!("storage root doesn't exist");
         }
 
@@ -83,7 +83,7 @@ impl Storage {
 
     pub fn exists(&self, hash: &EncryptedContentHash) -> Result<bool> {
         let path = storage_paths(&self.root, hash)?.file_path;
-        try_exists(path)
+        Ok(path.fs_err_try_exists()?)
     }
 
     pub fn file_size(&self, hash: &EncryptedContentHash) -> Result<u64> {

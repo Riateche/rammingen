@@ -19,9 +19,8 @@ use {
         term::{clear_status, set_term, StdoutTerm},
     },
     rammingen_protocol::{
-        credentials::{AccessToken, EncryptionKey},
         util::native_to_archive_relative_path,
-        ArchivePath, DateTimeUtc,
+        ArchivePath, DateTimeUtc, {AccessToken, EncryptionKey},
     },
     rammingen_server::util::{add_source, migrate},
     rand::{seq::IndexedRandom, Rng, SeedableRng},

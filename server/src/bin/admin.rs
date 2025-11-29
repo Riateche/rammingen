@@ -1,7 +1,7 @@
 use {
     anyhow::ensure,
     clap::{Args, Parser, Subcommand},
-    rammingen_protocol::credentials::AccessToken,
+    rammingen_protocol::AccessToken,
     rammingen_server::{
         default_config_path,
         util::{add_source, set_access_token, sources},

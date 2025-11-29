@@ -19,6 +19,9 @@ use {
     },
 };
 
+/// Secret token used by the client to identify itself and gain access to the server API.
+///
+/// Each client should have a separate access token.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct AccessToken(String);
 
@@ -66,8 +69,10 @@ impl Debug for AccessToken {
     }
 }
 
+/// Secret used to encrypt file contents and metadata.
+///
+/// All clients of a user should use the same encryption key.
 #[derive(Clone)]
-#[allow(deprecated)]
 pub struct EncryptionKey(Array<u8, U64>);
 
 impl EncryptionKey {
@@ -81,7 +86,6 @@ impl EncryptionKey {
         Self(key)
     }
 
-    #[allow(deprecated)]
     pub fn get(&self) -> &Array<u8, U64> {
         &self.0
     }

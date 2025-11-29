@@ -8,7 +8,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     let cipher = Aes256SivAead::new(&key);
     let nonce = Nonce::default();
 
-    //c.bench_function("encrypt", |b| {
     let mut group = c.benchmark_group("encrypt");
     for size in [1024, 1024 * 1024] {
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
@@ -19,7 +18,6 @@ fn criterion_benchmark(c: &mut Criterion) {
             );
         });
     }
-    //});
 }
 
 criterion_group!(benches, criterion_benchmark);

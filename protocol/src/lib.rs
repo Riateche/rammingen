@@ -1,12 +1,16 @@
 #![allow(clippy::collapsible_else_if)]
 
-pub mod credentials;
+mod credentials;
 pub mod encoding;
 pub mod endpoints;
 mod path;
 pub mod util;
 
-pub use crate::path::{with_prefix as serde_path_with_prefix, ArchivePath, EncryptedArchivePath};
+pub use crate::{
+    credentials::{AccessToken, EncryptionKey},
+    path::{with_prefix as serde_path_with_prefix, ArchivePath, EncryptedArchivePath},
+};
+
 use {
     anyhow::{bail, Result},
     base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine},
@@ -19,6 +23,7 @@ use {
 
 pub type DateTimeUtc = chrono::DateTime<Utc>;
 
+/// Identifier of a client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct SourceId(i32);
 
@@ -28,6 +33,10 @@ impl SourceId {
     }
 }
 
+/// Number of an entry update.
+///
+/// `EntryUpdateNumber` is based on a global counter that increments every time an entry is updated.
+/// It's used to request new updates from the server based on the last `EntryUpdateNumber` seen by the client.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, From, Into,
 )]
@@ -57,6 +66,7 @@ impl EntryId {
     }
 }
 
+/// SHA-256 hash of unencrypted content of a file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Into)]
 pub struct ContentHash(Vec<u8>);
 
@@ -87,6 +97,7 @@ impl fmt::Display for ContentHash {
     }
 }
 
+/// Encrypted value of `ContentHash`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EncryptedContentHash(Vec<u8>);
 
@@ -109,6 +120,9 @@ impl EncryptedContentHash {
     }
 }
 
+/// Encrypted value of file size.
+///
+/// File size in bytes is encoded as u64 LE before encrypting it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Into)]
 pub struct EncryptedSize(Vec<u8>);
 
@@ -122,6 +136,7 @@ impl EncryptedSize {
     }
 }
 
+/// Action that caused an entity update.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RecordTrigger {
     Sync,
@@ -190,17 +205,29 @@ pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
     }
 }
 
+/// Data associated with an entry at a particular time.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntryVersionData {
+    /// Encrypted path of the entry (never changes).
     pub path: EncryptedArchivePath,
+    /// Time of recording this version.
     pub recorded_at: DateTimeUtc,
+    /// ID of the client that created this version.
     pub source_id: SourceId,
+    /// Action that caused an entity update (as reported by the client).
     pub record_trigger: RecordTrigger,
+    /// Kind of the entry (file or directory), or `None` if this version
+    /// records a deletion of this entry.
     pub kind: Option<EntryKind>,
+    /// File content (only allowed if `kind == Some(File)`).
     pub content: Option<FileContent>,
 }
 
 impl EntryVersionData {
+    /// Checks if `AddVersion` is an update compared to `self`.
+    ///
+    /// This is just an equality check for the most part, but it includes
+    /// special handling of `unix_mode`.
     pub fn is_same(&self, update: &AddVersion) -> bool {
         self.path == update.path && self.kind == update.kind && {
             match (&self.content, &update.content) {
@@ -208,7 +235,9 @@ impl EntryVersionData {
                     content.hash == update.hash
                         && match (content.unix_mode, update.unix_mode) {
                             (None, None) => true,
+                            // new value of `unix_mode`, we need to record it
                             (None, Some(_)) => false,
+                            // no new value of `unix_mode`, no need to record it
                             (Some(_), None) => true,
                             (Some(mode1), Some(mode2)) => mode1 == mode2,
                         }
@@ -220,26 +249,39 @@ impl EntryVersionData {
     }
 }
 
+/// State of the archive at a particular encrypted archive path.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Entry {
     pub id: EntryId,
+    /// Update number corresponding to the last update of this entry.
     pub update_number: EntryUpdateNumber,
+    /// ID of the parent entry. Is `None` only for the root path (`ar:/`).
     pub parent_dir: Option<EntryId>,
+    /// Current data for the entry.
     pub data: EntryVersionData,
 }
 
+/// State of an entry at a particular point in time.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntryVersion {
     pub entry_id: EntryId,
+    /// Only present if this entry version belongs to a snapshot.
     pub snapshot_id: Option<SnapshotId>,
+    /// Data of the entry at this version.
     pub data: EntryVersionData,
 }
 
+/// Encrypted record of a file content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileContent {
     pub modified_at: DateTimeUtc,
+    /// Encrypted value of the size of the unencrypted file content in bytes.
     pub original_size: EncryptedSize,
+    /// Size of the encrypted file content in bytes.
     pub encrypted_size: u64,
+    /// Encrypted value of the SHA-256 hash of the unencrypted file content.
     pub hash: EncryptedContentHash,
+    /// Unix mode of the file. Absent if unix mode is not available on the system
+    /// that generated this `FileContent` value.
     pub unix_mode: Option<u32>,
 }

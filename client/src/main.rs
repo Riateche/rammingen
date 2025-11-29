@@ -8,7 +8,7 @@ use {
         setup_logger,
         term::{set_term, StdoutTerm},
     },
-    rammingen_protocol::credentials::EncryptionKey,
+    rammingen_protocol::EncryptionKey,
     tracing::error,
 };
 

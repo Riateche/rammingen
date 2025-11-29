@@ -5,11 +5,10 @@ use {
     byteorder::{ByteOrder, LE},
     futures::{Stream, StreamExt},
     rammingen_protocol::{
-        credentials::AccessToken,
         encoding::{self, deserialize},
         endpoints::{RequestToResponse, RequestToStreamingResponse},
         util::stream_file,
-        EncryptedContentHash,
+        AccessToken, EncryptedContentHash,
     },
     reqwest::{header::CONTENT_LENGTH, Body, Method, Url},
     serde::{de::DeserializeOwned, Serialize},

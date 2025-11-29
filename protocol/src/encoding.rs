@@ -1,3 +1,7 @@
+//! Encoding used in client-server communication and in the client's local database.
+//!
+//! Compatible with bincode 1.x.
+
 use {
     serde::{de::DeserializeOwned, Serialize},
     std::io::Write,

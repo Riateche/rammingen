@@ -736,6 +736,7 @@ pub async fn content_hash_exists(
 }
 
 /// Get available space on the server.
+#[allow(deprecated)]
 pub async fn get_server_status_v1_legacy(
     ctx: Context,
     _request: v1_legacy::GetServerStatus,

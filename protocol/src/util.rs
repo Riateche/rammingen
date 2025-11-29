@@ -7,7 +7,7 @@ use {
     std::{
         borrow::Cow,
         future::Future,
-        io::{stdout, ErrorKind, Read, Write},
+        io::{stdout, Read, Write},
         path::{self, Path, MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
         sync::Arc,
     },
@@ -22,6 +22,7 @@ use {
 
 const CONTENT_CHUNK_LEN: usize = 1024;
 
+/// Create a stream that yields the content of `file`.
 pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<Item = Bytes> {
     let (tx, rx) = mpsc::channel(5);
     tokio::spawn(async move {
@@ -38,8 +39,8 @@ pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<
                         }
                     }
                 }
-                Err(err) => {
-                    warn!(?err, "failed to read content file");
+                Err(error) => {
+                    warn!(?error, "failed to read content file");
                     break;
                 }
             }
@@ -48,14 +49,8 @@ pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<
     ReceiverStream::new(rx)
 }
 
-pub fn try_exists(path: impl AsRef<Path>) -> Result<bool> {
-    match fs_err::metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error.into()),
-    }
-}
-
+/// Convert a relative archive path (that always uses `/` as separator)
+/// to a relative path with native separator for the current OS.
 pub fn archive_to_native_relative_path(relative_archive_path: &str) -> Cow<'_, str> {
     if MAIN_SEPARATOR == '/' {
         Cow::Borrowed(relative_archive_path)
@@ -64,6 +59,10 @@ pub fn archive_to_native_relative_path(relative_archive_path: &str) -> Cow<'_, s
     }
 }
 
+/// Convert relative path with native separator for the current OS
+/// to a relative archive path (that always uses `/` as separator).
+///
+/// `relative_path` should not contain `.` or `..`.
 pub fn native_to_archive_relative_path(relative_path: &Path) -> Result<String> {
     let mut result = Vec::new();
     for component in relative_path.components() {
@@ -80,6 +79,7 @@ pub fn native_to_archive_relative_path(relative_path: &Path) -> Result<String> {
     Ok(result.join("/"))
 }
 
+/// Create a log writer that logs to the specified `log_file`, or to stdout if `log_file` is `None`.
 pub fn log_writer(log_file: Option<&Path>) -> Result<Box<dyn Write + Send + Sync>> {
     if let Some(log_file) = log_file {
         Ok(Box::new(
@@ -134,11 +134,13 @@ where
     }
 }
 
+/// Call `f` through `tokio::task::block_in_place` if possible.
 pub fn maybe_block_in_place<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {
     if cfg!(target_os = "android") {
+        // We use single-threaded executor on Android, so we have to execute it without `block_in_place`.
         f()
     } else {
         block_in_place(f)

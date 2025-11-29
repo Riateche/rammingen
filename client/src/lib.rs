@@ -29,9 +29,9 @@ use {
     info::{list_versions, pretty_size},
     notify_rust::Notification,
     rammingen_protocol::{
-        credentials::{AccessToken, EncryptionKey},
         endpoints::{CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion},
         util::log_writer,
+        AccessToken, EncryptionKey,
     },
     rammingen_sdk::{client::Client, crypto::Cipher},
     rules::Rules,

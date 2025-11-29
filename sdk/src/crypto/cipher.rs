@@ -3,8 +3,8 @@ use {
     anyhow::{ensure, Context, Result},
     base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine},
     rammingen_protocol::{
-        credentials::EncryptionKey, ArchivePath, ContentHash, EncryptedArchivePath,
-        EncryptedContentHash, EncryptedSize,
+        ArchivePath, ContentHash, EncryptedArchivePath, EncryptedContentHash, EncryptedSize,
+        EncryptionKey,
     },
     std::mem::size_of,
 };

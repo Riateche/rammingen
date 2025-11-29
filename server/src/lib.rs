@@ -230,6 +230,7 @@ async fn handle_request(
         })
 }
 
+#[allow(deprecated)]
 async fn try_handle_request(
     ctx: Context,
     request: Request<body::Incoming>,

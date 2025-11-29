@@ -12,7 +12,6 @@ use {
     chrono::{TimeDelta, Utc},
     humantime::format_duration,
     itertools::Itertools,
-    rammingen_protocol::util::try_exists,
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::warn,
 };
@@ -45,7 +44,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
         .collect_vec();
 
     for (mount_point, rules) in &mut mount_points {
-        if try_exists(&mount_point.local_path)? {
+        if mount_point.local_path.exists()? {
             upload(
                 ctx,
                 &mount_point.local_path,

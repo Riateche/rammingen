@@ -1,6 +1,6 @@
 use {
     anyhow::{anyhow, bail, Context as _, Result},
-    fs_err::symlink_metadata,
+    fs_err::{symlink_metadata, PathExt},
     serde::{de::Error, Deserialize, Serialize},
     std::{
         fmt::Display,
@@ -122,6 +122,10 @@ impl SanitizedLocalPath {
         self.0
             .to_str()
             .expect("previously checked that it can be converted")
+    }
+
+    pub fn exists(&self) -> std::io::Result<bool> {
+        self.0.fs_err_try_exists()
     }
 }
 

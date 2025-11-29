@@ -1,6 +1,6 @@
 use {
     anyhow::{bail, ensure, Result},
-    rammingen_protocol::credentials::AccessToken,
+    rammingen_protocol::AccessToken,
     rand::distr::{Alphanumeric, SampleString},
     sqlx::{query, query_scalar, PgPool},
 };
