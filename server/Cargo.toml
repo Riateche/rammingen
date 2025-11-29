@@ -30,6 +30,7 @@ http-body-util = { workspace = true }
 humantime-serde = { workspace = true }
 hyper = { workspace = true }
 json5 = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 stream_generator = { workspace = true }

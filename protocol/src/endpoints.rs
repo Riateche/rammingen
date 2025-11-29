@@ -11,10 +11,10 @@ pub trait RequestToResponse {
     const PATH: &'static str;
 }
 macro_rules! response_type {
-    ($request:ty, $response:ty) => {
+    ($request:ty, $response:ty, $version:literal) => {
         impl RequestToResponse for $request {
             type Response = $response;
-            const PATH: &'static str = concat!("/api/v1/", stringify!($request));
+            const PATH: &'static str = concat!("/api/", $version, "/", stringify!($request));
         }
     };
 }
@@ -24,10 +24,10 @@ pub trait RequestToStreamingResponse {
     const PATH: &'static str;
 }
 macro_rules! streaming_response_type {
-    ($request:ty, $response:ty) => {
+    ($request:ty, $response:ty, $version:literal) => {
         impl RequestToStreamingResponse for $request {
             type ResponseItem = $response;
-            const PATH: &'static str = concat!("/api/v1/", stringify!($request));
+            const PATH: &'static str = concat!("/api/", $version, "/", stringify!($request));
         }
     };
 }
@@ -42,13 +42,13 @@ pub struct GetNewEntries {
     // for incremental updates
     pub last_update_number: EntryUpdateNumber,
 }
-streaming_response_type!(GetNewEntries, Entry);
+streaming_response_type!(GetNewEntries, Entry, "v1");
 
 /// Returns all entries that are direct children of the specified path.
 /// Results are ordered by path.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetDirectChildEntries(pub EncryptedArchivePath);
-streaming_response_type!(GetDirectChildEntries, Entry);
+streaming_response_type!(GetDirectChildEntries, Entry, "v1");
 
 /// Returns the version of the path corresponding to the specified time.
 /// If it's a directory, also returns the version of each child path
@@ -58,7 +58,7 @@ pub struct GetEntryVersionsAtTime {
     pub recorded_at: DateTimeUtc,
     pub path: EncryptedArchivePath,
 }
-streaming_response_type!(GetEntryVersionsAtTime, EntryVersion);
+streaming_response_type!(GetEntryVersionsAtTime, EntryVersion, "v1");
 
 /// Returns all versions of the specified path.
 /// If `recursive` is true, also returns all versions of all
@@ -68,7 +68,7 @@ pub struct GetAllEntryVersions {
     pub path: EncryptedArchivePath,
     pub recursive: bool,
 }
-streaming_response_type!(GetAllEntryVersions, EntryVersion);
+streaming_response_type!(GetAllEntryVersions, EntryVersion, "v1");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddVersion {
@@ -89,7 +89,7 @@ pub struct AddVersion {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersions(pub Vec<AddVersion>);
 
-response_type!(AddVersions, Vec<AddVersionResponse>);
+response_type!(AddVersions, Vec<AddVersionResponse>, "v1");
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddVersionResponse {
@@ -108,7 +108,7 @@ pub struct ResetVersion {
     pub path: EncryptedArchivePath,
     pub recorded_at: DateTimeUtc,
 }
-response_type!(ResetVersion, BulkActionStats);
+response_type!(ResetVersion, BulkActionStats, "v1");
 
 /// Records rename of `old_path` to `new_path`.
 /// `new_path` must not exist. If `old_path` is a directory,
@@ -118,7 +118,7 @@ pub struct MovePath {
     pub old_path: EncryptedArchivePath,
     pub new_path: EncryptedArchivePath,
 }
-response_type!(MovePath, BulkActionStats);
+response_type!(MovePath, BulkActionStats, "v1");
 
 /// Records deletion of the specified path.
 /// If it's a directory, also records deletion of all children.
@@ -126,36 +126,51 @@ response_type!(MovePath, BulkActionStats);
 pub struct RemovePath {
     pub path: EncryptedArchivePath,
 }
-response_type!(RemovePath, BulkActionStats);
+response_type!(RemovePath, BulkActionStats, "v1");
 
 /// Checks whether the specified content hash is stored on the server.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContentHashExists(pub EncryptedContentHash);
-response_type!(ContentHashExists, bool);
+response_type!(ContentHashExists, bool, "v1");
 
-/// Returns available space on server.
+/// Returns server ID and available space on server.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetServerStatus;
-response_type!(GetServerStatus, ServerStatus);
+response_type!(GetServerStatus, ServerStatus, "v1");
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerStatus {
+    pub server_id: String,
     pub available_space: u64,
 }
 
 /// Checks that file storage is consistent with database.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckIntegrity;
-response_type!(CheckIntegrity, ());
+response_type!(CheckIntegrity, (), "v1");
 
 /// Returns id and name of all sources.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetSources;
 
-response_type!(GetSources, Vec<SourceInfo>);
+response_type!(GetSources, Vec<SourceInfo>, "v1");
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SourceInfo {
     pub id: SourceId,
     pub name: String,
+}
+
+pub mod v1_legacy {
+    use super::*;
+
+    /// Returns available space on server.
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct GetServerStatus;
+    response_type!(GetServerStatus, ServerStatus, "v1");
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct ServerStatus {
+        pub available_space: u64,
+    }
 }

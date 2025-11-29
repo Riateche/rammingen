@@ -8,7 +8,7 @@ pub mod util;
 
 use {
     crate::snapshot::make_snapshot,
-    anyhow::{Context as _, Result},
+    anyhow::{ensure, Context as _, Result},
     bytes::{BufMut, BytesMut},
     cadd::prelude::IntoType,
     futures::{Future, StreamExt, TryStreamExt},
@@ -22,7 +22,7 @@ use {
     rammingen_protocol::{
         encoding,
         endpoints::{
-            AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions,
+            v1_legacy, AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions,
             GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries, GetServerStatus,
             GetSources, MovePath, RemovePath, RequestToResponse, RequestToStreamingResponse,
             ResetVersion, StreamingResponseItem,
@@ -33,8 +33,9 @@ use {
         server::{serve_connection, ShutdownWatcher},
         signal::shutdown_signal,
     },
+    rand::distr::{Alphanumeric, SampleString},
     serde::{de::DeserializeOwned, Deserialize, Serialize},
-    sqlx::{query, PgPool},
+    sqlx::{query, query_scalar, PgPool},
     std::{
         cmp::min,
         collections::HashMap,
@@ -114,6 +115,7 @@ fn default_log_filter() -> String {
 pub struct Context {
     db_pool: PgPool,
     storage: Arc<Storage>,
+    server_id: Arc<str>,
     sources: Arc<Mutex<CachedSources>>,
     config: Config,
 }
@@ -141,8 +143,11 @@ pub async fn run(
     info!("Connecting to database...");
     let db_pool = PgPool::connect(&config.database_url).await?;
     info!("Connected to database.");
+    let server_id = load_server_id(&db_pool).await?;
+    info!("Server ID: {server_id:?}");
     let ctx = Context {
         config: config.clone(),
+        server_id: server_id.into(),
         storage: Arc::new(Storage::new(config.storage_path)?),
         sources: Arc::new(Mutex::new(CachedSources {
             access_token_to_source_id: load_sources(&db_pool).await?,
@@ -193,6 +198,27 @@ pub async fn run(
     Ok(())
 }
 
+const SERVER_ID_LENGTH: usize = 16;
+
+async fn load_server_id(db_pool: &PgPool) -> anyhow::Result<String> {
+    let mut tx = db_pool.begin().await?;
+    let mut rows = query_scalar!("SELECT server_id FROM server_id")
+        .fetch_all(&mut *tx)
+        .await?;
+    ensure!(rows.len() < 2, "server_id table must contain only one row");
+    if rows.is_empty() {
+        info!("initializing server id");
+        let server_id = Alphanumeric.sample_string(&mut rand::rng(), SERVER_ID_LENGTH);
+        query!("INSERT INTO server_id(server_id) VALUES ($1)", server_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(server_id)
+    } else {
+        Ok(rows.remove(0))
+    }
+}
+
 async fn handle_request(
     ctx: Context,
     request: Request<body::Incoming>,
@@ -219,6 +245,7 @@ async fn try_handle_request(
     let ctx = handler::Context {
         db_pool: ctx.db_pool,
         storage: ctx.storage,
+        server_id: ctx.server_id,
         source_id,
     };
 
@@ -256,6 +283,8 @@ async fn try_handle_request(
         wrap_request(ctx, request, handler::reset_version).await
     } else if path == ContentHashExists::PATH {
         wrap_request(ctx, request, handler::content_hash_exists).await
+    } else if path == v1_legacy::GetServerStatus::PATH {
+        wrap_request(ctx, request, handler::get_server_status_v1_legacy).await
     } else if path == GetServerStatus::PATH {
         wrap_request(ctx, request, handler::get_server_status).await
     } else if path == CheckIntegrity::PATH {

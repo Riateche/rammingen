@@ -9,10 +9,10 @@ use {
     futures::{future::BoxFuture, Stream, TryStreamExt},
     rammingen_protocol::{
         endpoints::{
-            AddVersion, AddVersionResponse, AddVersions, BulkActionStats, CheckIntegrity,
-            ContentHashExists, GetAllEntryVersions, GetDirectChildEntries, GetEntryVersionsAtTime,
-            GetNewEntries, GetServerStatus, GetSources, MovePath, RemovePath, ResetVersion,
-            Response, ServerStatus, SourceInfo, StreamingResponseItem,
+            v1_legacy, AddVersion, AddVersionResponse, AddVersions, BulkActionStats,
+            CheckIntegrity, ContentHashExists, GetAllEntryVersions, GetDirectChildEntries,
+            GetEntryVersionsAtTime, GetNewEntries, GetServerStatus, GetSources, MovePath,
+            RemovePath, ResetVersion, Response, ServerStatus, SourceInfo, StreamingResponseItem,
         },
         entry_kind_from_db, entry_kind_to_db, DateTimeUtc, EncryptedArchivePath,
         EncryptedContentHash, EncryptedSize, Entry, EntryKind, EntryVersion, EntryVersionData,
@@ -30,6 +30,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct Context {
     pub db_pool: PgPool,
+    pub server_id: Arc<str>,
     pub storage: Arc<Storage>,
     /// ID of the connected client.
     pub source_id: SourceId,
@@ -735,11 +736,22 @@ pub async fn content_hash_exists(
 }
 
 /// Get available space on the server.
+pub async fn get_server_status_v1_legacy(
+    ctx: Context,
+    _request: v1_legacy::GetServerStatus,
+) -> Result<Response<v1_legacy::GetServerStatus>> {
+    Ok(v1_legacy::ServerStatus {
+        available_space: ctx.storage.available_space()?,
+    })
+}
+
+/// Get available space on the server.
 pub async fn get_server_status(
     ctx: Context,
     _request: GetServerStatus,
 ) -> Result<Response<GetServerStatus>> {
     Ok(ServerStatus {
+        server_id: ctx.server_id.to_string(),
         available_space: ctx.storage.available_space()?,
     })
 }
