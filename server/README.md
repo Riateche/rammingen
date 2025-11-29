@@ -156,13 +156,14 @@ docker run --name rammingen_local \
 ```
 Apply migrations to the database:
 ```sh
-cargo run --bin rammingen_tests -- \
+cargo run -p rammingen_server --bin rammingen-admin -- \
     --database-url postgres://postgres@127.0.0.1:6123/ \
-    server-only
+    migrate
 ```
 Update SQLX files:
 ```sh
 export DATABASE_URL=postgres://postgres@127.0.0.1:6123/
+cd server
 cargo sqlx prepare
 ```
 The files in `server/.sqlx` will be updated.

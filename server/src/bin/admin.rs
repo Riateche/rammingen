@@ -1,5 +1,6 @@
 use {
-    clap::{Parser, Subcommand},
+    anyhow::ensure,
+    clap::{Args, Parser, Subcommand},
     rammingen_protocol::credentials::AccessToken,
     rammingen_server::{
         default_config_path,
@@ -14,6 +15,15 @@ use {
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "File sync and backup utility")]
 pub struct Cli {
+    #[command(flatten)]
+    pub config_specifier: ConfigSpecifier,
+    #[clap(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Debug, Args)]
+#[group(required = false, multiple = false)]
+pub struct ConfigSpecifier {
     /// Path to server config.
     ///
     /// If omitted, default path is used:
@@ -25,8 +35,10 @@ pub struct Cli {
     /// - %APPDATA%\rammingen-server.conf on Windows
     #[clap(long)]
     pub config: Option<PathBuf>,
-    #[clap(subcommand)]
-    pub command: Command,
+    /// URL of the database, e.g.
+    /// "postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+    #[clap(long)]
+    pub database_url: Option<String>,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -44,13 +56,24 @@ pub enum Command {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config_path = if let Some(path) = cli.config {
-        path
+    ensure!(
+        !(cli.config_specifier.config.is_some() && cli.config_specifier.database_url.is_some()),
+        "cannot specify config and database url at the same time"
+    );
+
+    let database_url = if let Some(url) = cli.config_specifier.database_url {
+        url
     } else {
-        default_config_path()?
+        let config_path = if let Some(path) = cli.config_specifier.config {
+            path
+        } else {
+            default_config_path()?
+        };
+        let config = Config::parse(&config_path)?;
+        config.database_url
     };
-    let config = Config::parse(&config_path)?;
-    let pool = PgPool::connect(&config.database_url).await?;
+
+    let pool = PgPool::connect(&database_url).await?;
     match cli.command {
         Command::Sources => {
             let sources = sources(&pool).await?;
