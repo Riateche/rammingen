@@ -1,6 +1,6 @@
 use {
     crate::{info::DATE_TIME_FORMAT, path::SanitizedLocalPath},
-    anyhow::{ Context, Result},
+    anyhow::{Context, Result},
     chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone},
     clap::{Parser, Subcommand},
     derive_more::{From, Into},
@@ -65,16 +65,16 @@ pub enum Command {
         /// Accepted timestamp format: %Y-%m-%d_%H:%M:%S
         version: Option<DateTimeArg>,
     },
-    /// Shows information about a local path.
+    /// Show information about a local path.
     LocalStatus { path: SanitizedLocalPath },
-    /// Shows information about an archive path.
+    /// Show information about an archive path.
     Ls {
         path: ArchivePath,
         /// Also shows deleted entries.
         #[arg(short, long)]
         deleted: bool,
     },
-    /// Shows the list of available versions for an archive path.
+    /// Show the list of available versions for an archive path.
     History {
         path: ArchivePath,
         /// Also shows versions of all nested paths.
@@ -94,12 +94,14 @@ pub enum Command {
     },
     /// Remove an archive path.
     Remove { archive_path: ArchivePath },
-    /// Shows server status.
-    Status,
-    /// Initiates an integrity check on the server.
+    /// Show server ID and available space on server.
+    ServerStatus,
+    /// Initiate an integrity check on the server.
     CheckIntegrity,
-    /// Generates a new encryption key.
+    /// Generate a new encryption key.
     GenerateEncryptionKey,
+    /// Clear local cache. Next sync will upload all local files as new changes.
+    ClearLocalCache,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, From, Into)]

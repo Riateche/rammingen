@@ -136,7 +136,7 @@ response_type!(ContentHashExists, bool, "v1");
 /// Returns server ID and available space on server.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetServerStatus;
-response_type!(GetServerStatus, ServerStatus, "v1");
+response_type!(GetServerStatus, ServerStatus, "v2");
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerStatus {

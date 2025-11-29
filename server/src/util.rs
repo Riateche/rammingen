@@ -1,6 +1,7 @@
 use {
-    anyhow::{bail, Result},
+    anyhow::{bail, ensure, Result},
     rammingen_protocol::credentials::AccessToken,
+    rand::distr::{Alphanumeric, SampleString},
     sqlx::{query, query_scalar, PgPool},
 };
 
@@ -38,6 +39,39 @@ pub async fn set_access_token(db: &PgPool, name: &str, access_token: &AccessToke
     if rows == 0 {
         bail!("source not found");
     }
+    Ok(())
+}
+
+const SERVER_ID_LENGTH: usize = 16;
+
+pub fn generate_server_id() -> String {
+    Alphanumeric.sample_string(&mut rand::rng(), SERVER_ID_LENGTH)
+}
+
+/// Create a new server ID and write it to the database.
+pub async fn update_server_id(db_pool: &PgPool) -> anyhow::Result<()> {
+    let mut tx = db_pool.begin().await?;
+    let rows = query_scalar!("SELECT server_id FROM server_id")
+        .fetch_all(&mut *tx)
+        .await?;
+    ensure!(rows.len() < 2, "server_id table must contain only one row");
+    let new_server_id = generate_server_id();
+    if rows.is_empty() {
+        println!("Initializing server ID");
+        query!(
+            "INSERT INTO server_id(server_id) VALUES ($1)",
+            new_server_id
+        )
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        println!("Old server ID was {:?}", rows[0]);
+        query!("UPDATE server_id SET server_id = $1", new_server_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    println!("New server ID is {new_server_id:?}");
     Ok(())
 }
 

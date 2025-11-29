@@ -248,3 +248,9 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
     info!("{table}");
     Ok(())
 }
+
+pub async fn clear_local_cache(ctx: &Ctx) -> Result<()> {
+    ctx.db.clear()?;
+    info!("Cleared local cache\nNext sync will upload all local files as new changes");
+    Ok(())
+}

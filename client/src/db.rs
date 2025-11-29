@@ -12,6 +12,7 @@ use {
 
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
 const KEY_NOTIFICATION_STATS: [u8; 4] = [0, 0, 0, 2];
+const KEY_SERVER_ID: [u8; 4] = [0, 0, 0, 3];
 
 pub struct Db {
     #[allow(dead_code)]
@@ -142,6 +143,19 @@ impl Db {
         Ok(())
     }
 
+    pub fn server_id(&self) -> Result<Option<String>> {
+        if let Some(value) = self.db.get(KEY_SERVER_ID)? {
+            Ok(Some(String::from_utf8(value.to_vec())?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn set_server_id(&self, value: &str) -> Result<()> {
+        self.db.insert(KEY_SERVER_ID, value.as_bytes())?;
+        Ok(())
+    }
+
     pub fn get_all_local_entries(&self) -> anyhow::Result<Vec<(SanitizedLocalPath, LocalEntry)>> {
         let load = |key: &IVec, value: &IVec| {
             let path = str::from_utf8(key)?;
@@ -185,6 +199,13 @@ impl Db {
 
     pub fn remove_local_entry(&self, path: &SanitizedLocalPath) -> Result<()> {
         self.local_entries.remove(path)?;
+        Ok(())
+    }
+
+    pub fn clear(&self) -> Result<()> {
+        self.archive_entries.clear()?;
+        self.local_entries.clear()?;
+        self.db.clear()?;
         Ok(())
     }
 }

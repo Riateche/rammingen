@@ -7,7 +7,7 @@ mod storage;
 pub mod util;
 
 use {
-    crate::snapshot::make_snapshot,
+    crate::{snapshot::make_snapshot, util::generate_server_id},
     anyhow::{ensure, Context as _, Result},
     bytes::{BufMut, BytesMut},
     cadd::prelude::IntoType,
@@ -33,7 +33,6 @@ use {
         server::{serve_connection, ShutdownWatcher},
         signal::shutdown_signal,
     },
-    rand::distr::{Alphanumeric, SampleString},
     serde::{de::DeserializeOwned, Deserialize, Serialize},
     sqlx::{query, query_scalar, PgPool},
     std::{
@@ -142,7 +141,7 @@ pub async fn run(
 ) -> Result<()> {
     info!("Connecting to database...");
     let db_pool = PgPool::connect(&config.database_url).await?;
-    info!("Connected to database.");
+    info!("Connected to database");
     let server_id = load_server_id(&db_pool).await?;
     info!("Server ID: {server_id:?}");
     let ctx = Context {
@@ -198,8 +197,6 @@ pub async fn run(
     Ok(())
 }
 
-const SERVER_ID_LENGTH: usize = 16;
-
 async fn load_server_id(db_pool: &PgPool) -> anyhow::Result<String> {
     let mut tx = db_pool.begin().await?;
     let mut rows = query_scalar!("SELECT server_id FROM server_id")
@@ -207,8 +204,8 @@ async fn load_server_id(db_pool: &PgPool) -> anyhow::Result<String> {
         .await?;
     ensure!(rows.len() < 2, "server_id table must contain only one row");
     if rows.is_empty() {
-        info!("initializing server id");
-        let server_id = Alphanumeric.sample_string(&mut rand::rng(), SERVER_ID_LENGTH);
+        info!("Initializing server ID");
+        let server_id = generate_server_id();
         query!("INSERT INTO server_id(server_id) VALUES ($1)", server_id)
             .execute(&mut *tx)
             .await?;

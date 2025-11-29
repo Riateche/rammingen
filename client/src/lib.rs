@@ -16,7 +16,7 @@ mod upload;
 use {
     crate::{
         cli::Command,
-        info::{local_status, ls},
+        info::{clear_local_cache, local_status, ls},
         pull_updates::pull_updates,
         upload::upload,
     },
@@ -249,8 +249,9 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
         cli::Command::History { path, recursive } => {
             list_versions(ctx, &path, recursive).await?;
         }
-        cli::Command::Status => {
+        cli::Command::ServerStatus => {
             let status = ctx.client.request(&GetServerStatus).await?;
+            info!("ServerID: {:?}", status.server_id);
             info!(
                 "Available space on server: {}",
                 pretty_size(status.available_space)
@@ -259,6 +260,9 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
         cli::Command::CheckIntegrity => {
             ctx.client.request(&CheckIntegrity).await?;
             info!("Integrity check complete, no issues found.");
+        }
+        cli::Command::ClearLocalCache => {
+            clear_local_cache(ctx).await?;
         }
         cli::Command::GenerateEncryptionKey => unreachable!(),
     }

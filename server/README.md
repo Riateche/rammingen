@@ -74,11 +74,13 @@ Check [https://hub.docker.com/r/riateche/rammingen-server/tags](Dockerhub page) 
 
     Repeat for every client you'd like to configure.
 
-4. Run the server once to verify the configuration:
+4. Run the server to verify the configuration:
     ```sh
     docker run \
         --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
         --volume /var/storage/:/var/storage/ \
+        --rm -d --name rammingen --replace \
+        --network=host \
         riateche/rammingen:0.1.4
     ```
 5. Consult documentation for docker/podman and your operating system to set up rammingen-server as a continuously running service, for example, by creating a new systemd service for it. It's also recommended to run it under a non-root user.
@@ -190,3 +192,33 @@ For example, if the server config has `snapshot_interval: "1week", retain_detail
 Removing detailed history only happens when a snapshot is created, so actual time interval for which the detailed history is available may be larger than the configured value of `retain_detailed_history_for`.
 
 Note that the list of changes for a file or directory will only display snapshots that actually contain changes compared to a previous snapshot.
+
+## Restoring server from backup
+
+To restore the rammingen server from backup, follow these steps:
+
+1. Shut down rammingen-server.
+2. Restore the database and the local file storage from a backup.
+3. Apply database migrations:
+    ```sh
+    docker run \
+        --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
+        --entrypoint /sbin/rammingen-admin \
+        riateche/rammingen:0.1.4 migrate
+    ```
+4. Update server ID to ensure that clients will be working correctly:
+    ```sh
+    docker run \
+        --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
+        --entrypoint /sbin/rammingen-admin \
+        riateche/rammingen:0.1.4 update-server-id
+    ```
+5. Start rammingen-server.
+
+Next, for every client, repeat the following actions:
+
+1. Run `rammingen clear-local-cache`.
+2. For every configured local mount:
+    1. If you'd like to restore these files from server, remove the local files. The first `rammingen sync` will download these files from server again.
+    2. If you'd like to overwrite archive files with local files, keep the local files intact. The first `rammingen sync` will upload all existing local files as new changes.
+3. Run `rammingen sync`.

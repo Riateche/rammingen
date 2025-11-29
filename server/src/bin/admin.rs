@@ -51,6 +51,8 @@ pub enum Command {
     UpdateAccessToken { name: String },
     /// Intializes or updates database structure.
     Migrate,
+    /// Update server ID.
+    UpdateServerId,
 }
 
 #[tokio::main]
@@ -103,6 +105,10 @@ async fn main() -> anyhow::Result<()> {
         Command::Migrate => {
             println!("Running migrations...");
             rammingen_server::util::migrate(&pool).await?;
+            println!("Done");
+        }
+        Command::UpdateServerId => {
+            rammingen_server::util::update_server_id(&pool).await?;
             println!("Done");
         }
     };
