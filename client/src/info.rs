@@ -13,7 +13,7 @@ use {
         endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
         ArchivePath, DateTimeUtc, EntryKind, SourceId,
     },
-    rammingen_sdk::content::DecryptedEntryVersion,
+    rammingen_sdk::content::LocalArchiveEntry,
     std::fmt::Display,
     tracing::{error, info},
 };
@@ -94,7 +94,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
             EntryKind::File => {
                 info!("Current status: existing file");
                 let content = main_entry
-                    .content
+                    .file_data
                     .context("missing content for file entry")?;
                 info!("FS modified at: {}", pretty_time(content.modified_at));
                 info!(
@@ -128,7 +128,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
         .stream(&GetDirectChildEntries(ctx.cipher.encrypt_path(path)?));
 
     while let Some(entry) = stream.try_next().await? {
-        entries.push(DecryptedEntryVersion::new(entry.data, &ctx.cipher)?);
+        entries.push(LocalArchiveEntry::decrypt(entry.data, &ctx.cipher)?);
     }
     // already sorted by path, so we use stable sort
     entries.sort_by_key(|entry| match &entry.kind {
@@ -178,12 +178,12 @@ fn pretty_time(value: DateTimeUtc) -> impl Display {
     local.format(DATE_TIME_FORMAT)
 }
 
-fn pretty_status(data: &DecryptedEntryVersion) -> Result<String> {
-    let text = if let Some(kind) = data.kind {
+fn pretty_status(entry: &LocalArchiveEntry) -> Result<String> {
+    let text = if let Some(kind) = entry.kind {
         match kind {
             EntryKind::File => {
-                let content = data
-                    .content
+                let content = entry
+                    .file_data
                     .as_ref()
                     .context("missing content for file entry")?;
                 let mode = if let Some(unix_mode) = content.unix_mode {
@@ -222,19 +222,27 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
     }
     table.add_row(header);
     while let Some(item) = stream.try_next().await? {
-        let data = DecryptedEntryVersion::new(item.data, &ctx.cipher)?;
-        let recorded_at = pretty_time(data.recorded_at);
-        let status = pretty_status(&data)?;
-        let trigger = format!("{:?}", data.record_trigger);
-        let mut row = row![recorded_at, status, trigger, sources.format(data.source_id)];
+        let entry = LocalArchiveEntry::decrypt(item.data, &ctx.cipher)?;
+        let recorded_at = pretty_time(entry.recorded_at);
+        let status = pretty_status(&entry)?;
+        let trigger = format!("{:?}", entry.record_trigger);
+        let mut row = row![
+            recorded_at,
+            status,
+            trigger,
+            sources.format(entry.source_id)
+        ];
         if recursive {
             let relative_path = if let Some(parent) = &parent {
-                data.path
+                entry
+                    .path
                     .strip_prefix(parent)
-                    .with_context(|| format!("strip_prefix({:?}, {:?}) failed", data.path, parent))?
+                    .with_context(|| {
+                        format!("strip_prefix({:?}, {:?}) failed", entry.path, parent)
+                    })?
                     .to_string()
             } else {
-                data.path.to_str_without_prefix().to_string()
+                entry.path.to_str_without_prefix().to_string()
             };
             row.add_cell(cell!(relative_path));
         }

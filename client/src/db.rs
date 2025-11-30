@@ -1,9 +1,12 @@
 use {
     crate::{counters::NotificationCounters, path::SanitizedLocalPath},
-    anyhow::{Context as _, Result},
+    anyhow::{bail, Context as _, Result},
     byteorder::{ByteOrder, LE},
-    rammingen_protocol::{encoding, ArchivePath, DateTimeUtc, EntryKind, EntryUpdateNumber},
-    rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry},
+    rammingen_protocol::{
+        encoding, ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryUpdateNumber,
+        RecordTrigger, SourceId,
+    },
+    rammingen_sdk::content::{LocalArchiveEntry, LocalEntry, LocalFileEntry},
     serde::{Deserialize, Serialize},
     sled::{transaction::ConflictableTransactionError, IVec, Transactional},
     std::{fmt::Debug, io, iter, path::Path, str, thread::sleep, time::Duration},
@@ -19,6 +22,102 @@ pub struct Db {
     db: sled::Db,
     archive_entries: sled::Tree,
     local_entries: sled::Tree,
+}
+
+mod local_entry_version {
+    pub const V2: u32 = 2;
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct LocalEntryLegacyV1 {
+    pub kind: EntryKind,
+    pub file_data: Option<LocalFileEntryLegacyV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct LocalFileEntryLegacyV1 {
+    pub modified_at: DateTimeUtc,
+    pub original_size: u64,
+    pub encrypted_size: u64,
+    pub hash: ContentHash,
+    pub unix_mode: Option<u32>,
+}
+
+mod archive_entry_version {
+    pub const V2: u32 = 40002;
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LocalArchiveEntryLegacyV1 {
+    path: ArchivePath,
+    recorded_at: DateTimeUtc,
+    source_id: SourceId,
+    record_trigger: RecordTrigger,
+    kind: Option<EntryKind>,
+    file_data: Option<LocalFileEntryLegacyV1>,
+}
+
+fn decode_local_entry(bytes: &[u8]) -> anyhow::Result<LocalEntry> {
+    let version = u32::from_le_bytes(bytes.get(0..4).context("not enough data")?.try_into()?);
+    // V1 entry was serialized without version. First 4 bytes were `EntryKind` (0 or 1 in LE).
+    if version < local_entry_version::V2 {
+        let value = encoding::deserialize::<LocalEntryLegacyV1>(bytes)?;
+        Ok(LocalEntry {
+            kind: value.kind,
+            file_data: value.file_data.map(|value| LocalFileEntry {
+                modified_at: value.modified_at,
+                original_size: value.original_size,
+                encrypted_size: value.encrypted_size,
+                hash: value.hash,
+                unix_mode: value.unix_mode,
+            }),
+        })
+    } else if version == local_entry_version::V2 {
+        let payload = bytes.get(4..).context("not enough data")?;
+        Ok(encoding::deserialize::<LocalEntry>(payload)?)
+    } else {
+        bail!("unknown encoding version: {version:?}");
+    }
+}
+
+fn encode_local_entry(entry: &LocalEntry) -> anyhow::Result<Vec<u8>> {
+    let mut vec = local_entry_version::V2.to_le_bytes().to_vec();
+    encoding::serialize_into(&mut vec, entry)?;
+    Ok(vec)
+}
+
+fn decode_archive_entry(bytes: &[u8]) -> anyhow::Result<LocalArchiveEntry> {
+    let version = u32::from_le_bytes(bytes.get(0..4).context("not enough data")?.try_into()?);
+    // V1 entry was serialized without version. First 8 bytes were the length of `path`.
+    // Typical max path length is up to 4096, so we assume that it's always less than `V2`.
+    if version < archive_entry_version::V2 {
+        let value = encoding::deserialize::<LocalArchiveEntryLegacyV1>(bytes)?;
+        Ok(LocalArchiveEntry {
+            path: value.path,
+            recorded_at: value.recorded_at,
+            source_id: value.source_id,
+            record_trigger: value.record_trigger,
+            kind: value.kind,
+            file_data: value.file_data.map(|value| LocalFileEntry {
+                modified_at: value.modified_at,
+                original_size: value.original_size,
+                encrypted_size: value.encrypted_size,
+                hash: value.hash,
+                unix_mode: value.unix_mode,
+            }),
+        })
+    } else if version == archive_entry_version::V2 {
+        let payload = bytes.get(4..).context("not enough data")?;
+        Ok(encoding::deserialize::<LocalArchiveEntry>(payload)?)
+    } else {
+        bail!("unknown encoding version: {version:?}");
+    }
+}
+
+fn encode_archive_entry(entry: &LocalArchiveEntry) -> anyhow::Result<Vec<u8>> {
+    let mut vec = archive_entry_version::V2.to_le_bytes().to_vec();
+    encoding::serialize_into(&mut vec, entry)?;
+    Ok(vec)
 }
 
 impl Db {
@@ -49,20 +148,18 @@ impl Db {
 
     pub fn get_all_archive_entries(
         &self,
-    ) -> impl DoubleEndedIterator<Item = Result<DecryptedEntryVersion>> {
+    ) -> impl DoubleEndedIterator<Item = Result<LocalArchiveEntry>> {
         self.archive_entries
             .iter()
-            .map(|pair| Ok(encoding::deserialize::<DecryptedEntryVersion>(&pair?.1)?))
+            .map(|pair| decode_archive_entry(&pair?.1))
     }
 
-    pub fn get_archive_entry(&self, path: &ArchivePath) -> Result<Option<DecryptedEntryVersion>> {
+    pub fn get_archive_entry(&self, path: &ArchivePath) -> Result<Option<LocalArchiveEntry>> {
         if let Some(value) = self
             .archive_entries
             .get(path.to_str_without_prefix().as_bytes())?
         {
-            Ok(Some(encoding::deserialize::<DecryptedEntryVersion>(
-                &value,
-            )?))
+            Ok(Some(decode_archive_entry(&value)?))
         } else {
             Ok(None)
         }
@@ -71,13 +168,13 @@ impl Db {
     pub fn get_archive_entries(
         &self,
         path: &ArchivePath,
-    ) -> impl DoubleEndedIterator<Item = Result<DecryptedEntryVersion>> {
+    ) -> impl DoubleEndedIterator<Item = Result<LocalArchiveEntry>> {
         let root_entry = (|| {
             let value = self
                 .archive_entries
                 .get(path.to_str_without_prefix().as_bytes())?
                 .with_context(|| format!("no such archive path: {}", path))?;
-            anyhow::Ok(encoding::deserialize::<DecryptedEntryVersion>(&value)?)
+            anyhow::Ok(decode_archive_entry(&value)?)
         })();
         let children = if root_entry
             .as_ref()
@@ -88,7 +185,7 @@ impl Db {
             Some(
                 self.archive_entries
                     .scan_prefix(prefix)
-                    .map(|pair| Ok(encoding::deserialize::<DecryptedEntryVersion>(&pair?.1)?)),
+                    .map(|pair| decode_archive_entry(&pair?.1)),
             )
         } else {
             None
@@ -107,7 +204,7 @@ impl Db {
 
     pub fn update_archive_entries(
         &self,
-        updates: &[DecryptedEntryVersion],
+        updates: &[LocalArchiveEntry],
         update_number: EntryUpdateNumber,
     ) -> Result<()> {
         if updates.is_empty() {
@@ -117,7 +214,7 @@ impl Db {
             for update in updates {
                 archive_entries.insert(
                     update.path.to_str_without_prefix().as_bytes(),
-                    encoding::serialize(update).map_err(into_abort_err)?,
+                    encode_archive_entry(update).map_err(into_abort_err)?,
                 )?;
             }
             db.insert(
@@ -161,7 +258,7 @@ impl Db {
             let path = str::from_utf8(key)?;
             let path = SanitizedLocalPath::new(path)
                 .with_context(|| format!("local entry {path:?} is unsupported"))?;
-            let data = encoding::deserialize::<LocalEntry>(value)
+            let data = decode_local_entry(value)
                 .with_context(|| format!("invalid data for local entry {path:?}"))?;
             anyhow::Ok((path, data))
         };
@@ -185,15 +282,14 @@ impl Db {
 
     pub fn get_local_entry(&self, path: &SanitizedLocalPath) -> Result<Option<LocalEntry>> {
         if let Some(value) = self.local_entries.get(path)? {
-            Ok(Some(encoding::deserialize::<LocalEntry>(&value)?))
+            Ok(Some(decode_local_entry(&value)?))
         } else {
             Ok(None)
         }
     }
 
     pub fn set_local_entry(&self, path: &SanitizedLocalPath, data: &LocalEntry) -> Result<()> {
-        self.local_entries
-            .insert(path, encoding::serialize(data)?)?;
+        self.local_entries.insert(path, encode_local_entry(data)?)?;
         Ok(())
     }
 

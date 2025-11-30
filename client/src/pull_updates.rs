@@ -3,7 +3,7 @@ use {
     anyhow::{bail, Result},
     futures::TryStreamExt,
     rammingen_protocol::endpoints::{GetNewEntries, GetServerStatus},
-    rammingen_sdk::content::DecryptedEntryVersion,
+    rammingen_sdk::content::LocalArchiveEntry,
     std::cmp::max,
     tracing::info,
 };
@@ -26,7 +26,7 @@ pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     let mut stream = ctx.client.stream(&GetNewEntries { last_update_number });
     let mut decrypted = Vec::new();
     while let Some(update) = stream.try_next().await? {
-        decrypted.push(DecryptedEntryVersion::new(update.data, &ctx.cipher)?);
+        decrypted.push(LocalArchiveEntry::decrypt(update.data, &ctx.cipher)?);
         last_update_number = max(last_update_number, update.update_number);
     }
     ctx.db

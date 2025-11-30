@@ -25,12 +25,12 @@ pub struct LocalEntry {
 }
 
 impl LocalEntry {
-    pub fn is_same_as_entry(&self, other: &DecryptedEntryVersion) -> bool {
+    pub fn is_same_as_entry(&self, other: &LocalArchiveEntry) -> bool {
         if Some(self.kind) != other.kind {
             return false;
         }
         match self.kind {
-            EntryKind::File => match (&self.file_data, &other.content) {
+            EntryKind::File => match (&self.file_data, &other.file_data) {
                 (Some(content), Some(other)) => {
                     if content.hash != other.hash {
                         return false;
@@ -69,24 +69,24 @@ impl LocalEntry {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DecryptedEntryVersion {
+pub struct LocalArchiveEntry {
     pub path: ArchivePath,
     pub recorded_at: DateTimeUtc,
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
-    pub content: Option<LocalFileEntry>,
+    pub file_data: Option<LocalFileEntry>,
 }
 
-impl DecryptedEntryVersion {
-    pub fn new(data: EntryVersionData, cipher: &Cipher) -> Result<Self> {
+impl LocalArchiveEntry {
+    pub fn decrypt(data: EntryVersionData, cipher: &Cipher) -> Result<Self> {
         Ok(Self {
             path: cipher.decrypt_path(&data.path)?,
             recorded_at: data.recorded_at,
             source_id: data.source_id,
             record_trigger: data.record_trigger,
             kind: data.kind,
-            content: if let Some(content) = data.content {
+            file_data: if let Some(content) = data.content {
                 Some(LocalFileEntry {
                     modified_at: content.modified_at,
                     original_size: cipher.decrypt_size(&content.original_size)?,
@@ -106,4 +106,34 @@ pub struct EncryptedFileHead {
     pub hash: ContentHash,
     pub original_size: u64,
     pub encrypted_size: u64,
+}
+
+#[test]
+fn t1() {
+    // let entry = LocalEntry {
+    //     kind: EntryKind::File,
+    //     file_data: Some(LocalFileEntry {
+    //         modified_at: Default::default(),
+    //         original_size: 1,
+    //         encrypted_size: 2,
+    //         hash: ContentHash::new([0; 32]),
+    //         unix_mode: Some(1),
+    //     }),
+    // };
+
+    let entry = LocalArchiveEntry {
+        path: "ar:/a/c".parse().unwrap(),
+        recorded_at: Default::default(),
+        source_id: 1.into(),
+        record_trigger: RecordTrigger::Move,
+        kind: Some(EntryKind::Directory),
+        file_data: None,
+    };
+
+    println!(
+        "{:?}",
+        rammingen_protocol::encoding::serialize(&entry).unwrap()
+    );
+    const MAGIC: u32 = 40000;
+    println!("{:?}", MAGIC.to_le_bytes());
 }

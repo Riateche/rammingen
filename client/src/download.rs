@@ -13,7 +13,7 @@ use {
         util::{archive_to_native_relative_path, interrupt_on_error, ErrorSender},
         ArchivePath, DateTimeUtc, EntryKind,
     },
-    rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry, LocalFileEntry},
+    rammingen_sdk::content::{LocalArchiveEntry, LocalEntry, LocalFileEntry},
     sha2::{Digest, Sha256},
     std::{
         path::Path,
@@ -68,7 +68,7 @@ pub async fn download_version(
         });
         let mut any = false;
         while let Some(entry) = response_stream.try_next().await? {
-            let entry = DecryptedEntryVersion::new(entry.data, &ctx.cipher)?;
+            let entry = LocalArchiveEntry::decrypt(entry.data, &ctx.cipher)?;
             any = true;
             y.send(Ok(entry)).await;
         }
@@ -127,7 +127,7 @@ pub async fn download(
     root_local_path: &SanitizedLocalPath,
     rules: &mut Rules,
     is_mount: bool,
-    versions: impl Stream<Item = Result<DecryptedEntryVersion>>,
+    versions: impl Stream<Item = Result<LocalArchiveEntry>>,
     dry_run: bool,
 ) -> Result<bool> {
     interrupt_on_error(|error_sender| async move {
@@ -179,7 +179,7 @@ pub async fn download(
 
 async fn download_inner(
     ctx: &mut DownloadContext<'_>,
-    versions: impl Stream<Item = Result<DecryptedEntryVersion>>,
+    versions: impl Stream<Item = Result<LocalArchiveEntry>>,
 ) -> Result<bool> {
     tokio::pin!(versions);
     if ctx.is_mount {
@@ -262,7 +262,7 @@ async fn download_inner(
 
         if ctx.dry_run {
             info!("Would download {}", entry_local_path);
-            if let Some(content) = &entry.content {
+            if let Some(content) = &entry.file_data {
                 ctx.ctx
                     .final_counters
                     .downloaded_bytes
@@ -276,7 +276,7 @@ async fn download_inner(
                 }
                 EntryKind::File => {
                     let content = entry
-                        .content
+                        .file_data
                         .clone()
                         .context("missing content info for existing file")?;
                     let (sender, receiver) = oneshot::channel();
@@ -404,7 +404,7 @@ async fn finalize_download_task(
 }
 
 struct FinalizeDownloadTaskItem {
-    entry: DecryptedEntryVersion,
+    entry: LocalArchiveEntry,
     db_data: Option<LocalEntry>,
     local_path: SanitizedLocalPath,
     must_delete: bool,
@@ -452,7 +452,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
         EntryKind::File => {
             let mut content = item
                 .entry
-                .content
+                .file_data
                 .context("missing content info for existing file")?;
             let file_receiver = item
                 .file_receiver
