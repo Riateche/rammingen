@@ -240,7 +240,7 @@ impl EntryVersionData {
     /// Checks if `AddVersion` is an update compared to `self`.
     ///
     /// This is just an equality check for the most part, but it includes
-    /// special handling of `unix_mode`.
+    /// special handling of `unix_mode` and `is_symlink`.
     pub fn is_same(&self, update: &AddVersion) -> bool {
         self.path == update.path && self.kind == update.kind && {
             match (&self.content, &update.content) {

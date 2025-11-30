@@ -16,12 +16,24 @@ pub struct LocalFileEntry {
     pub encrypted_size: u64,
     pub hash: ContentHash,
     pub unix_mode: Option<u32>,
+    pub is_symlink: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LocalEntry {
     pub kind: EntryKind,
     pub file_data: Option<LocalFileEntry>,
+}
+
+fn is_same_optional<T: PartialEq>(local: Option<T>, other: Option<T>) -> bool {
+    match (local, other) {
+        // Property is not locally supported, so no need to update the local file regardless of other value.
+        (None, _) => true,
+        // Other version doesn't have a value, so it cannot be used to update the local file.
+        (Some(_), None) => true,
+        // We need to update local file if the property value changed.
+        (Some(local), Some(other)) => local == other,
+    }
 }
 
 impl LocalEntry {
@@ -32,14 +44,9 @@ impl LocalEntry {
         match self.kind {
             EntryKind::File => match (&self.file_data, &other.file_data) {
                 (Some(content), Some(other)) => {
-                    if content.hash != other.hash {
-                        return false;
-                    }
-                    match (content.unix_mode, other.unix_mode) {
-                        (None, _) => true,
-                        (Some(_), None) => true,
-                        (Some(unix_mode), Some(other)) => unix_mode == other,
-                    }
+                    content.hash == other.hash
+                        && is_same_optional(content.unix_mode, other.unix_mode)
+                        && is_same_optional(content.is_symlink, other.is_symlink)
                 }
                 _ => false,
             },
@@ -93,6 +100,7 @@ impl LocalArchiveEntry {
                     encrypted_size: content.encrypted_size,
                     hash: cipher.decrypt_content_hash(&content.hash)?,
                     unix_mode: content.unix_mode,
+                    is_symlink: content.is_symlink,
                 })
             } else {
                 None

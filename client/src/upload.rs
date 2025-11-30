@@ -9,7 +9,7 @@ use {
         unix_mode, Ctx,
     },
     anyhow::{anyhow, bail, Context, Result},
-    fs::symlink_metadata,
+    cadd::convert::IntoType,
     fs_err::{self as fs, File},
     futures::future::BoxFuture,
     rammingen_protocol::{
@@ -242,11 +242,18 @@ fn upload_inner<'a>(
                 modified.with_context(|| format!("file {:?} keeps updating", local_path))?;
             let modified_datetime = DateTimeUtc::from(modified);
             let unix_mode = unix_mode(&metadata);
+            let is_symlink = if symlinks_enabled() {
+                Some(metadata.is_symlink())
+            } else {
+                None
+            };
 
             let maybe_changed = db_data.as_ref().is_none_or(|db_data| {
                 db_data.kind != kind || {
                     db_data.file_data.as_ref().is_none_or(|content| {
-                        content.modified_at != modified_datetime || content.unix_mode != unix_mode
+                        content.modified_at != modified_datetime
+                            || content.unix_mode != unix_mode
+                            || content.is_symlink != is_symlink
                     })
                 }
             });
@@ -278,13 +285,13 @@ fn upload_inner<'a>(
                     );
                 }
 
-                // TODO: symlinks....
                 let local_entry = LocalFileEntry {
                     modified_at: modified_datetime,
                     original_size: file_data.original_size,
                     encrypted_size: file_data.encrypted_size,
                     hash: file_data.hash.clone(),
                     unix_mode,
+                    is_symlink,
                 };
 
                 changed = db_data.as_ref().is_none_or(|db_data| {
@@ -292,13 +299,14 @@ fn upload_inner<'a>(
                         db_data.file_data.as_ref().is_none_or(|content| {
                             content.hash != local_entry.hash
                                 || content.unix_mode != local_entry.unix_mode
+                                || content.is_symlink != local_entry.is_symlink
                         })
                     }
                 });
 
                 if changed {
                     if ctx.dry_run {
-                        if u128::from(file_data.encrypted_size)
+                        if file_data.encrypted_size.into_type::<u128>()
                             > ctx.ctx.config.warn_about_files_larger_than.as_u128()
                         {
                             warn!(
@@ -361,7 +369,7 @@ fn upload_inner<'a>(
                                 encrypted_size: content.encrypted_size,
                                 hash: ctx.ctx.cipher.encrypt_content_hash(&content.hash)?,
                                 unix_mode: content.unix_mode,
-                                is_symlink: todo!(),
+                                is_symlink: content.is_symlink,
                             })
                         } else {
                             None
@@ -394,10 +402,6 @@ fn upload_inner<'a>(
             for entry in fs::read_dir(local_path)? {
                 let entry = entry?;
                 let entry_path = entry.path();
-                if symlink_metadata(&entry_path)?.is_symlink() {
-                    debug!("Skipping symlink: {:?}", entry_path);
-                    continue;
-                }
                 let file_name = entry.file_name();
                 let file_name_str = file_name
                     .to_str()

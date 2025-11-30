@@ -70,6 +70,7 @@ fn decode_local_entry(bytes: &[u8]) -> anyhow::Result<LocalEntry> {
                 encrypted_size: value.encrypted_size,
                 hash: value.hash,
                 unix_mode: value.unix_mode,
+                is_symlink: None,
             }),
         })
     } else if version == local_entry_version::V2 {
@@ -104,6 +105,7 @@ fn decode_archive_entry(bytes: &[u8]) -> anyhow::Result<LocalArchiveEntry> {
                 encrypted_size: value.encrypted_size,
                 hash: value.hash,
                 unix_mode: value.unix_mode,
+                is_symlink: None,
             }),
         })
     } else if version == archive_entry_version::V2 {

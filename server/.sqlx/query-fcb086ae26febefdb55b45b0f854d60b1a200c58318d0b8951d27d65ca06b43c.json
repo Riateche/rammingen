@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO entries (\n                    update_number,\n                    recorded_at,\n\n                    kind,\n                    parent_dir,\n                    path,\n                    source_id,\n                    record_trigger,\n\n                    original_size,\n                    encrypted_size,\n                    modified_at,\n                    content_hash,\n                    unix_mode,\n                    is_symlink\n                ) VALUES (\n                    nextval('entry_update_numbers'),\n                    now(),\n                    $1, $2, $3, $4, $5,\n                    NULL, NULL, NULL, NULL, NULL, NULL\n                ) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Varchar",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fcb086ae26febefdb55b45b0f854d60b1a200c58318d0b8951d27d65ca06b43c"
+}

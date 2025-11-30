@@ -2791,6 +2791,7 @@ dependencies = [
  "byte-unit",
  "byteorder",
  "bytes",
+ "cadd",
  "chacha20poly1305",
  "chrono",
  "clap",

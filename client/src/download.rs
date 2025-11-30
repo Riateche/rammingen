@@ -2,6 +2,7 @@ use {
     crate::{
         path::SanitizedLocalPath,
         rules::Rules,
+        symlinks_enabled,
         term::{set_status, set_status_updater},
         Ctx,
     },
@@ -472,7 +473,20 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                     return Ok(());
                 }
             }
-            rename(tmp_file.path(), &item.local_path)?;
+            if symlinks_enabled() && content.is_symlink == Some(true) {
+                let link_target = fs_err::read_to_string(tmp_file.path())
+                    .context("failed to read symlink target from downloaded file")?;
+                #[cfg(target_family = "unix")]
+                {
+                    fs_err::os::unix::fs::symlink(link_target, &item.local_path)?;
+                }
+                #[cfg(not(target_family = "unix"))]
+                {
+                    unreachable!();
+                }
+            } else {
+                rename(tmp_file.path(), &item.local_path)?;
+            }
 
             #[cfg(target_family = "unix")]
             {

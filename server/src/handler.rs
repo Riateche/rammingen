@@ -178,7 +178,7 @@ fn get_parent_dir<'a>(
                     nextval('entry_update_numbers'),
                     now(),
                     $1, $2, $3, $4, $5,
-                    NULL, NULL, NULL, NULL, NULL, false
+                    NULL, NULL, NULL, NULL, NULL, NULL
                 ) RETURNING id",
                 kind,
                 parent_of_parent,

@@ -90,9 +90,9 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         query!("
             INSERT INTO entry_versions (
                 entry_id, update_number, snapshot_id, path, recorded_at, source_id,
-                record_trigger, kind, original_size, encrypted_size, modified_at, content_hash, unix_mode
+                record_trigger, kind, original_size, encrypted_size, modified_at, content_hash, unix_mode, is_symlink
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
             );",
             version.entry_id,
             version.update_number,
@@ -107,6 +107,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
             version.modified_at,
             version.content_hash,
             version.unix_mode,
+            version.is_symlink,
         ).execute(&mut *tx)
         .await?;
         if let Some(hash) = version.content_hash {

@@ -97,8 +97,8 @@ pub struct AddVersion {
 /// Adds a new versions of the specified paths.
 /// If `kind` is `None`, records deletion of the path.
 /// `content` must be specified only if the entry is an existing file.
-/// If `unix_mode` is not specified in `content`, the previous `unix_mode`
-/// is preserved (if any).
+/// If `unix_mode` or `is_symlink` are not specified in `content`, the previous values
+/// are preserved (if any).
 /// Does nothing if the specified version is considered the same
 /// as the last version of this path (`record_trigger` and `modified_at`
 /// do not count as meaningful changes).

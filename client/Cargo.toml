@@ -20,6 +20,7 @@ bincode = { workspace = true }
 byte-unit = { workspace = true }
 byteorder = { workspace = true }
 bytes = { workspace = true }
+cadd = { workspace = true }
 chacha20poly1305 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }

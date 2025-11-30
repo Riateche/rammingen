@@ -45,7 +45,8 @@ impl Client {
             actual_encrypted_size,
             local_entry.encrypted_size,
         );
-        let (_, actual_hash, actual_size) = maybe_block_in_place(|| decryptor.finish())?;
+        let (file, actual_hash, actual_size) = maybe_block_in_place(|| decryptor.finish())?;
+        file.sync_all()?;
         ensure!(
             actual_size == local_entry.original_size,
             "content size mismatch; actual {actual_size}, expected {}",

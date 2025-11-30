@@ -112,6 +112,11 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
                 } else {
                     info!("Unix mode: n/a");
                 }
+                if let Some(is_symlink) = content.is_symlink {
+                    info!("Symlink: {is_symlink}");
+                } else {
+                    info!("Symlink: n/a");
+                };
                 info!("Content hash: {}", content.hash);
             }
             EntryKind::Directory => {
