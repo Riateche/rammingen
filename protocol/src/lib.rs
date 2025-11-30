@@ -223,6 +223,19 @@ pub struct EntryVersionData {
     pub content: Option<FileContent>,
 }
 
+fn is_same_or_unknown<T: PartialEq>(old: Option<T>, new: Option<T>) -> bool {
+    match (old, new) {
+        // Unknown in old and new, no need to record it.
+        (None, None) => true,
+        // New known value, we need to record it.
+        (None, Some(_)) => false,
+        // No new known value, no need to record it.
+        (Some(_), None) => true,
+        // Old and new are known values, we need to record it if it's different.
+        (Some(mode1), Some(mode2)) => mode1 == mode2,
+    }
+}
+
 impl EntryVersionData {
     /// Checks if `AddVersion` is an update compared to `self`.
     ///
@@ -233,14 +246,8 @@ impl EntryVersionData {
             match (&self.content, &update.content) {
                 (Some(content), Some(update)) => {
                     content.hash == update.hash
-                        && match (content.unix_mode, update.unix_mode) {
-                            (None, None) => true,
-                            // new value of `unix_mode`, we need to record it
-                            (None, Some(_)) => false,
-                            // no new value of `unix_mode`, no need to record it
-                            (Some(_), None) => true,
-                            (Some(mode1), Some(mode2)) => mode1 == mode2,
-                        }
+                        && is_same_or_unknown(content.unix_mode, update.unix_mode)
+                        && is_same_or_unknown(content.is_symlink, update.is_symlink)
                 }
                 (None, None) => true,
                 _ => false,
@@ -284,4 +291,7 @@ pub struct FileContent {
     /// Unix mode of the file. Absent if unix mode is not available on the system
     /// that generated this `FileContent` value.
     pub unix_mode: Option<u32>,
+    /// `Some(true)` if this file is a symlink. `Some(false)` if it's a regular file.
+    /// `None` if symlinks are not supported on the system that generated this `FileContent` value.
+    pub is_symlink: Option<bool>,
 }

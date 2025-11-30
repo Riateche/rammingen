@@ -10,7 +10,7 @@ use {
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DecryptedContentHead {
+pub struct LocalFileEntry {
     pub modified_at: DateTimeUtc,
     pub original_size: u64,
     pub encrypted_size: u64,
@@ -21,7 +21,7 @@ pub struct DecryptedContentHead {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LocalEntry {
     pub kind: EntryKind,
-    pub content: Option<DecryptedContentHead>,
+    pub file_data: Option<LocalFileEntry>,
 }
 
 impl LocalEntry {
@@ -30,7 +30,7 @@ impl LocalEntry {
             return false;
         }
         match self.kind {
-            EntryKind::File => match (&self.content, &other.content) {
+            EntryKind::File => match (&self.file_data, &other.content) {
                 (Some(content), Some(other)) => {
                     if content.hash != other.hash {
                         return false;
@@ -56,7 +56,10 @@ impl LocalEntry {
             return Ok(false);
         }
         if self.kind == EntryKind::File {
-            let content = self.content.as_ref().context("missing content for file")?;
+            let content = self
+                .file_data
+                .as_ref()
+                .context("missing content for file")?;
             if DateTimeUtc::from(metadata.modified()?) != content.modified_at {
                 return Ok(false);
             }
@@ -72,7 +75,7 @@ pub struct DecryptedEntryVersion {
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
     pub kind: Option<EntryKind>,
-    pub content: Option<DecryptedContentHead>,
+    pub content: Option<LocalFileEntry>,
 }
 
 impl DecryptedEntryVersion {
@@ -84,7 +87,7 @@ impl DecryptedEntryVersion {
             record_trigger: data.record_trigger,
             kind: data.kind,
             content: if let Some(content) = data.content {
-                Some(DecryptedContentHead {
+                Some(LocalFileEntry {
                     modified_at: content.modified_at,
                     original_size: cipher.decrypt_size(&content.original_size)?,
                     encrypted_size: content.encrypted_size,

@@ -94,6 +94,7 @@ macro_rules! convert_version_data {
                             .into(),
                     ),
                     unix_mode: row.unix_mode.map(TryInto::try_into).transpose()?,
+                    is_symlink: row.is_symlink,
                 })
             } else {
                 None
@@ -171,12 +172,13 @@ fn get_parent_dir<'a>(
                     encrypted_size,
                     modified_at,
                     content_hash,
-                    unix_mode
+                    unix_mode,
+                    is_symlink
                 ) VALUES (
                     nextval('entry_update_numbers'),
                     now(),
                     $1, $2, $3, $4, $5,
-                    NULL, NULL, NULL, NULL, NULL
+                    NULL, NULL, NULL, NULL, NULL, false
                 ) RETURNING id",
                 kind,
                 parent_of_parent,
@@ -262,6 +264,11 @@ async fn add_version_inner<'a>(
             .and_then(|c| c.unix_mode)
             .or_else(|| entry.data.content.as_ref().and_then(|ec| ec.unix_mode))
             .map(i64::from);
+        let is_symlink_db = request
+            .content
+            .as_ref()
+            .and_then(|c| c.is_symlink)
+            .or_else(|| entry.data.content.as_ref().and_then(|ec| ec.is_symlink));
         query!(
             "UPDATE entries
             SET update_number = nextval('entry_update_numbers'),
@@ -273,8 +280,9 @@ async fn add_version_inner<'a>(
                 encrypted_size = $5,
                 modified_at = $6,
                 content_hash = $7,
-                unix_mode = $8
-            WHERE id = $9",
+                unix_mode = $8,
+                is_symlink = $9
+            WHERE id = $10",
             ctx.source_id.to_db(),
             request.record_trigger.to_db(),
             entry_kind_to_db(request.kind),
@@ -283,6 +291,7 @@ async fn add_version_inner<'a>(
             modified_at_db,
             content_hash_db,
             unix_mode_db,
+            is_symlink_db,
             entry.id.to_db(),
         )
         .execute(&mut **tx)
@@ -294,6 +303,7 @@ async fn add_version_inner<'a>(
             .as_ref()
             .and_then(|c| c.unix_mode)
             .map(i64::from);
+        let is_symlink_db = request.content.as_ref().and_then(|c| c.is_symlink);
         let parent = get_parent_dir(ctx, &request.path, &mut *tx, &request).await?;
         query_scalar!(
             "INSERT INTO entries (
@@ -308,10 +318,11 @@ async fn add_version_inner<'a>(
                 encrypted_size,
                 modified_at,
                 content_hash,
-                unix_mode
+                unix_mode,
+                is_symlink
             ) VALUES (
                 nextval('entry_update_numbers'), now(),
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
             ) RETURNING id",
             parent,
             request.path.to_str_without_prefix(),
@@ -323,6 +334,7 @@ async fn add_version_inner<'a>(
             modified_at_db,
             content_hash_db,
             unix_mode_db,
+            is_symlink_db,
         )
         .fetch_one(&mut **tx)
         .await?;
@@ -490,7 +502,8 @@ async fn remove_entries_in_dir<'a>(
             encrypted_size = NULL,
             modified_at = NULL,
             content_hash = NULL,
-            unix_mode = NULL
+            unix_mode = NULL,
+            is_symlink = NULL
         WHERE (path = $4 OR path LIKE $5) AND kind > 0",
         ctx.source_id.to_db(),
         trigger.to_db(),
@@ -608,7 +621,8 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
                     encrypted_size = NULL,
                     modified_at = NULL,
                     content_hash = NULL,
-                    unix_mode = NULL
+                    unix_mode = NULL,
+                    is_symlink = NULL
                 WHERE id = $4",
                 ctx.source_id.to_db(),
                 RecordTrigger::Reset.to_db(),

@@ -13,7 +13,7 @@ use {
         util::{archive_to_native_relative_path, interrupt_on_error, ErrorSender},
         ArchivePath, DateTimeUtc, EntryKind,
     },
-    rammingen_sdk::content::{DecryptedContentHead, DecryptedEntryVersion, LocalEntry},
+    rammingen_sdk::content::{DecryptedEntryVersion, LocalEntry, LocalFileEntry},
     sha2::{Digest, Sha256},
     std::{
         path::Path,
@@ -286,7 +286,7 @@ async fn download_inner(
                         .send(DownloadFileTask {
                             local_path: entry_local_path.clone(),
                             root_local_path: ctx.root_local_path.clone(),
-                            content,
+                            local_entry: content,
                             sender,
                         })
                         .await;
@@ -338,7 +338,7 @@ impl Drop for TmpGuard {
 struct DownloadFileTask {
     local_path: SanitizedLocalPath,
     root_local_path: SanitizedLocalPath,
-    content: DecryptedContentHead,
+    local_entry: LocalFileEntry,
     sender: oneshot::Sender<TmpGuard>,
 }
 
@@ -378,7 +378,7 @@ async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
         remove_file(&tmp_path)?;
     }
     ctx.client
-        .download_and_decrypt(&item.content, &tmp_path, &ctx.cipher)
+        .download_and_decrypt(&item.local_entry, &tmp_path, &ctx.cipher)
         .await
         .with_context(|| format!("failed to download file {}", item.local_path))?;
     let _ = item.sender.send(tmp_guard);
@@ -445,7 +445,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 &item.local_path,
                 &LocalEntry {
                     kind,
-                    content: None,
+                    file_data: None,
                 },
             )?;
         }
@@ -491,7 +491,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 &item.local_path,
                 &LocalEntry {
                     kind,
-                    content: Some(content),
+                    file_data: Some(content),
                 },
             )?;
         }

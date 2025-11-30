@@ -122,6 +122,7 @@ mod test {
     use {
         super::*,
         crate::crypto::DecryptingWriter,
+        fs_err::File,
         std::io::{self, Read, Seek, SeekFrom, Write},
         tempfile::NamedTempFile,
     };
@@ -163,7 +164,9 @@ mod test {
         }
         file.flush().unwrap();
 
-        let mut encrypted_file = cipher.encrypt_file(file.path()).unwrap();
+        let mut encrypted_file = cipher
+            .encrypt_file_content(File::open(file.path()).unwrap())
+            .unwrap();
         assert_eq!(encrypted_file.original_size, 20_000_000);
         println!(
             "encrypted size {}",

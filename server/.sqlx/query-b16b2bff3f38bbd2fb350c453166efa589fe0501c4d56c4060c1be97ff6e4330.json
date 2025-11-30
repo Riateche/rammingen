@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE entries\n            SET update_number = nextval('entry_update_numbers'),\n                recorded_at = now(),\n                source_id = $1,\n                record_trigger = $2,\n                kind = $3,\n                original_size = $4,\n                encrypted_size = $5,\n                modified_at = $6,\n                content_hash = $7,\n                unix_mode = $8,\n                is_symlink = $9\n            WHERE id = $10",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Int4",
+        "Bytea",
+        "Int8",
+        "Timestamptz",
+        "Bytea",
+        "Int8",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b16b2bff3f38bbd2fb350c453166efa589fe0501c4d56c4060c1be97ff6e4330"
+}

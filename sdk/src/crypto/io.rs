@@ -4,7 +4,6 @@ use {
     anyhow::Result,
     byteorder::{ByteOrder, WriteBytesExt, LE},
     deflate::{write::DeflateEncoder, CompressionOptions},
-    fs_err::File,
     generic_array::typenum::ToInt,
     inflate::InflateWriter,
     rammingen_protocol::ContentHash,
@@ -12,8 +11,7 @@ use {
     sha2::{Digest, Sha256},
     std::{
         cmp::min,
-        io::{self, Write},
-        path::Path,
+        io::{self, Read, Write},
     },
     tempfile::SpooledTempFile,
 };
@@ -227,13 +225,12 @@ impl<'a, W: Write> Write for DecryptingWriter<'a, W> {
 }
 
 impl Cipher {
-    pub fn encrypt_file(&self, path: impl AsRef<Path>) -> Result<EncryptedFileHead> {
-        let mut input_file = File::open(path.as_ref())?;
+    pub fn encrypt_file_content(&self, mut file_content: impl Read) -> Result<EncryptedFileHead> {
         let output = SpooledTempFile::new(MAX_IN_MEMORY);
         let encryptor = EncryptingWriter::new(output, self)?;
         let encoder = DeflateEncoder::new(encryptor, CompressionOptions::high());
         let mut hasher = HashingWriter::new(encoder);
-        io::copy(&mut input_file, &mut hasher)?;
+        io::copy(&mut file_content, &mut hasher)?;
         let (encoder, hash, original_size) = hasher.finish()?;
         let encryptor = encoder.finish()?;
         let (file, encrypted_size) = encryptor.finish()?;

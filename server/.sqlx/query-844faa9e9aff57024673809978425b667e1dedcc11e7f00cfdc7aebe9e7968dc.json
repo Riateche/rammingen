@@ -67,6 +67,11 @@
         "ordinal": 12,
         "name": "unix_mode",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "is_symlink",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -83,6 +88,7 @@
       false,
       false,
       false,
+      true,
       true,
       true,
       true,

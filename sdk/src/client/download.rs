@@ -1,7 +1,7 @@
 use {
     super::{ok_or_retry, Client, RequestError, DEFAULT_TIMEOUT, RESPONSE_TIMEOUT},
     crate::{
-        content::DecryptedContentHead,
+        content::LocalFileEntry,
         crypto::{Cipher, DecryptingWriter},
     },
     anyhow::{ensure, format_err, Context, Error, Result},
@@ -14,15 +14,15 @@ use {
 };
 
 impl Client {
-    #[instrument(skip_all, fields(?path, ?handle))]
+    #[instrument(skip_all, fields(?path, ?local_entry))]
     pub async fn download_and_decrypt(
         &self,
-        handle: &DecryptedContentHead,
+        local_entry: &LocalFileEntry,
         path: impl AsRef<Path> + Debug,
         cipher: &Cipher,
     ) -> Result<()> {
         let (actual_encrypted_size, decryptor) = ok_or_retry(|| async {
-            let mut encrypted_content = self.content(handle, cipher).await?;
+            let mut encrypted_content = self.content(local_entry, cipher).await?;
             let file = File::create(path.as_ref()).map_err(RequestError::application)?;
             let mut decryptor = DecryptingWriter::new(cipher, file);
             let mut actual_encrypted_size = 0;
@@ -40,32 +40,32 @@ impl Client {
         })
         .await?;
         ensure!(
-            actual_encrypted_size == handle.encrypted_size,
+            actual_encrypted_size == local_entry.encrypted_size,
             "encrypted size mismatch; actual {}, expected {}",
             actual_encrypted_size,
-            handle.encrypted_size,
+            local_entry.encrypted_size,
         );
         let (_, actual_hash, actual_size) = maybe_block_in_place(|| decryptor.finish())?;
         ensure!(
-            actual_size == handle.original_size,
+            actual_size == local_entry.original_size,
             "content size mismatch; actual {actual_size}, expected {}",
-            handle.original_size,
+            local_entry.original_size,
         );
         ensure!(
-            actual_hash == handle.hash,
+            actual_hash == local_entry.hash,
             "content hash mismatch; actual {actual_hash}, expected {}",
-            handle.hash,
+            local_entry.hash,
         );
         Ok(())
     }
 
     async fn content(
         &self,
-        handle: &DecryptedContentHead,
+        local_entry: &LocalFileEntry,
         cipher: &Cipher,
     ) -> Result<Response, RequestError> {
         let url = cipher
-            .encrypt_content_hash(&handle.hash)
+            .encrypt_content_hash(&local_entry.hash)
             .and_then(|encrypted_hash| self.content_url(&encrypted_hash))
             .map_err(RequestError::Application)?;
         let response = timeout(
@@ -92,10 +92,10 @@ impl Client {
                     .context("failed content length parsing")
             })
             .map_err(RequestError::Application)?;
-        if declared_encrypted_size != handle.encrypted_size {
+        if declared_encrypted_size != local_entry.encrypted_size {
             return Err(RequestError::Application(format_err!(
                 "encrypted size mismatch; declared {declared_encrypted_size}, expected {}",
-                handle.encrypted_size,
+                local_entry.encrypted_size,
             )));
         }
         Ok(response)

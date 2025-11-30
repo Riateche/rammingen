@@ -4,12 +4,13 @@ use {
         info::pretty_size,
         path::SanitizedLocalPath,
         rules::Rules,
+        symlinks_enabled,
         term::{set_status, set_status_updater},
         unix_mode, Ctx,
     },
     anyhow::{anyhow, bail, Context, Result},
     fs::symlink_metadata,
-    fs_err as fs,
+    fs_err::{self as fs, File},
     futures::future::BoxFuture,
     rammingen_protocol::{
         endpoints::{AddVersion, AddVersions, ContentHashExists},
@@ -18,7 +19,7 @@ use {
         },
         ArchivePath, ContentHash, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
     },
-    rammingen_sdk::content::{DecryptedContentHead, EncryptedFileHead, LocalEntry},
+    rammingen_sdk::content::{EncryptedFileHead, LocalEntry, LocalFileEntry},
     std::{
         collections::HashSet,
         fs::FileType,
@@ -204,10 +205,6 @@ fn upload_inner<'a>(
             debug!("Skipping special file: {}", local_path);
             return Ok(());
         }
-        if metadata.is_symlink() {
-            debug!("Skipping symlink: {}", local_path);
-            return Ok(());
-        }
         if ctx.rules.matches(local_path)? {
             debug!("Ignored: {}", local_path);
             return Ok(());
@@ -248,14 +245,30 @@ fn upload_inner<'a>(
 
             let maybe_changed = db_data.as_ref().is_none_or(|db_data| {
                 db_data.kind != kind || {
-                    db_data.content.as_ref().is_none_or(|content| {
+                    db_data.file_data.as_ref().is_none_or(|content| {
                         content.modified_at != modified_datetime || content.unix_mode != unix_mode
                     })
                 }
             });
 
             if maybe_changed {
-                let file_data = maybe_block_in_place(|| ctx.ctx.cipher.encrypt_file(local_path))?;
+                let file_data = if symlinks_enabled() && metadata.is_symlink() {
+                    maybe_block_in_place(|| {
+                        let link_content = fs_err::read_link(local_path)?;
+                        let link_content = link_content.to_str().with_context(|| {
+                            format!(
+                                "non-unicode link target: {:?} -> {:?}",
+                                local_path, link_content
+                            )
+                        })?;
+                        ctx.ctx.cipher.encrypt_file_content(link_content.as_bytes())
+                    })?
+                } else {
+                    maybe_block_in_place(|| {
+                        let file = File::open(local_path)?;
+                        ctx.ctx.cipher.encrypt_file_content(file)
+                    })?
+                };
 
                 let final_modified = fs::symlink_metadata(local_path)?.modified()?;
                 if final_modified != modified {
@@ -265,7 +278,8 @@ fn upload_inner<'a>(
                     );
                 }
 
-                let current_content = DecryptedContentHead {
+                // TODO: symlinks....
+                let local_entry = LocalFileEntry {
                     modified_at: modified_datetime,
                     original_size: file_data.original_size,
                     encrypted_size: file_data.encrypted_size,
@@ -275,9 +289,9 @@ fn upload_inner<'a>(
 
                 changed = db_data.as_ref().is_none_or(|db_data| {
                     db_data.kind != kind || {
-                        db_data.content.as_ref().is_none_or(|content| {
-                            content.hash != current_content.hash
-                                || content.unix_mode != current_content.unix_mode
+                        db_data.file_data.as_ref().is_none_or(|content| {
+                            content.hash != local_entry.hash
+                                || content.unix_mode != local_entry.unix_mode
                         })
                     }
                 });
@@ -298,7 +312,7 @@ fn upload_inner<'a>(
                         let (sender, receiver) = oneshot::channel();
                         ctx.content_upload_sender
                             .send(ContentUploadTaskItem {
-                                hash: current_content.hash.clone(),
+                                hash: local_entry.hash.clone(),
                                 local_path: local_path.clone(),
                                 file_data,
                                 sender,
@@ -311,7 +325,7 @@ fn upload_inner<'a>(
                     oneshot_receiver = None;
                 }
 
-                content = Some(current_content);
+                content = Some(local_entry);
             } else {
                 changed = false;
                 content = None;
@@ -321,7 +335,7 @@ fn upload_inner<'a>(
 
         let new_local_entry = LocalEntry {
             kind,
-            content: content.clone(),
+            file_data: content.clone(),
         };
         if changed {
             if ctx.dry_run {
@@ -347,6 +361,7 @@ fn upload_inner<'a>(
                                 encrypted_size: content.encrypted_size,
                                 hash: ctx.ctx.cipher.encrypt_content_hash(&content.hash)?,
                                 unix_mode: content.unix_mode,
+                                is_symlink: todo!(),
                             })
                         } else {
                             None
@@ -365,8 +380,9 @@ fn upload_inner<'a>(
                     .fetch_add(1, Ordering::Relaxed);
             }
         } else if !ctx.dry_run {
-            if let Some(new_content) = &new_local_entry.content {
-                if let Some(old_content) = db_data.as_ref().and_then(|data| data.content.as_ref()) {
+            if let Some(new_content) = &new_local_entry.file_data {
+                if let Some(old_content) = db_data.as_ref().and_then(|data| data.file_data.as_ref())
+                {
                     if new_content.modified_at != old_content.modified_at {
                         info!("updating modified_at in db for {}", local_path);
                         ctx.ctx.db.set_local_entry(local_path, &new_local_entry)?;

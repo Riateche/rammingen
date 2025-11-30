@@ -281,6 +281,10 @@ pub fn unix_mode(_metadata: &Metadata) -> Option<u32> {
     None
 }
 
+pub fn symlinks_enabled() -> bool {
+    cfg!(target_family = "unix")
+}
+
 pub fn setup_logger(log_file: Option<PathBuf>, log_filter: String) -> Result<()> {
     // Defaults to stdout if `data_dir()` fails.
     let log_file = log_file.or_else(|| {
