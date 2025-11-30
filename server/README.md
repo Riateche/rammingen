@@ -170,6 +170,32 @@ cargo sqlx prepare
 ```
 The files in `server/.sqlx` will be updated.
 
+## Changing database structure
+
+1. Add a migration to `server/migrations`.
+2. Run autotests to recreate the database from migrations:
+    ```sh
+    docker rm -f rammingen_autotest
+    docker run --rm --name rammingen_autotest \
+        -e POSTGRES_HOST_AUTH_METHOD=trust -p 6123:5432 -d \
+        postgres:alpine
+    cargo run --bin rammingen_tests -- \
+        --database-url postgres://postgres@127.0.0.1:6123/ shuffle
+    ```
+3. Update schema file:
+    ```sh
+    docker exec rammingen_autotest \
+        pg_dump --user postgres --schema-only > server/schema.sql
+    ```
+4. When the server is updated, run migrations on the database:
+    ```sh
+    docker run \
+        --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
+        --entrypoint /sbin/rammingen-admin \
+        riateche/rammingen:0.1.4 migrate
+    ```
+
+
 ## Virtual file systems and database structure
 
 All user files from all sources are arranged in a virtual filesystem tree. Files and directories within that tree are identified by **archive path** (`ar:/...`). Archive paths are mapped to local paths in rammingen client config. Archive paths are not accessible on server. Instead, each archive path is converted to an encrypted representation - an **encrypted archive path** (`enar:/...`). A notable property of this representation is that it preserves parent-child relationship of paths. That allows the server to maintain important invariants and handle some high-level commands (e.g. move or remove a directory recursively) without knowing any real file names or directories.
