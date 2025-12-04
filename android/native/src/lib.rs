@@ -310,7 +310,8 @@ fn prepare_config(
                 Ok(MountPoint {
                     local_path: SanitizedLocalPath::new(
                         storage_root.join(&mount_point.local_path),
-                    )?,
+                    )?
+                    .canonicalize()?,
                     archive_path: mount_point.archive_path,
                     exclude: mount_point.exclude,
                 })

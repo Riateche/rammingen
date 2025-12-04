@@ -103,6 +103,7 @@ impl Rule {
 mod tests {
     use {super::*, fs_err::canonicalize, once_cell::sync::Lazy, std::path::PathBuf};
 
+    // TODO: remove canonicalize?
     static TMP_PATH: Lazy<PathBuf> = Lazy::new(|| canonicalize("/tmp").unwrap());
 
     fn p(s: &str) -> SanitizedLocalPath {

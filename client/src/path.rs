@@ -1,6 +1,5 @@
 use {
     anyhow::{anyhow, bail, Context as _, Result},
-    fs_err::{symlink_metadata, PathExt},
     serde::{de::Error, Deserialize, Serialize},
     std::{
         fmt::Display,
@@ -42,13 +41,11 @@ impl Display for SanitizedLocalPath {
     }
 }
 
+/// Canonicalize a path that may not exist yet.
 fn canonicalize(path: &Path) -> Result<PathBuf> {
-    // We intentionally ignore I/O errors on `exists()` because
+    // We intentionally ignore I/O errors here because
     // it can fail with a "not a directory" error if a parent path is a file.
-    if path.exists() {
-        if symlink_metadata(path)?.is_symlink() {
-            bail!("symlinks are not allowed; path: {:?}", path);
-        }
+    if path.try_exists_nofollow().unwrap_or(false) {
         return Ok(fs_err::canonicalize(path)?);
     }
 
@@ -68,18 +65,24 @@ fn canonicalize(path: &Path) -> Result<PathBuf> {
 }
 
 impl SanitizedLocalPath {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self> {
-        let path = canonicalize(path.as_ref())?;
-
-        Self::new_without_canonicalize(path)
+    pub fn canonicalize(&self) -> Result<Self> {
+        let path = canonicalize(&self.0)?;
+        Self::new(path)
     }
 
-    fn new_without_canonicalize(path: impl AsRef<Path>) -> Result<Self> {
-        if path.as_ref().to_str().is_none() {
-            bail!("unsupported path (not valid unicode): {:?}", path.as_ref());
+    pub fn new(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        if path.to_str().is_none() {
+            bail!("unsupported path (not valid unicode): {:?}", path);
         }
 
-        Ok(Self(path.as_ref().into()))
+        if path.components().any(|c| matches!(c, Component::CurDir)) {
+            bail!("'/./' is not allowed in SanitizedLocalPath: {:?}", path);
+        }
+        if path.components().any(|c| matches!(c, Component::ParentDir)) {
+            bail!("'/../' is not allowed in SanitizedLocalPath: {:?}", path);
+        }
+        Ok(Self(path.into()))
     }
 
     pub fn join(&self, relative_path: impl AsRef<Path>) -> Result<Self> {
@@ -96,7 +99,7 @@ impl SanitizedLocalPath {
                 relative_path
             );
         }
-        Self::new_without_canonicalize(self.0.join(relative_path))
+        Self::new(self.0.join(relative_path))
     }
 
     pub fn file_name(&self) -> Option<&str> {
@@ -108,7 +111,7 @@ impl SanitizedLocalPath {
 
     pub fn parent(&self) -> Result<Option<Self>> {
         if let Some(parent) = self.0.parent() {
-            Ok(Some(Self::new_without_canonicalize(parent)?))
+            Ok(Some(Self::new(parent)?))
         } else {
             Ok(None)
         }
@@ -124,8 +127,8 @@ impl SanitizedLocalPath {
             .expect("previously checked that it can be converted")
     }
 
-    pub fn exists(&self) -> std::io::Result<bool> {
-        self.0.fs_err_try_exists()
+    pub fn try_exists_nofollow(&self) -> std::io::Result<bool> {
+        self.0.try_exists_nofollow()
     }
 }
 
@@ -135,7 +138,9 @@ impl<'de> Deserialize<'de> for SanitizedLocalPath {
         D: serde::Deserializer<'de>,
     {
         let path = PathBuf::deserialize(deserializer)?;
-        Self::new(path).map_err(D::Error::custom)
+        Self::new(path)
+            .and_then(|path| path.canonicalize())
+            .map_err(D::Error::custom)
     }
 }
 
@@ -143,6 +148,20 @@ impl FromStr for SanitizedLocalPath {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        Self::new(s)
+        Self::new(s)?.canonicalize()
+    }
+}
+
+pub trait PathExt {
+    fn try_exists_nofollow(&self) -> std::io::Result<bool>;
+}
+
+impl PathExt for Path {
+    fn try_exists_nofollow(&self) -> std::io::Result<bool> {
+        match fs_err::symlink_metadata(self) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 }

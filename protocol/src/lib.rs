@@ -171,7 +171,9 @@ impl RecordTrigger {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EntryKind {
+    /// A regular file or a symlink.
     File = 1,
+    /// A directory.
     Directory = 2,
 }
 
@@ -219,7 +221,7 @@ pub struct EntryVersionData {
     /// Kind of the entry (file or directory), or `None` if this version
     /// records a deletion of this entry.
     pub kind: Option<EntryKind>,
-    /// File content (only allowed if `kind == Some(File)`).
+    /// File or symlink content (only allowed if `kind == Some(File)`).
     pub content: Option<FileContent>,
 }
 
@@ -278,9 +280,12 @@ pub struct EntryVersion {
     pub data: EntryVersionData,
 }
 
-/// Encrypted record of a file content.
+/// Encrypted record of a file or symlink content.
+///
+/// For symlinks, the "content" is the target path of the symlink encoded in UTF-8.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileContent {
+    /// Filesystem last modification timestamp.
     pub modified_at: DateTimeUtc,
     /// Encrypted value of the size of the unencrypted file content in bytes.
     pub original_size: EncryptedSize,

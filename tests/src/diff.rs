@@ -8,7 +8,7 @@ use {
 
 pub fn is_leftover_dir_with_ignored_files(path: &Path) -> Result<bool> {
     let meta = symlink_metadata(path)?;
-    if meta.is_file() {
+    if !meta.is_dir() {
         return Ok(false);
     }
     let mut any_ignored = false;
@@ -54,7 +54,19 @@ pub fn diff(path1: &Path, path2: &Path) -> Result<()> {
             meta2.is_dir(),
         );
     }
-    if meta1.is_dir() {
+    if meta1.is_symlink() {
+        let target1 = fs_err::read_link(path1)?;
+        let target2 = fs_err::read_link(path2)?;
+        if target1 != target2 {
+            bail!(
+                "symlink target mismatch: {} -> {}, {} -> {}",
+                path1.display(),
+                target1.display(),
+                path2.display(),
+                target2.display(),
+            );
+        }
+    } else if meta1.is_dir() {
         let mut names1 = Vec::new();
         for entry in read_dir(path1)? {
             let entry = entry?;

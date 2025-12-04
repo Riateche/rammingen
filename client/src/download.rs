@@ -45,7 +45,7 @@ fn archive_to_local_path(
 
 fn remove_dir_or_file(path: impl AsRef<Path>) -> Result<bool> {
     let path = path.as_ref();
-    if fs_err::metadata(path)?.is_dir() {
+    if fs_err::symlink_metadata(path)?.is_dir() {
         if let Err(err) = remove_dir(path) {
             warn!("Cannot remove directory {}: {}", path.display(), err);
             return Ok(false);
@@ -198,7 +198,7 @@ async fn download_inner(
             let Some(db_data) = ctx.ctx.db.get_local_entry(&entry_local_path)? else {
                 continue;
             };
-            if entry_local_path.exists()? {
+            if entry_local_path.try_exists_nofollow()? {
                 if ctx.dry_run {
                     info!("Would delete {}", entry_local_path);
                 } else {
@@ -236,11 +236,6 @@ async fn download_inner(
             continue;
         }
         let _status = set_status(format!("Scanning remote files: {}", ctx.root_local_path));
-
-        if fs_err::symlink_metadata(&entry_local_path).is_ok_and(|m| m.is_symlink()) {
-            info!("skipping symlink: {entry_local_path}");
-            continue;
-        }
 
         let mut must_delete = false;
         let db_data = if ctx.is_mount {
@@ -321,7 +316,7 @@ impl TmpGuard {
         &self.0
     }
     fn clean(&mut self) -> Result<()> {
-        if self.0.exists()? {
+        if self.0.try_exists_nofollow()? {
             remove_file(&self.0)?;
         }
         Ok(())
@@ -375,7 +370,7 @@ async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
     let tmp_path =
         tmp_parent_dir.join(format!(".{}.rammingen.part", path_hash(&item.local_path)))?;
     let tmp_guard = TmpGuard(tmp_path.clone());
-    if tmp_path.exists()? {
+    if tmp_path.try_exists_nofollow()? {
         remove_file(&tmp_path)?;
     }
     ctx.client
@@ -413,7 +408,7 @@ struct FinalizeDownloadTaskItem {
 }
 
 async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Result<()> {
-    if !item.must_delete && item.local_path.exists()? {
+    if !item.must_delete && item.local_path.try_exists_nofollow()? {
         bail!(
             "local entry already exists at {:?} (while processing entry: {:?})",
             item.local_path,
@@ -486,18 +481,23 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 }
             } else {
                 rename(tmp_file.path(), &item.local_path)?;
-            }
 
-            #[cfg(target_family = "unix")]
-            {
-                use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
+                // Setting file mode for symlinks doesn't really work.
+                // `fs::set_permissions` follows symlinks, and
+                // `fs::set_permissions_nofollow` is unstable and returns an error anyway.
+                #[cfg(target_family = "unix")]
+                {
+                    use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
 
-                if let Some(mode) = content.unix_mode {
-                    fs_err::set_permissions(&item.local_path, Permissions::from_mode(mode))?;
+                    if let Some(mode) = content.unix_mode {
+                        fs_err::set_permissions(&item.local_path, Permissions::from_mode(mode))?;
+                    }
                 }
             }
 
-            content.modified_at = fs_err::metadata(&item.local_path)?.modified()?.into();
+            content.modified_at = fs_err::symlink_metadata(&item.local_path)?
+                .modified()?
+                .into();
             ctx.final_counters
                 .downloaded_bytes
                 .fetch_add(content.encrypted_size, Ordering::SeqCst);

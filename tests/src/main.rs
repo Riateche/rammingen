@@ -13,14 +13,13 @@ use {
     portpicker::pick_unused_port,
     rammingen::{
         config::MountPoint,
-        path::SanitizedLocalPath,
+        path::{PathExt, SanitizedLocalPath},
         rules::Rule,
         setup_logger,
         term::{clear_status, set_term, StdoutTerm},
     },
     rammingen_protocol::{
-        util::native_to_archive_relative_path,
-        ArchivePath, DateTimeUtc, {AccessToken, EncryptionKey},
+        util::native_to_archive_relative_path, AccessToken, ArchivePath, DateTimeUtc, EncryptionKey,
     },
     rammingen_server::util::{add_source, migrate},
     rand::{seq::IndexedRandom, Rng, SeedableRng},
@@ -45,10 +44,22 @@ fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
     create_dir_all(&dst)?;
     for entry in read_dir(src)? {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            copy_dir_all(&entry.path(), dst.as_ref().join(entry.file_name()))?;
+        let metadata = fs_err::symlink_metadata(entry.path())?;
+        let new_path = dst.as_ref().join(entry.file_name());
+        if metadata.is_symlink() {
+            let link_target = fs_err::read_link(entry.path())?;
+            #[cfg(target_family = "unix")]
+            {
+                fs_err::os::unix::fs::symlink(link_target, &new_path)?;
+            }
+            #[cfg(not(target_family = "unix"))]
+            {
+                unreachable!();
+            }
+        } else if metadata.is_dir() {
+            copy_dir_all(&entry.path(), new_path)?;
         } else {
-            fs_err::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+            fs_err::copy(entry.path(), new_path)?;
         }
     }
     Ok(())
@@ -237,11 +248,13 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
         if rng.random_bool(0.2) {
             // mutate through server command
             let expected = ctx.dir.join("expected");
-            if expected.exists() {
+            if expected.try_exists_nofollow()? {
                 remove_dir_all_or_file(&expected)?;
             }
             copy_dir_all(&ctx.clients[0].mount_dir, &expected)?;
-            let client1 = ctx.clients.choose(rng).unwrap();
+            let client_index = rng.random_range(..ctx.clients.len());
+            let client1 = &ctx.clients[client_index];
+            debug!("Mutating through server command from client #{client_index}");
             match rng.random_range(0..=4) {
                 0 => {
                     // reset
@@ -249,7 +262,8 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                         continue;
                     };
                     let local_path =
-                        choose_path(&old_snapshot_path, true, true, true, false, rng)?.unwrap();
+                        choose_path(&old_snapshot_path, true, true, true, false, false, rng)?
+                            .unwrap();
                     if is_leftover_dir_with_ignored_files(&local_path)? {
                         continue;
                     }
@@ -260,11 +274,11 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                     } else {
                         expected.join(local_path.strip_prefix(&old_snapshot_path)?)
                     };
-                    if path_in_expected.exists() {
+                    if path_in_expected.try_exists_nofollow()? {
                         remove_dir_all_or_file(&path_in_expected)?;
                     }
                     let parent_path_in_expected = path_in_expected.parent().unwrap();
-                    if !parent_path_in_expected.exists() {
+                    if !parent_path_in_expected.try_exists_nofollow()? {
                         create_dir_all(parent_path_in_expected)?;
                     }
                     if local_path.is_file() {
@@ -284,7 +298,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                 1 => {
                     // upload new path
                     let path_for_upload = ctx.dir.join("for_upload");
-                    if path_for_upload.exists() {
+                    if path_for_upload.try_exists_nofollow()? {
                         remove_dir_all_or_file(&path_for_upload)?;
                     }
                     if rng.random_bool(0.3) {
@@ -294,9 +308,9 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                         shuffle(&path_for_upload, rng)?;
                     }
                     let parent_path =
-                        choose_path(&expected, false, true, true, false, rng)?.unwrap();
+                        choose_path(&expected, false, true, true, false, false, rng)?.unwrap();
                     let path_in_expected = parent_path.join(random_name(false, rng));
-                    if path_in_expected.exists() {
+                    if path_in_expected.try_exists_nofollow()? {
                         continue;
                     }
                     if path_for_upload.is_dir() {
@@ -313,13 +327,14 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                 }
                 2 => {
                     // move path
-                    let Some(path1) = choose_path(&expected, true, true, false, false, rng)? else {
+                    let Some(path1) = choose_path(&expected, true, true, false, false, true, rng)?
+                    else {
                         continue;
                     };
                     let path2_parent =
-                        choose_path(&expected, false, true, true, false, rng)?.unwrap();
+                        choose_path(&expected, false, true, true, false, false, rng)?.unwrap();
                     let path2 = path2_parent.join(random_name(false, rng));
-                    if path2.exists() || path2.starts_with(&path1) {
+                    if path2.try_exists_nofollow()? || path2.starts_with(&path1) {
                         continue;
                     }
                     rename(&path1, &path2)?;
@@ -331,7 +346,8 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                 }
                 3 => {
                     // remove path
-                    let Some(path1) = choose_path(&expected, true, true, false, false, rng)? else {
+                    let Some(path1) = choose_path(&expected, true, true, false, false, true, rng)?
+                    else {
                         continue;
                     };
                     if is_leftover_dir_with_ignored_files(&path1)? {
@@ -349,7 +365,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                     info!("Checking simultaneous edit");
                     for client in &two_clients {
                         let Some(path1) =
-                            choose_path(&client.mount_dir, true, true, false, false, rng)?
+                            choose_path(&client.mount_dir, true, true, false, false, false, rng)?
                         else {
                             continue;
                         };
@@ -358,11 +374,11 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                         }
                         let path_in_expected =
                             expected.join(path1.strip_prefix(&client.mount_dir)?);
-                        if path_in_expected.exists() {
+                        if path_in_expected.try_exists_nofollow()? {
                             remove_dir_all_or_file(&path_in_expected)?;
                         }
                         let parent_path_in_expected = path_in_expected.parent().unwrap();
-                        if !parent_path_in_expected.exists() {
+                        if !parent_path_in_expected.try_exists_nofollow()? {
                             create_dir_all(parent_path_in_expected)?;
                         }
                         for (_, prev) in &chosen_paths {
@@ -394,6 +410,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                 }
                 _ => unreachable!(),
             }
+            debug!("Verifying content of mount directories");
             for client in &ctx.clients {
                 client.sync().await?;
                 diff(&expected, &client.mount_dir)?;
@@ -411,7 +428,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                 if index2 != index {
                     debug!("Syncing client {index2}");
                     let before_sync_snapshot = ctx.dir.join("snapshot");
-                    if before_sync_snapshot.exists() {
+                    if before_sync_snapshot.try_exists_nofollow()? {
                         remove_dir_all(&before_sync_snapshot)?;
                     }
                     copy_dir_all(&client.mount_dir, &before_sync_snapshot)?;
@@ -425,6 +442,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                     diff_ignored(&client.mount_dir, &before_sync_snapshot)?;
                 }
             }
+            debug!("Verifying content of mount directories");
             for client in &ctx.clients[1..] {
                 diff(&ctx.clients[0].mount_dir, &client.mount_dir)?;
             }
@@ -454,7 +472,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                 sleep(Duration::from_millis(500)).await;
                 snapshot_time = Some(Utc::now());
                 info!("Saving snapshot for later ({snapshot_time:?})");
-                if old_snapshot_path.exists() {
+                if old_snapshot_path.try_exists_nofollow()? {
                     remove_dir_all_or_file(&old_snapshot_path)?;
                 }
                 copy_dir_all(&ctx.clients[0].mount_dir, &old_snapshot_path)?;
@@ -503,7 +521,7 @@ async fn test_snapshot(
     let download_path = ctx.dir.join("download");
     let mut results = Vec::new();
     for (i, (_, time)) in snapshots.iter().enumerate() {
-        if download_path.exists() {
+        if download_path.try_exists_nofollow()? {
             remove_dir_all_or_file(&download_path)?;
         }
         match ctx.clients[index]
@@ -689,7 +707,7 @@ async fn check_download(
     source_dir: &Path,
     rng: &mut impl Rng,
 ) -> Result<()> {
-    let local_path = choose_path(source_dir, true, true, true, false, rng)?.unwrap();
+    let local_path = choose_path(source_dir, true, true, true, false, false, rng)?.unwrap();
     if is_leftover_dir_with_ignored_files(&local_path)? {
         return Ok(());
     }
@@ -697,7 +715,7 @@ async fn check_download(
     info!("Checking download: {}, {:?}", archive_path, version);
     let client2 = clients.choose(rng).unwrap();
     let destination = dir.join("tmp_download");
-    if destination.exists() {
+    if destination.try_exists_nofollow()? {
         remove_dir_all_or_file(&destination)?;
     }
     client2
@@ -717,7 +735,8 @@ fn is_ignored(path: &Path) -> bool {
 }
 
 fn remove_dir_all_or_file(path: &Path) -> Result<()> {
-    if path.is_dir() {
+    let metadata = fs_err::symlink_metadata(path)?;
+    if metadata.is_dir() {
         remove_dir_all(path)?;
     } else {
         remove_file(path)?;

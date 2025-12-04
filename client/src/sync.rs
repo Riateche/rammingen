@@ -44,7 +44,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
         .collect_vec();
 
     for (mount_point, rules) in &mut mount_points {
-        if mount_point.local_path.exists()? {
+        if mount_point.local_path.try_exists_nofollow()? {
             upload(
                 ctx,
                 &mount_point.local_path,

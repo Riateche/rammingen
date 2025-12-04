@@ -55,10 +55,7 @@ impl LocalEntry {
     }
 
     pub fn matches_real(&self, path: impl AsRef<Path>) -> Result<bool> {
-        let metadata = fs_err::metadata(path)?;
-        if metadata.is_symlink() {
-            return Ok(false);
-        }
+        let metadata = fs_err::symlink_metadata(path)?;
         if metadata.is_dir() != (self.kind == EntryKind::Directory) {
             return Ok(false);
         }

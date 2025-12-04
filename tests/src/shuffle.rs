@@ -2,6 +2,7 @@ use {
     crate::{diff::is_leftover_dir_with_ignored_files, is_ignored},
     anyhow::Result,
     fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write},
+    rammingen::{path::PathExt, symlinks_enabled},
     rand::{
         distr::{weighted::WeightedIndex, Alphanumeric, SampleString},
         prelude::Distribution,
@@ -13,15 +14,17 @@ use {
         thread::sleep,
         time::Duration,
     },
-    tracing::debug,
+    tracing::{debug, info},
 };
 
+#[allow(clippy::collapsible_if)]
 fn find_paths_inner(
     dir: &Path,
     allow_files: bool,
     allow_dirs: bool,
     allow_root: bool,
     allow_ignored: bool,
+    allow_symlinks: bool,
     output: &mut Vec<PathBuf>,
 ) -> Result<()> {
     if allow_dirs && allow_root {
@@ -32,13 +35,26 @@ fn find_paths_inner(
         if !allow_ignored && is_ignored(&entry) {
             continue;
         }
-        if symlink_metadata(&entry)?.is_file() {
-            if allow_files {
+        let metadata = symlink_metadata(&entry)?;
+        if metadata.is_symlink() {
+            if allow_symlinks {
                 output.push(entry);
             }
-        } else {
-            find_paths_inner(&entry, allow_files, allow_dirs, true, allow_ignored, output)?;
+        } else if metadata.is_dir() {
+            find_paths_inner(
+                &entry,
+                allow_files,
+                allow_dirs,
+                true,
+                allow_ignored,
+                allow_symlinks,
+                output,
+            )?;
             if allow_dirs {
+                output.push(entry);
+            }
+        } else if metadata.is_file() {
+            if allow_files {
                 output.push(entry);
             }
         }
@@ -71,6 +87,7 @@ pub fn choose_path(
     allow_dirs: bool,
     allow_root: bool,
     allow_ignored: bool,
+    allow_symlinks: bool,
     rng: &mut impl Rng,
 ) -> Result<Option<PathBuf>> {
     let mut paths = Vec::new();
@@ -80,26 +97,46 @@ pub fn choose_path(
         allow_dirs,
         allow_root,
         allow_ignored,
+        allow_symlinks,
         &mut paths,
     )?;
     Ok(paths.choose(rng).cloned())
 }
 
 fn create(dir: &Path, rng: &mut impl Rng) -> Result<()> {
-    let parent = choose_path(dir, false, true, true, true, rng)?.unwrap();
+    let parent = choose_path(dir, false, true, true, true, false, rng)?.unwrap();
     if is_leftover_dir_with_ignored_files(&parent)? {
         return Ok(());
     }
     let path = parent.join(random_name(true, rng));
-    if path.exists() {
+    if path.try_exists_nofollow()? {
         return Ok(());
     }
     if rng.random_bool(0.1) {
         // dir
         create_dir(&path)?;
         debug!("Created dir {}", path.display());
+    } else if rng.random_bool(0.1) && symlinks_enabled() {
+        // symlink
+        #[cfg(target_family = "unix")]
+        {
+            use {anyhow::Context as _, pathdiff::diff_paths, tracing::info};
+
+            let target_absolute = choose_path(dir, true, true, true, true, true, rng)?.unwrap();
+            let target_relative =
+                diff_paths(&target_absolute, parent).context("diff_paths failed")?;
+            fs_err::os::unix::fs::symlink(&target_relative, &path)?;
+            info!(
+                "ok1 created symlink {:?} -> {:?} (abs: {:?})",
+                path, target_relative, target_absolute
+            );
+        }
+        #[cfg(not(target_family = "unix"))]
+        {
+            unreachable!();
+        }
     } else {
-        // file
+        // regular file
         write(&path, random_content(rng))?;
         debug!("Created file {}", path.display());
     }
@@ -107,7 +144,7 @@ fn create(dir: &Path, rng: &mut impl Rng) -> Result<()> {
 }
 
 fn file_to_dir(dir: &Path, rng: &mut impl Rng) -> Result<()> {
-    let Some(path) = choose_path(dir, true, false, false, true, rng)? else {
+    let Some(path) = choose_path(dir, true, false, false, true, true, rng)? else {
         return Ok(());
     };
     remove_file(&path)?;
@@ -117,7 +154,7 @@ fn file_to_dir(dir: &Path, rng: &mut impl Rng) -> Result<()> {
 }
 
 fn dir_to_file(dir: &Path, rng: &mut impl Rng) -> Result<()> {
-    let Some(path) = choose_path(dir, false, true, false, true, rng)? else {
+    let Some(path) = choose_path(dir, false, true, false, true, false, rng)? else {
         return Ok(());
     };
     remove_dir_all(&path)?;
@@ -127,17 +164,17 @@ fn dir_to_file(dir: &Path, rng: &mut impl Rng) -> Result<()> {
 }
 
 fn random_rename(dir: &Path, rng: &mut impl Rng) -> Result<()> {
-    let Some(from) = choose_path(dir, true, true, false, true, rng)? else {
+    let Some(from) = choose_path(dir, true, true, false, true, true, rng)? else {
         return Ok(());
     };
     let to = if rng.random_bool(0.2) {
-        choose_path(dir, false, true, true, true, rng)?
+        choose_path(dir, false, true, true, true, false, rng)?
             .unwrap()
             .join(random_name(true, rng))
     } else {
         from.parent().unwrap().join(random_name(true, rng))
     };
-    if !to.exists() && !to.starts_with(&from) {
+    if !to.try_exists_nofollow()? && !to.starts_with(&from) {
         rename(&from, &to)?;
         debug!("Renamed {} -> {}", from.display(), to.display());
     }
@@ -145,7 +182,7 @@ fn random_rename(dir: &Path, rng: &mut impl Rng) -> Result<()> {
 }
 
 fn edit(dir: &Path, rng: &mut impl Rng) -> Result<()> {
-    let Some(path) = choose_path(dir, true, false, false, true, rng)? else {
+    let Some(path) = choose_path(dir, true, false, false, true, false, rng)? else {
         return Ok(());
     };
     if symlink_metadata(&path)?.modified()?.elapsed()? < Duration::from_millis(50) {
@@ -162,7 +199,7 @@ fn change_mode(_dir: &Path, rng: &mut impl Rng) -> Result<()> {
     {
         use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
 
-        let Some(path) = choose_path(_dir, true, false, false, true, rng)? else {
+        let Some(path) = choose_path(_dir, true, false, false, true, false, rng)? else {
             return Ok(());
         };
         let mode = [0o777, 0o774, 0o744, 0o700, 0o666, 0o664, 0o644, 0o600]
@@ -178,14 +215,14 @@ fn change_mode(_dir: &Path, rng: &mut impl Rng) -> Result<()> {
 fn delete(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     if rng.random_bool(0.1) {
         // dir
-        let Some(path) = choose_path(dir, false, true, false, true, rng)? else {
+        let Some(path) = choose_path(dir, false, true, false, true, false, rng)? else {
             return Ok(());
         };
         remove_dir_all(&path)?;
         debug!("Removed dir {}", path.display());
     } else {
         // file
-        let Some(path) = choose_path(dir, true, false, false, true, rng)? else {
+        let Some(path) = choose_path(dir, true, false, false, true, true, rng)? else {
             return Ok(());
         };
         remove_file(&path)?;

@@ -10,7 +10,7 @@ use {
     },
     anyhow::{anyhow, bail, Context, Result},
     cadd::convert::IntoType,
-    fs_err::{self as fs, File},
+    fs_err::File,
     futures::future::BoxFuture,
     rammingen_protocol::{
         endpoints::{AddVersion, AddVersions, ContentHashExists},
@@ -122,6 +122,7 @@ async fn record_deletion_batch(
                 .fetch_add(1, Ordering::Relaxed);
             info!("Recorded deletion of {}", local_path);
         }
+        info!("ok4 record_deletion: remove_local_entry {local_path}");
         ctx.db.remove_local_entry(&local_path)?;
     }
     Ok(())
@@ -200,7 +201,7 @@ fn upload_inner<'a>(
     Box::pin(async move {
         let _status = set_status(format!("Scanning local files: {local_path}"));
         ctx.existing_paths.insert(local_path.clone());
-        let mut metadata = fs::symlink_metadata(local_path)?;
+        let mut metadata = fs_err::symlink_metadata(local_path)?;
         if is_special_file(&metadata.file_type()) {
             debug!("Skipping special file: {}", local_path);
             return Ok(());
@@ -228,7 +229,7 @@ fn upload_inner<'a>(
         } else {
             let mut modified = None;
             for _ in 0..5 {
-                metadata = fs::symlink_metadata(local_path)?;
+                metadata = fs_err::symlink_metadata(local_path)?;
                 let new_modified = metadata.modified()?;
                 if new_modified.elapsed()? < TOO_RECENT_INTERVAL {
                     info!("File {} was modified recently, waiting...", local_path);
@@ -277,7 +278,7 @@ fn upload_inner<'a>(
                     })?
                 };
 
-                let final_modified = fs::symlink_metadata(local_path)?.modified()?;
+                let final_modified = fs_err::symlink_metadata(local_path)?.modified()?;
                 if final_modified != modified {
                     bail!(
                         "file {:?} was updated while it was being processed",
@@ -399,7 +400,7 @@ fn upload_inner<'a>(
             }
         }
         if is_dir {
-            for entry in fs::read_dir(local_path)? {
+            for entry in fs_err::read_dir(local_path)? {
                 let entry = entry?;
                 let entry_path = entry.path();
                 let file_name = entry.file_name();
