@@ -29,6 +29,7 @@ impl ArchivePath {
     }
 
     /// Show the path without `ar:` prefix.
+    #[must_use]
     pub fn to_str_without_prefix(&self) -> &str {
         &self.0
     }
@@ -93,46 +94,63 @@ impl ArchivePath {
     }
 
     /// Returns parent path, or `None` if this is the root path.
+    #[must_use]
+    #[expect(
+        clippy::expect_used,
+        clippy::unwrap_in_result,
+        reason = "relies on previously checked invariants"
+    )]
     pub fn parent(&self) -> Option<ArchivePath> {
         if self.0 == "/" {
             None
         } else {
-            let pos = self.0.rfind('/').expect("any path must contain '/'");
-            let parent = if pos == 0 { "/" } else { &self.0[..pos] };
+            let (mut parent, _filename) =
+                self.0.rsplit_once('/').expect("any path must contain '/'");
+            if parent.is_empty() {
+                parent = "/";
+            }
             check_path(parent).expect("parent should always be valid");
             Some(Self(parent.into()))
         }
     }
 
     /// Returns relative path from `base` to `self`, or `None` if `base` does not contain `self`.
+    #[must_use]
     pub fn strip_prefix(&self, base: &ArchivePath) -> Option<&str> {
         if base.0 == "/" {
             self.0.strip_prefix(&base.0)
         } else {
-            self.0
-                .strip_prefix(&base.0)
-                .and_then(|prefix| prefix.strip_prefix('/'))
+            self.0.strip_prefix(&base.0)?.strip_prefix('/')
         }
     }
 
     /// Returns last component of the path, or `None` if this is the root path.
+    #[must_use]
+    #[expect(
+        clippy::expect_used,
+        clippy::unwrap_in_result,
+        reason = "relies on previously checked invariants"
+    )]
     pub fn last_name(&self) -> Option<&str> {
         if self.0 == "/" {
             None
         } else {
-            let pos = self.0.rfind('/').expect("any path must contain '/'");
-            Some(&self.0[pos + 1..])
+            let (_parent, last_name) = self.0.rsplit_once('/').expect("any path must contain '/'");
+            Some(last_name)
         }
     }
 }
 
 /// Serialize and deserialize `ArchivePath` with `ar:` prefix.
 pub mod with_prefix {
-    use super::*;
+    use {
+        crate::ArchivePath,
+        serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer},
+    };
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<ArchivePath, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         let s: String = Deserialize::deserialize(deserializer)?;
         s.parse().map_err(D::Error::custom)
@@ -140,7 +158,7 @@ pub mod with_prefix {
 
     pub fn serialize<S>(value: &ArchivePath, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         value.to_string().serialize(serializer)
     }
@@ -164,7 +182,7 @@ impl FromStr for ArchivePath {
         let mut path = s
             .strip_prefix("ar:")
             .context("archive path must start with 'ar:/'")?
-            .to_string();
+            .to_owned();
         if !path.starts_with('/') {
             bail!("archive path must start with 'ar:/'");
         }
@@ -229,6 +247,7 @@ impl EncryptedArchivePath {
     }
 
     /// Show the path without `enar:` prefix.
+    #[must_use]
     pub fn to_str_without_prefix(&self) -> &str {
         self.0.to_str_without_prefix()
     }
@@ -239,6 +258,7 @@ impl EncryptedArchivePath {
     }
 
     /// Returns relative path from `base` to `self`, or `None` if `base` does not contain `self`.
+    #[must_use]
     pub fn strip_prefix(&self, base: &EncryptedArchivePath) -> Option<&str> {
         self.0.strip_prefix(&base.0)
     }
@@ -258,30 +278,35 @@ impl fmt::Display for EncryptedArchivePath {
     }
 }
 
-#[test]
-fn parent_path() {
-    assert_eq!(ArchivePath::from_str("ar:/").unwrap().parent(), None);
-    assert_eq!(
-        ArchivePath::from_str("ar:/ab").unwrap().parent(),
-        Some(ArchivePath::from_str("ar:/").unwrap())
-    );
-    assert_eq!(
-        ArchivePath::from_str("ar:/ab/cd").unwrap().parent(),
-        Some(ArchivePath::from_str("ar:/ab").unwrap())
-    );
-}
+#[cfg(test)]
+mod tests {
+    use {crate::ArchivePath, std::str::FromStr};
 
-#[test]
-fn strip_prefix() {
-    fn p(s: &str) -> ArchivePath {
-        ArchivePath::from_str_without_prefix(s).unwrap()
+    #[test]
+    fn parent_path() {
+        assert_eq!(ArchivePath::from_str("ar:/").unwrap().parent(), None);
+        assert_eq!(
+            ArchivePath::from_str("ar:/ab").unwrap().parent(),
+            Some(ArchivePath::from_str("ar:/").unwrap())
+        );
+        assert_eq!(
+            ArchivePath::from_str("ar:/ab/cd").unwrap().parent(),
+            Some(ArchivePath::from_str("ar:/ab").unwrap())
+        );
     }
-    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b")), Some("c/d"));
-    assert_eq!(p("/a1/b1/c1/d1").strip_prefix(&p("/a1/b1")), Some("c1/d1"));
-    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b/c/d")), None);
-    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/d")), None);
 
-    assert_eq!(p("/a").strip_prefix(&p("/")), Some("a"));
-    assert_eq!(p("/abc").strip_prefix(&p("/")), Some("abc"));
-    assert_eq!(p("/a/b/c/d").strip_prefix(&p("/")), Some("a/b/c/d"));
+    #[test]
+    fn strip_prefix() {
+        fn p(s: &str) -> ArchivePath {
+            ArchivePath::from_str_without_prefix(s).unwrap()
+        }
+        assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b")), Some("c/d"));
+        assert_eq!(p("/a1/b1/c1/d1").strip_prefix(&p("/a1/b1")), Some("c1/d1"));
+        assert_eq!(p("/a/b/c/d").strip_prefix(&p("/a/b/c/d")), None);
+        assert_eq!(p("/a/b/c/d").strip_prefix(&p("/d")), None);
+
+        assert_eq!(p("/a").strip_prefix(&p("/")), Some("a"));
+        assert_eq!(p("/abc").strip_prefix(&p("/")), Some("abc"));
+        assert_eq!(p("/a/b/c/d").strip_prefix(&p("/")), Some("a/b/c/d"));
+    }
 }

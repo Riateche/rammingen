@@ -27,9 +27,9 @@ pub struct AccessToken(String);
 
 const ACCESS_TOKEN_LENGTH: usize = 64;
 
-fn format_panic_message(err: Box<dyn Any + Send + 'static>) -> String {
+fn format_panic_message(err: &(dyn Any + Send + 'static)) -> String {
     err.downcast_ref::<&'static str>()
-        .map(|s| s.to_string())
+        .map(|&s| s.to_owned())
         .or_else(|| err.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| format!("{err:?}"))
 }
@@ -39,9 +39,10 @@ impl AccessToken {
         catch_unwind(|| {
             Self(Alphanumeric.sample_string(&mut rand_core::UnwrapErr(OsRng), ACCESS_TOKEN_LENGTH))
         })
-        .map_err(|err| anyhow!(format_panic_message(err)))
+        .map_err(|err| anyhow!(format_panic_message(&*err)))
     }
 
+    #[must_use]
     pub fn as_unmasked_str(&self) -> &str {
         &self.0
     }
@@ -86,10 +87,12 @@ impl EncryptionKey {
         Self(key)
     }
 
+    #[must_use]
     pub fn get(&self) -> &Array<u8, U64> {
         &self.0
     }
 
+    #[must_use]
     pub fn display_unmasked(&self) -> impl Display + '_ {
         Base64Display::new(self.0.as_ref(), &BASE64_URL_SAFE_NO_PAD)
     }
@@ -130,6 +133,7 @@ impl Debug for EncryptionKey {
 }
 
 #[cfg(test)]
+#[expect(clippy::string_slice, reason = "test")]
 mod test {
     use super::*;
 
@@ -140,10 +144,10 @@ mod test {
             AccessToken::from_str(TOKEN).unwrap().as_unmasked_str(),
             TOKEN,
         );
-        assert!(AccessToken::from_str("").is_err());
-        assert!(AccessToken::from_str(&TOKEN[1..]).is_err());
-        assert!(AccessToken::from_str(&format!("{TOKEN}c")).is_err());
-        assert!(AccessToken::from_str(&format!("{}:", &TOKEN[1..])).is_err());
+        AccessToken::from_str("").unwrap_err();
+        AccessToken::from_str(&TOKEN[1..]).unwrap_err();
+        AccessToken::from_str(&format!("{TOKEN}c")).unwrap_err();
+        AccessToken::from_str(&format!("{}:", &TOKEN[1..])).unwrap_err();
     }
 
     #[test]
@@ -156,8 +160,8 @@ mod test {
                 .to_string(),
             KEY,
         );
-        assert!(EncryptionKey::from_str("").is_err());
-        assert!(EncryptionKey::from_str("qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo").is_err());
-        assert!(EncryptionKey::from_str(&format!("{KEY}:")).is_err());
+        EncryptionKey::from_str("").unwrap_err();
+        EncryptionKey::from_str("qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo").unwrap_err();
+        EncryptionKey::from_str(&format!("{KEY}:")).unwrap_err();
     }
 }

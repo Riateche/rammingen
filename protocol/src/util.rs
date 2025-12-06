@@ -34,7 +34,11 @@ pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<
                     if len == 0 {
                         break; // end of file
                     } else {
-                        if tx.send(Bytes::copy_from_slice(&buf[0..len])).await.is_err() {
+                        let Some(buf_data) = buf.get(..len) else {
+                            warn!(?len, "file read returned invalid length");
+                            break;
+                        };
+                        if tx.send(Bytes::copy_from_slice(buf_data)).await.is_err() {
                             break; // receiver closed
                         }
                     }
@@ -51,6 +55,7 @@ pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<
 
 /// Convert a relative archive path (that always uses `/` as separator)
 /// to a relative path with native separator for the current OS.
+#[must_use]
 pub fn archive_to_native_relative_path(relative_archive_path: &str) -> Cow<'_, str> {
     if MAIN_SEPARATOR == '/' {
         Cow::Borrowed(relative_archive_path)

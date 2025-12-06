@@ -1,5 +1,3 @@
-#![allow(clippy::collapsible_else_if)]
-
 mod credentials;
 pub mod encoding;
 pub mod endpoints;
@@ -28,6 +26,7 @@ pub type DateTimeUtc = chrono::DateTime<Utc>;
 pub struct SourceId(i32);
 
 impl SourceId {
+    #[must_use]
     pub fn to_db(self) -> i32 {
         self.0
     }
@@ -43,6 +42,7 @@ impl SourceId {
 pub struct EntryUpdateNumber(i64);
 
 impl EntryUpdateNumber {
+    #[must_use]
     pub fn to_db(self) -> i64 {
         self.0
     }
@@ -52,6 +52,7 @@ impl EntryUpdateNumber {
 pub struct SnapshotId(i32);
 
 impl SnapshotId {
+    #[must_use]
     pub fn to_db(self) -> i32 {
         self.0
     }
@@ -61,6 +62,7 @@ impl SnapshotId {
 pub struct EntryId(i64);
 
 impl EntryId {
+    #[must_use]
     pub fn to_db(self) -> i64 {
         self.0
     }
@@ -71,10 +73,12 @@ impl EntryId {
 pub struct ContentHash(Vec<u8>);
 
 impl ContentHash {
+    #[must_use]
     pub fn new(hash: [u8; 32]) -> Self {
         Self(hash.into())
     }
 
+    #[must_use]
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
@@ -102,10 +106,12 @@ impl fmt::Display for ContentHash {
 pub struct EncryptedContentHash(Vec<u8>);
 
 impl EncryptedContentHash {
+    #[must_use]
     pub fn from_encrypted(value: Vec<u8>) -> Self {
         Self(value)
     }
 
+    #[must_use]
     pub fn to_url_safe(&self) -> String {
         BASE64_URL_SAFE_NO_PAD.encode(&self.0)
     }
@@ -115,6 +121,7 @@ impl EncryptedContentHash {
         Ok(Self(bytes))
     }
 
+    #[must_use]
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
@@ -127,10 +134,12 @@ impl EncryptedContentHash {
 pub struct EncryptedSize(Vec<u8>);
 
 impl EncryptedSize {
+    #[must_use]
     pub fn from_encrypted(value: Vec<u8>) -> Self {
         Self(value)
     }
 
+    #[must_use]
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
@@ -147,6 +156,7 @@ pub enum RecordTrigger {
 }
 
 impl RecordTrigger {
+    #[must_use]
     pub fn to_db(self) -> i32 {
         match self {
             RecordTrigger::Sync => 0,
@@ -178,17 +188,16 @@ pub enum EntryKind {
 }
 
 impl EntryKind {
+    /// Database value for a non-existing entry.
+    pub const NOT_EXISTS: i32 = 0;
+
+    #[must_use]
     pub fn to_db(self) -> i32 {
         match self {
             EntryKind::File => 1,
             EntryKind::Directory => 2,
         }
     }
-}
-
-impl EntryKind {
-    /// Database value for a non-existing entry.
-    pub const NOT_EXISTS: i32 = 0;
 }
 
 pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
@@ -200,6 +209,7 @@ pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
     }
 }
 
+#[must_use]
 pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
     match value {
         None => 0,
@@ -226,6 +236,7 @@ pub struct EntryVersionData {
 }
 
 fn is_same_or_unknown<T: PartialEq>(old: Option<T>, new: Option<T>) -> bool {
+    #[expect(clippy::match_same_arms, reason = "separated for clarity")]
     match (old, new) {
         // Unknown in old and new, no need to record it.
         (None, None) => true,
@@ -243,6 +254,7 @@ impl EntryVersionData {
     ///
     /// This is just an equality check for the most part, but it includes
     /// special handling of `unix_mode` and `is_symlink`.
+    #[must_use]
     pub fn is_same(&self, update: &AddVersion) -> bool {
         self.path == update.path && self.kind == update.kind && {
             match (&self.content, &update.content) {

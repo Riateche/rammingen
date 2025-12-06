@@ -17,7 +17,11 @@ pub trait RequestToResponse {
 /// Implement `RequestToResponse` for a request type.
 macro_rules! response_type {
     ($request:ty, $response:ty, $version:literal) => {
-        #[allow(deprecated)]
+        #[allow(
+            deprecated,
+            clippy::allow_attributes,
+            reason = "expected for deprecated requests"
+        )]
         impl RequestToResponse for $request {
             type Response = $response;
             const PATH: &'static str = concat!("/api/", $version, "/", stringify!($request));
@@ -85,7 +89,7 @@ pub struct GetAllEntryVersions {
 
 streaming_response_type!(GetAllEntryVersions, EntryVersion, "v1");
 
-/// See [AddVersions].
+/// See [`AddVersions`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddVersion {
     pub path: EncryptedArchivePath,
@@ -95,6 +99,7 @@ pub struct AddVersion {
 }
 
 /// Adds a new versions of the specified paths.
+///
 /// If `kind` is `None`, records deletion of the path.
 /// `content` must be specified only if the entry is an existing file.
 /// If `unix_mode` or `is_symlink` are not specified in `content`, the previous values
@@ -195,7 +200,10 @@ pub struct SourceInfo {
 }
 
 pub mod v1_legacy {
-    use super::*;
+    use {
+        super::RequestToResponse,
+        serde::{Deserialize, Serialize},
+    };
 
     /// Returns available space on server.
     #[derive(Debug, Serialize, Deserialize)]
