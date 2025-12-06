@@ -35,6 +35,7 @@ fn format_panic_message(err: &(dyn Any + Send + 'static)) -> String {
 }
 
 impl AccessToken {
+    #[inline]
     pub fn generate() -> anyhow::Result<Self> {
         catch_unwind(|| {
             Self(Alphanumeric.sample_string(&mut rand_core::UnwrapErr(OsRng), ACCESS_TOKEN_LENGTH))
@@ -43,6 +44,7 @@ impl AccessToken {
     }
 
     #[must_use]
+    #[inline]
     pub fn as_unmasked_str(&self) -> &str {
         &self.0
     }
@@ -51,6 +53,7 @@ impl AccessToken {
 impl FromStr for AccessToken {
     type Err = Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         ensure!(
             s.len() == ACCESS_TOKEN_LENGTH,
@@ -65,6 +68,7 @@ impl FromStr for AccessToken {
 }
 
 impl Debug for AccessToken {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AccessToken").finish()
     }
@@ -77,10 +81,12 @@ impl Debug for AccessToken {
 pub struct EncryptionKey(Array<u8, U64>);
 
 impl EncryptionKey {
+    #[inline]
     pub fn generate() -> anyhow::Result<Self> {
         Ok(Self(Aes256SivAead::generate_key()?))
     }
 
+    #[inline]
     pub fn generate_with_rng<R: CryptoRng + ?Sized>(rng: &mut R) -> Self {
         let mut key = Key::<Aes256SivAead>::default();
         rng.fill_bytes(&mut key);
@@ -88,17 +94,20 @@ impl EncryptionKey {
     }
 
     #[must_use]
+    #[inline]
     pub fn get(&self) -> &Array<u8, U64> {
         &self.0
     }
 
     #[must_use]
+    #[inline]
     pub fn display_unmasked(&self) -> impl Display + '_ {
         Base64Display::new(self.0.as_ref(), &BASE64_URL_SAFE_NO_PAD)
     }
 }
 
 impl<'de> Deserialize<'de> for EncryptionKey {
+    #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Cow::<'_, str>::deserialize(deserializer)?
             .parse()
@@ -107,6 +116,7 @@ impl<'de> Deserialize<'de> for EncryptionKey {
 }
 
 impl Serialize for EncryptionKey {
+    #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         BASE64_URL_SAFE_NO_PAD.encode(self.0).serialize(serializer)
     }
@@ -115,6 +125,7 @@ impl Serialize for EncryptionKey {
 impl FromStr for EncryptionKey {
     type Err = Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         const KEY_LENGTH: usize = 64;
 
@@ -127,6 +138,7 @@ impl FromStr for EncryptionKey {
 }
 
 impl Debug for EncryptionKey {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EncryptionKey").finish()
     }

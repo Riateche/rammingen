@@ -23,6 +23,7 @@ impl ArchivePath {
     /// Create `ArchivePath` from path without `ar:` prefix.
     ///
     /// `path` should conform to `ArchivePath`'s constraints.
+    #[inline]
     pub fn from_str_without_prefix(path: &str) -> Result<Self> {
         check_path(path)?;
         Ok(Self(path.into()))
@@ -30,6 +31,7 @@ impl ArchivePath {
 
     /// Show the path without `ar:` prefix.
     #[must_use]
+    #[inline]
     pub fn to_str_without_prefix(&self) -> &str {
         &self.0
     }
@@ -38,6 +40,7 @@ impl ArchivePath {
     /// and `file_name`.
     ///
     /// `file_name` should conform to `ArchivePath`'s constraints.
+    #[inline]
     pub fn join_one(&self, file_name: &str) -> Result<ArchivePath> {
         if file_name.is_empty() {
             bail!("file name cannot be empty");
@@ -64,6 +67,7 @@ impl ArchivePath {
     /// and a relative path inside the directory.
     ///
     /// `relative_archive_path` should conform to `ArchivePath`'s constraints.
+    #[inline]
     pub fn join_multiple(&self, relative_archive_path: &str) -> Result<ArchivePath> {
         if relative_archive_path.is_empty() {
             bail!("relative_archive_path cannot be empty");
@@ -100,6 +104,7 @@ impl ArchivePath {
         clippy::unwrap_in_result,
         reason = "relies on previously checked invariants"
     )]
+    #[inline]
     pub fn parent(&self) -> Option<ArchivePath> {
         if self.0 == "/" {
             None
@@ -116,6 +121,7 @@ impl ArchivePath {
 
     /// Returns relative path from `base` to `self`, or `None` if `base` does not contain `self`.
     #[must_use]
+    #[inline]
     pub fn strip_prefix(&self, base: &ArchivePath) -> Option<&str> {
         if base.0 == "/" {
             self.0.strip_prefix(&base.0)
@@ -131,6 +137,7 @@ impl ArchivePath {
         clippy::unwrap_in_result,
         reason = "relies on previously checked invariants"
     )]
+    #[inline]
     pub fn last_name(&self) -> Option<&str> {
         if self.0 == "/" {
             None
@@ -148,6 +155,7 @@ pub mod with_prefix {
         serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer},
     };
 
+    #[inline]
     pub fn deserialize<'de, D>(deserializer: D) -> Result<ArchivePath, D::Error>
     where
         D: Deserializer<'de>,
@@ -156,6 +164,7 @@ pub mod with_prefix {
         s.parse().map_err(D::Error::custom)
     }
 
+    #[inline]
     pub fn serialize<S>(value: &ArchivePath, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -165,6 +174,7 @@ pub mod with_prefix {
 }
 
 impl<'de> Deserialize<'de> for ArchivePath {
+    #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -178,6 +188,7 @@ impl<'de> Deserialize<'de> for ArchivePath {
 impl FromStr for ArchivePath {
     type Err = anyhow::Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut path = s
             .strip_prefix("ar:")
@@ -195,6 +206,7 @@ impl FromStr for ArchivePath {
 }
 
 impl fmt::Display for ArchivePath {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ar:{}", self.0)
     }
@@ -242,23 +254,28 @@ impl EncryptedArchivePath {
     /// Create `EncryptedArchivePath` from path without `enar:` prefix.
     ///
     /// `path` should conform to `ArchivePath`'s constraints.
+    #[inline]
     pub fn from_encrypted_without_prefix(path: &str) -> Result<Self> {
         ArchivePath::from_str_without_prefix(path).map(Self)
     }
 
     /// Show the path without `enar:` prefix.
     #[must_use]
+    #[inline]
     pub fn to_str_without_prefix(&self) -> &str {
         self.0.to_str_without_prefix()
     }
 
     /// Returns parent path, or `None` if this is the root path.
+    #[must_use]
+    #[inline]
     pub fn parent(&self) -> Option<EncryptedArchivePath> {
         self.0.parent().map(Self)
     }
 
     /// Returns relative path from `base` to `self`, or `None` if `base` does not contain `self`.
     #[must_use]
+    #[inline]
     pub fn strip_prefix(&self, base: &EncryptedArchivePath) -> Option<&str> {
         self.0.strip_prefix(&base.0)
     }
@@ -267,12 +284,14 @@ impl EncryptedArchivePath {
     /// and a relative path inside the directory.
     ///
     /// `relative_archive_path` should conform to `ArchivePath`'s constraints.
+    #[inline]
     pub fn join_multiple(&self, relative_archive_path: &str) -> Result<EncryptedArchivePath> {
         self.0.join_multiple(relative_archive_path).map(Self)
     }
 }
 
 impl fmt::Display for EncryptedArchivePath {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "enar:{}", self.0 .0)
     }

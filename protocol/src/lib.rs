@@ -27,6 +27,7 @@ pub struct SourceId(i32);
 
 impl SourceId {
     #[must_use]
+    #[inline]
     pub fn to_db(self) -> i32 {
         self.0
     }
@@ -43,6 +44,7 @@ pub struct EntryUpdateNumber(i64);
 
 impl EntryUpdateNumber {
     #[must_use]
+    #[inline]
     pub fn to_db(self) -> i64 {
         self.0
     }
@@ -53,6 +55,7 @@ pub struct SnapshotId(i32);
 
 impl SnapshotId {
     #[must_use]
+    #[inline]
     pub fn to_db(self) -> i32 {
         self.0
     }
@@ -63,6 +66,7 @@ pub struct EntryId(i64);
 
 impl EntryId {
     #[must_use]
+    #[inline]
     pub fn to_db(self) -> i64 {
         self.0
     }
@@ -74,11 +78,13 @@ pub struct ContentHash(Vec<u8>);
 
 impl ContentHash {
     #[must_use]
+    #[inline]
     pub fn new(hash: [u8; 32]) -> Self {
         Self(hash.into())
     }
 
     #[must_use]
+    #[inline]
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
@@ -87,6 +93,7 @@ impl ContentHash {
 impl TryFrom<Vec<u8>> for ContentHash {
     type Error = anyhow::Error;
 
+    #[inline]
     fn try_from(value: Vec<u8>) -> Result<Self> {
         if value.len() != 32 {
             bail!("invalid hash length");
@@ -96,6 +103,7 @@ impl TryFrom<Vec<u8>> for ContentHash {
 }
 
 impl fmt::Display for ContentHash {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", hex::encode(&self.0))
     }
@@ -107,21 +115,25 @@ pub struct EncryptedContentHash(Vec<u8>);
 
 impl EncryptedContentHash {
     #[must_use]
+    #[inline]
     pub fn from_encrypted(value: Vec<u8>) -> Self {
         Self(value)
     }
 
     #[must_use]
+    #[inline]
     pub fn to_url_safe(&self) -> String {
         BASE64_URL_SAFE_NO_PAD.encode(&self.0)
     }
 
+    #[inline]
     pub fn from_url_safe(s: &str) -> Result<Self> {
         let bytes = BASE64_URL_SAFE_NO_PAD.decode(s)?;
         Ok(Self(bytes))
     }
 
     #[must_use]
+    #[inline]
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
@@ -135,11 +147,13 @@ pub struct EncryptedSize(Vec<u8>);
 
 impl EncryptedSize {
     #[must_use]
+    #[inline]
     pub fn from_encrypted(value: Vec<u8>) -> Self {
         Self(value)
     }
 
     #[must_use]
+    #[inline]
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
@@ -157,6 +171,7 @@ pub enum RecordTrigger {
 
 impl RecordTrigger {
     #[must_use]
+    #[inline]
     pub fn to_db(self) -> i32 {
         match self {
             RecordTrigger::Sync => 0,
@@ -167,6 +182,7 @@ impl RecordTrigger {
         }
     }
 
+    #[inline]
     pub fn from_db(value: i32) -> anyhow::Result<Self> {
         match value {
             0 => Ok(Self::Sync),
@@ -192,6 +208,7 @@ impl EntryKind {
     pub const NOT_EXISTS: i32 = 0;
 
     #[must_use]
+    #[inline]
     pub fn to_db(self) -> i32 {
         match self {
             EntryKind::File => 1,
@@ -200,6 +217,7 @@ impl EntryKind {
     }
 }
 
+#[inline]
 pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
     match value {
         0 => Ok(None),
@@ -210,6 +228,7 @@ pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
 }
 
 #[must_use]
+#[inline]
 pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
     match value {
         None => 0,
@@ -255,6 +274,7 @@ impl EntryVersionData {
     /// This is just an equality check for the most part, but it includes
     /// special handling of `unix_mode` and `is_symlink`.
     #[must_use]
+    #[inline]
     pub fn is_same(&self, update: &AddVersion) -> bool {
         self.path == update.path && self.kind == update.kind && {
             match (&self.content, &update.content) {

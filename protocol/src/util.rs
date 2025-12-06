@@ -23,6 +23,7 @@ use {
 const CONTENT_CHUNK_LEN: usize = 1024;
 
 /// Create a stream that yields the content of `file`.
+#[inline]
 pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<Item = Bytes> {
     let (tx, rx) = mpsc::channel(5);
     tokio::spawn(async move {
@@ -56,6 +57,7 @@ pub fn stream_file(file: Arc<Mutex<impl Read + Send + 'static>>) -> impl Stream<
 /// Convert a relative archive path (that always uses `/` as separator)
 /// to a relative path with native separator for the current OS.
 #[must_use]
+#[inline]
 pub fn archive_to_native_relative_path(relative_archive_path: &str) -> Cow<'_, str> {
     if MAIN_SEPARATOR == '/' {
         Cow::Borrowed(relative_archive_path)
@@ -68,6 +70,7 @@ pub fn archive_to_native_relative_path(relative_archive_path: &str) -> Cow<'_, s
 /// to a relative archive path (that always uses `/` as separator).
 ///
 /// `relative_path` should not contain `.` or `..`.
+#[inline]
 pub fn native_to_archive_relative_path(relative_path: &Path) -> Result<String> {
     let mut result = Vec::new();
     for component in relative_path.components() {
@@ -85,6 +88,7 @@ pub fn native_to_archive_relative_path(relative_path: &Path) -> Result<String> {
 }
 
 /// Create a log writer that logs to the specified `log_file`, or to stdout if `log_file` is `None`.
+#[inline]
 pub fn log_writer(log_file: Option<&Path>) -> Result<Box<dyn Write + Send + Sync>> {
     if let Some(log_file) = log_file {
         Ok(Box::new(
@@ -103,10 +107,12 @@ pub fn log_writer(log_file: Option<&Path>) -> Result<Box<dyn Write + Send + Sync
 pub struct ErrorSender(mpsc::Sender<anyhow::Error>);
 
 impl ErrorSender {
+    #[inline]
     pub async fn notify(&self, err: impl Into<anyhow::Error>) {
         let _ = self.0.send(err.into()).await;
     }
 
+    #[inline]
     pub async fn unwrap_or_notify<T, E>(&self, value: Result<T, E>) -> T
     where
         E: Into<anyhow::Error>,
@@ -121,6 +127,7 @@ impl ErrorSender {
     }
 }
 
+#[inline]
 pub async fn interrupt_on_error<F, R, Fut>(f: F) -> Result<R>
 where
     F: FnOnce(ErrorSender) -> Fut,
@@ -140,6 +147,7 @@ where
 }
 
 /// Call `f` through `tokio::task::block_in_place` if possible.
+#[inline]
 pub fn maybe_block_in_place<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
