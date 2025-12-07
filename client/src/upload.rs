@@ -1,34 +1,35 @@
 use {
     crate::{
+        Ctx,
         config::MountPoint,
         info::pretty_size,
         path::SanitizedLocalPath,
         rules::Rules,
         symlinks_enabled,
         term::{set_status, set_status_updater},
-        unix_mode, Ctx,
+        unix_mode,
     },
-    anyhow::{anyhow, bail, Context, Result},
+    anyhow::{Context, Result, anyhow, bail},
     cadd::convert::IntoType,
     fs_err::File,
     futures::future::BoxFuture,
     rammingen_protocol::{
+        ArchivePath, ContentHash, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
         endpoints::{AddVersion, AddVersions, ContentHashExists},
         util::{
-            interrupt_on_error, maybe_block_in_place, native_to_archive_relative_path, ErrorSender,
+            ErrorSender, interrupt_on_error, maybe_block_in_place, native_to_archive_relative_path,
         },
-        ArchivePath, ContentHash, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
     },
     rammingen_sdk::content::{EncryptedFileHead, LocalEntry, LocalFileEntry},
     std::{
         collections::HashSet,
         fs::FileType,
         mem,
-        sync::{atomic::Ordering, Arc},
+        sync::{Arc, atomic::Ordering},
         time::Duration,
     },
     tokio::{
-        sync::{mpsc, oneshot, Semaphore},
+        sync::{Semaphore, mpsc, oneshot},
         task::{self},
         time::sleep,
     },
@@ -394,6 +395,7 @@ fn upload_inner<'a>(
                     .fetch_add(1, Ordering::Relaxed);
             }
         } else if !ctx.dry_run {
+            #[expect(clippy::collapsible_if, reason = "for clarity")]
             if let Some(new_content) = &new_local_entry.file_data {
                 if let Some(old_content) = db_data.as_ref().and_then(|data| data.file_data.as_ref())
                 {

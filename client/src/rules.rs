@@ -51,10 +51,10 @@ impl Rules {
         {
             return Ok(true);
         }
-        if let Some(parent) = path.parent()? {
-            if self.matches(&parent)? {
-                return Ok(true);
-            }
+        if let Some(parent) = path.parent()?
+            && self.matches(&parent)?
+        {
+            return Ok(true);
         }
 
         for rule in &self.rules {

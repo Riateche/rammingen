@@ -6,33 +6,32 @@ pub mod util;
 
 use {
     crate::{snapshot::make_snapshot, util::generate_server_id},
-    anyhow::{ensure, Context as _, Result},
+    anyhow::{Context as _, Result, ensure},
     bytes::{BufMut, BytesMut},
     cadd::{ops::Cdiv, prelude::IntoType},
     futures::{Future, StreamExt, TryStreamExt},
-    http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody},
+    http_body_util::{BodyExt, Full, StreamBody, combinators::BoxBody},
     humantime_serde::re::humantime::parse_duration,
     hyper::{
+        Method, Request, Response, StatusCode,
         body::{self, Bytes, Frame},
         header::AUTHORIZATION,
-        Method, Request, Response, StatusCode,
     },
     rammingen_protocol::{
-        encoding,
+        EncryptedContentHash, SourceId, encoding,
         endpoints::{
-            v1_legacy, AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions,
+            AddVersions, CheckIntegrity, ContentHashExists, GetAllEntryVersions,
             GetDirectChildEntries, GetEntryVersionsAtTime, GetNewEntries, GetServerStatus,
             GetSources, MovePath, RemovePath, RequestToResponse, RequestToStreamingResponse,
-            ResetVersion, StreamingResponseItem,
+            ResetVersion, StreamingResponseItem, v1_legacy,
         },
-        EncryptedContentHash, SourceId,
     },
     rammingen_sdk::{
-        server::{serve_connection, ShutdownWatcher},
+        server::{ShutdownWatcher, serve_connection},
         signal::shutdown_signal,
     },
-    serde::{de::DeserializeOwned, Deserialize, Serialize},
-    sqlx::{query, query_scalar, PgPool},
+    serde::{Deserialize, Serialize, de::DeserializeOwned},
+    sqlx::{PgPool, query, query_scalar},
     std::{
         cmp::min,
         collections::HashMap,
@@ -44,13 +43,13 @@ use {
         time::{Duration, Instant},
     },
     storage::Storage,
-    stream_generator::{generate_stream, Yielder},
+    stream_generator::{Yielder, generate_stream},
     tokio::{
         net::TcpListener,
         select,
         sync::{
-            mpsc::{self, Sender},
             Mutex,
+            mpsc::{self, Sender},
         },
         task,
         time::interval,
@@ -183,7 +182,7 @@ pub async fn run(
             r = listener.accept() => match r {
                 Ok((io, _client_addr)) => {
                     let ctx = ctx.clone();
-                    tokio::spawn(serve_connection(io, &shutdown_watcher, move |request| {
+                    tokio::spawn(serve_connection(io, shutdown_watcher.watcher(), move |request| {
                         handle_request(ctx.clone(), request)
                     }));
                 }

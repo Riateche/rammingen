@@ -1,14 +1,14 @@
 use {
     futures::FutureExt,
     hyper::{
+        Request, Response,
         body::{Body, Incoming},
         server::conn::http1,
         service::service_fn,
-        Request, Response,
     },
     hyper_util::{
         rt::TokioIo,
-        server::graceful::{GracefulConnection, GracefulShutdown},
+        server::graceful::{GracefulConnection, GracefulShutdown, Watcher},
     },
     std::{convert::Infallible, error::Error, future::Future, io, time::Duration},
     tokio::{
@@ -21,7 +21,7 @@ use {
 #[inline(never)]
 pub fn serve_connection<C, H, Fut, B>(
     io: C,
-    shutdown_watcher: &ShutdownWatcher,
+    shutdown_watcher: Watcher,
     handler: H,
 ) -> impl Future<Output = ()>
 where
@@ -35,8 +35,8 @@ where
         TokioIo::new(io),
         service_fn(move |request| handler(request).map(Ok::<_, Infallible>)),
     );
-    let serving = shutdown_watcher.watch(serving);
     async move {
+        let serving = shutdown_watcher.watch(serving);
         if let Err(err) = serving.await {
             if let Some(err) = err.source().and_then(|err| err.downcast_ref::<io::Error>()) {
                 #[expect(clippy::wildcard_enum_match_arm, reason = "safe default")]
@@ -64,6 +64,12 @@ impl ShutdownWatcher {
     #[inline]
     pub fn watch<C: GracefulConnection>(&self, io: C) -> impl Future<Output = C::Output> {
         self.inner.watch(io)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn watcher(&self) -> Watcher {
+        self.inner.watcher()
     }
 
     #[inline]

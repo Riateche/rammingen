@@ -2,18 +2,18 @@ mod download;
 
 use {
     crate::{client::download::download_and_decrypt, content::LocalFileEntry, crypto::Cipher},
-    anyhow::{bail, format_err, Error, Result},
+    anyhow::{Error, Result, bail, format_err},
     byteorder::{ByteOrder, LE},
     cadd::{ops::Cadd, prelude::IntoType},
     futures::{Stream, StreamExt},
     rammingen_protocol::{
+        AccessToken, EncryptedContentHash,
         encoding::{self, deserialize},
         endpoints::{RequestToResponse, RequestToStreamingResponse},
         util::stream_file,
-        AccessToken, EncryptedContentHash,
     },
-    reqwest::{header::CONTENT_LENGTH, Body, Method, Url},
-    serde::{de::DeserializeOwned, Serialize},
+    reqwest::{Body, Method, Url, header::CONTENT_LENGTH},
+    serde::{Serialize, de::DeserializeOwned},
     std::{
         fmt::Debug,
         future::Future,
@@ -108,7 +108,7 @@ impl Client {
     }
 
     #[inline(never)]
-    pub fn stream<R>(&self, request: &R) -> impl Stream<Item = Result<R::ResponseItem>>
+    pub fn stream<R>(&self, request: &R) -> impl Stream<Item = Result<R::ResponseItem>> + use<R>
     where
         R: RequestToStreamingResponse + Serialize + Send + Sync + 'static,
         R::ResponseItem: DeserializeOwned + Send + Sync + 'static,

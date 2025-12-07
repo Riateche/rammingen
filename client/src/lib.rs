@@ -19,7 +19,7 @@ use {
         pull_updates::pull_updates,
         upload::upload,
     },
-    anyhow::{bail, Context as _, Result},
+    anyhow::{Context as _, Result, bail},
     cli::default_log_path,
     config::Config,
     counters::{FinalCounters, IntermediateCounters, NotificationCounters},
@@ -28,11 +28,11 @@ use {
     info::{list_versions, pretty_size},
     notify_rust::Notification,
     rammingen_protocol::{
+        AccessToken, EncryptionKey,
         endpoints::{CheckIntegrity, GetServerStatus, MovePath, RemovePath, ResetVersion},
         util::log_writer,
-        AccessToken, EncryptionKey,
     },
-    rammingen_sdk::{crypto::Cipher, Client},
+    rammingen_sdk::{Client, crypto::Cipher},
     rules::Rules,
     std::{
         collections::HashSet,
@@ -44,7 +44,7 @@ use {
     term::TermLayer,
     tracing::{info, warn},
     tracing_subscriber::{
-        prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
+        EnvFilter, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt,
     },
 };
 
@@ -315,7 +315,8 @@ fn show_notification(title: &str, text: &str) {
     init_notifications();
 
     if !cfg!(target_os = "android") {
-        if let Err(err) = Notification::new().summary(title).body(text).show() {
+        let r = Notification::new().summary(title).body(text).show();
+        if let Err(err) = r {
             warn!("Failed to show notification: {err}");
         }
     }
