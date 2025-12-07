@@ -1,6 +1,6 @@
 use {
-    crate::{term::set_status, Ctx},
-    anyhow::{bail, Result},
+    crate::{Ctx, term::set_status},
+    anyhow::{Result, bail},
     futures::TryStreamExt,
     rammingen_protocol::endpoints::{GetNewEntries, GetServerStatus},
     rammingen_sdk::content::LocalArchiveEntry,

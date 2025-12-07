@@ -1,8 +1,8 @@
 use {
-    anyhow::{bail, ensure, Context as _, Result},
+    anyhow::{Context as _, Result, bail, ensure},
     rammingen_protocol::AccessToken,
     rand::distr::{Alphanumeric, SampleString},
-    sqlx::{query, query_scalar, PgPool},
+    sqlx::{PgPool, query, query_scalar},
 };
 
 /// Get names of configured sources (clients).

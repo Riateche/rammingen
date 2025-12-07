@@ -1,6 +1,6 @@
 use {
-    anyhow::{anyhow, bail, Context as _, Result},
-    serde::{de::Error, Deserialize, Serialize},
+    anyhow::{Context as _, Result, anyhow, bail},
+    serde::{Deserialize, Serialize, de::Error},
     std::{
         fmt::{self, Display, Formatter},
         io,

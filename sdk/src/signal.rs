@@ -1,7 +1,7 @@
 use {
     anyhow::{Context, Result},
     derive_more::Display,
-    futures::{future::select, FutureExt},
+    futures::{FutureExt, future::select},
     std::{future::Future, pin::pin},
     tokio::signal::ctrl_c,
 };
@@ -31,7 +31,7 @@ pub async fn shutdown_signal() -> Result<ShutdownSignal> {
 fn sigterm() -> Result<impl Future<Output = ()>> {
     #[cfg(target_family = "unix")]
     {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         let mut sigterm = signal(SignalKind::terminate())?;
         Ok(async move {
             sigterm.recv().await;

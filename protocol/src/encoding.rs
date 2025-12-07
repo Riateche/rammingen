@@ -5,7 +5,7 @@
 //! Compatible with bincode 1.x.
 
 use {
-    serde::{de::DeserializeOwned, Serialize},
+    serde::{Serialize, de::DeserializeOwned},
     std::io::Write,
 };
 

@@ -5,8 +5,8 @@
 )]
 
 use {
-    aes_siv::{aead::Aead, Aes256SivAead, KeyInit, Nonce},
-    criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion},
+    aes_siv::{Aes256SivAead, KeyInit, Nonce, aead::Aead},
+    criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main},
 };
 
 fn criterion_benchmark(c: &mut Criterion) {

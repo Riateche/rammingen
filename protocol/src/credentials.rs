@@ -1,15 +1,15 @@
 use {
-    aes_siv::{aead::array::Array, Aes256SivAead, Key, KeyInit},
-    anyhow::{anyhow, bail, ensure, format_err, Error},
-    base64::{display::Base64Display, prelude::BASE64_URL_SAFE_NO_PAD, Engine},
+    aes_siv::{Aes256SivAead, Key, KeyInit, aead::array::Array},
+    anyhow::{Error, anyhow, bail, ensure, format_err},
+    base64::{Engine, display::Base64Display, prelude::BASE64_URL_SAFE_NO_PAD},
     generic_array::typenum::U64,
     rand::{
+        CryptoRng,
         distr::{Alphanumeric, SampleString},
         rand_core,
         rngs::OsRng,
-        CryptoRng,
     },
-    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
+    serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     std::{
         any::Any,
         borrow::Cow,

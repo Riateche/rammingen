@@ -1,7 +1,7 @@
 use {
-    anyhow::{bail, Context as _, Result},
+    anyhow::{Context as _, Result, bail},
+    fs_err::{File, PathExt, create_dir_all, read_dir, remove_file, rename, symlink_metadata},
     fs2::available_space,
-    fs_err::{create_dir_all, read_dir, remove_file, rename, symlink_metadata, File, PathExt},
     rammingen_protocol::EncryptedContentHash,
     std::{
         collections::HashMap,

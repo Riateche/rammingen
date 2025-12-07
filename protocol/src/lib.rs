@@ -6,12 +6,12 @@ pub mod util;
 
 pub use crate::{
     credentials::{AccessToken, EncryptionKey},
-    path::{with_prefix as serde_path_with_prefix, ArchivePath, EncryptedArchivePath},
+    path::{ArchivePath, EncryptedArchivePath, with_prefix as serde_path_with_prefix},
 };
 
 use {
-    anyhow::{bail, Result},
-    base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine},
+    anyhow::{Result, bail},
+    base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD},
     chrono::Utc,
     derive_more::{From, Into},
     endpoints::AddVersion,

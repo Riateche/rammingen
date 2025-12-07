@@ -1,14 +1,14 @@
 use {
     crate::{counters::NotificationCounters, path::SanitizedLocalPath},
-    anyhow::{bail, Context as _, Result},
+    anyhow::{Context as _, Result, bail},
     byteorder::{ByteOrder, LE},
     rammingen_protocol::{
-        encoding, ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryUpdateNumber,
-        RecordTrigger, SourceId,
+        ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryUpdateNumber, RecordTrigger,
+        SourceId, encoding,
     },
     rammingen_sdk::content::{LocalArchiveEntry, LocalEntry, LocalFileEntry},
     serde::{Deserialize, Serialize},
-    sled::{transaction::ConflictableTransactionError, IVec, Transactional},
+    sled::{IVec, Transactional, transaction::ConflictableTransactionError},
     std::{fmt::Debug, io, iter, path::Path, str, thread::sleep, time::Duration},
     tracing::{info, warn},
 };

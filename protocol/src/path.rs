@@ -1,6 +1,6 @@
 use {
-    anyhow::{bail, Context as _, Result},
-    serde::{de::Error, Deserialize, Serialize},
+    anyhow::{Context as _, Result, bail},
+    serde::{Deserialize, Serialize, de::Error},
     std::{fmt, str::FromStr},
 };
 
@@ -152,7 +152,7 @@ impl ArchivePath {
 pub mod with_prefix {
     use {
         crate::ArchivePath,
-        serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer},
+        serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error},
     };
 
     #[inline]
@@ -293,7 +293,7 @@ impl EncryptedArchivePath {
 impl fmt::Display for EncryptedArchivePath {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "enar:{}", self.0 .0)
+        write!(f, "enar:{}", self.0.0)
     }
 }
 

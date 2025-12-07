@@ -1,12 +1,12 @@
 use {
     anyhow::Result,
-    base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine},
+    base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD},
     clap::Parser,
     rammingen::{
-        cli::{default_config_path, Cli, Command},
+        cli::{Cli, Command, default_config_path},
         config::Config,
         setup_logger,
-        term::{set_term, StdoutTerm},
+        term::{StdoutTerm, set_term},
     },
     rammingen_protocol::EncryptionKey,
     tracing::error,

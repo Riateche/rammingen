@@ -2,7 +2,7 @@ use {
     crate::{path::SanitizedLocalPath, rules::Rule},
     byte_unit::Byte,
     humantime::parse_duration,
-    rammingen_protocol::{serde_path_with_prefix, AccessToken, ArchivePath, EncryptionKey},
+    rammingen_protocol::{AccessToken, ArchivePath, EncryptionKey, serde_path_with_prefix},
     serde::{Deserialize, Serialize},
     std::{path::PathBuf, time::Duration},
     url::Url,

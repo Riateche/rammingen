@@ -1,5 +1,5 @@
 use {
-    anyhow::{bail, Context as _, Result},
+    anyhow::{Context as _, Result, bail},
     bytes::Bytes,
     fs_err::OpenOptions,
     futures::future,
@@ -7,16 +7,16 @@ use {
     std::{
         borrow::Cow,
         future::Future,
-        io::{stdout, Read, Write},
-        path::{self, Path, MAIN_SEPARATOR, MAIN_SEPARATOR_STR},
+        io::{Read, Write, stdout},
+        path::{self, MAIN_SEPARATOR, MAIN_SEPARATOR_STR, Path},
         sync::Arc,
     },
     tokio::{
         pin, select,
-        sync::{mpsc, Mutex},
+        sync::{Mutex, mpsc},
         task::block_in_place,
     },
-    tokio_stream::{wrappers::ReceiverStream, Stream},
+    tokio_stream::{Stream, wrappers::ReceiverStream},
     tracing::warn,
 };
 

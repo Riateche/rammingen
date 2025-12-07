@@ -1,22 +1,22 @@
 use {
     crossterm::{
-        cursor,
+        QueueableCommand, cursor,
         style::{Color, ResetColor, SetForegroundColor},
-        terminal, QueueableCommand,
+        terminal,
     },
-    parking_lot::{lock_api::ArcMutexGuard, Mutex, RawMutex},
+    parking_lot::{Mutex, RawMutex, lock_api::ArcMutexGuard},
     std::{
         fmt::{Debug, Display, Write as _},
-        io::{stdout, Stdout, Write},
+        io::{Stdout, Write, stdout},
         process,
         sync::{Arc, LazyLock},
         time::Duration,
     },
     tokio::{select, signal::ctrl_c, sync::oneshot, task, time::interval},
     tracing::{
-        error,
+        Level, Subscriber, error,
         field::{Field, Visit},
-        warn, Level, Subscriber,
+        warn,
     },
     tracing_subscriber::Layer,
 };

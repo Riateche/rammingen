@@ -1,7 +1,7 @@
 use {
     crate::{
-        path::EncryptedArchivePath, DateTimeUtc, EncryptedContentHash, Entry, EntryKind,
-        EntryUpdateNumber, EntryVersion, FileContent, RecordTrigger, SourceId,
+        DateTimeUtc, EncryptedContentHash, Entry, EntryKind, EntryUpdateNumber, EntryVersion,
+        FileContent, RecordTrigger, SourceId, path::EncryptedArchivePath,
     },
     serde::{Deserialize, Serialize},
 };

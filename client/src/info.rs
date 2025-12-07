@@ -1,7 +1,7 @@
 use {
     crate::{
-        path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules,
-        upload::to_archive_path, Ctx,
+        Ctx, path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules,
+        upload::to_archive_path,
     },
     anyhow::{Context as _, Result},
     byte_unit::{Byte, UnitType},
@@ -9,10 +9,10 @@ use {
     chrono::{DateTime, Local, SubsecRound, Timelike},
     futures::TryStreamExt,
     itertools::Itertools,
-    prettytable::{cell, format::FormatBuilder, row, Table},
+    prettytable::{Table, cell, format::FormatBuilder, row},
     rammingen_protocol::{
-        endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
         ArchivePath, DateTimeUtc, EntryKind, SourceId,
+        endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
     },
     rammingen_sdk::content::LocalArchiveEntry,
     std::fmt::Display,

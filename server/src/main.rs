@@ -2,9 +2,9 @@ use {
     anyhow::Result,
     clap::Parser,
     rammingen_protocol::util::log_writer,
-    rammingen_server::{default_config_path, Config},
+    rammingen_server::{Config, default_config_path},
     std::{path::PathBuf, sync::Mutex},
-    tracing_subscriber::{util::SubscriberInitExt, EnvFilter},
+    tracing_subscriber::{EnvFilter, util::SubscriberInitExt},
 };
 
 #[derive(Debug, Parser)]

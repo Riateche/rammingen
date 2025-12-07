@@ -1,12 +1,12 @@
 use {
     crate::{
+        Ctx,
         counters::NotificationCounters,
         download::download_latest,
         pull_updates::pull_updates,
         rules::Rules,
         show_notification,
         upload::{find_local_deletions, upload},
-        Ctx,
     },
     anyhow::{Context, Result},
     cadd::ops::Cadd,

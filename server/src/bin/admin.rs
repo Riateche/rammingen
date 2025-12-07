@@ -3,9 +3,8 @@ use {
     clap::{Args, Parser, Subcommand},
     rammingen_protocol::AccessToken,
     rammingen_server::{
-        default_config_path,
+        Config, default_config_path,
         util::{add_source, migrate, set_access_token, sources, update_server_id},
-        Config,
     },
     sqlx::PgPool,
     std::path::PathBuf,
