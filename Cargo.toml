@@ -9,6 +9,11 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Riateche/rammingen"
+edition = "2021"
+
 [workspace.dependencies]
 aes-siv = { version = "0.8.0-rc.2" }
 anyhow = { version = "1.0.100", features = ["backtrace"] }
@@ -91,7 +96,6 @@ assertions_on_result_states = "warn"
 bool_to_int_with_if = "warn"
 borrow_as_ptr = "warn"
 branches_sharing_code = "warn"
-cargo_common_metadata = "warn"
 case_sensitive_file_extension_comparisons = "warn"
 cast_lossless = "warn"
 cast_possible_truncation = "warn"

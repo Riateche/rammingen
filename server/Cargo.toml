@@ -1,9 +1,12 @@
 [package]
 name = "rammingen_server"
+description = "File synchronization and backup server"
 version = "0.1.0"
-edition = "2021"
 default-run = "rammingen-server"
-license = "MIT OR Apache-2.0"
+
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 
 [lints]
 workspace = true
