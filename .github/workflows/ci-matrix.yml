@@ -1,0 +1,14 @@
+on: [push, pull_request]
+
+name: Continuous integration
+
+jobs:
+  matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-24.04", "windows-2025", "macos-15"]
+    uses: "./.github/workflows/ci.yml"
+    with:
+      os: ${{ matrix.os }}
+    secrets: inherit
