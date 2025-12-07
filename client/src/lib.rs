@@ -1,5 +1,3 @@
-#![allow(clippy::collapsible_if)]
-
 pub mod cli;
 pub mod config;
 mod counters;
@@ -16,6 +14,7 @@ mod upload;
 use {
     crate::{
         cli::Command,
+        db::Db,
         info::{clear_local_cache, local_status, ls},
         pull_updates::pull_updates,
         upload::upload,
@@ -33,7 +32,7 @@ use {
         util::log_writer,
         AccessToken, EncryptionKey,
     },
-    rammingen_sdk::{client::Client, crypto::Cipher},
+    rammingen_sdk::{crypto::Cipher, Client},
     rules::Rules,
     std::{
         collections::HashSet,
@@ -55,13 +54,14 @@ pub struct Ctx {
     pub client: Client,
     #[derivative(Debug = "ignore")]
     pub cipher: Cipher,
-    pub db: crate::db::Db,
+    pub db: Db,
     pub final_counters: FinalCounters,
     pub intermediate_counters: IntermediateCounters,
 }
 
 const KEYRING_SERVICE: &str = "rammingen";
 
+#[derive(Debug, Clone, Copy)]
 enum SecretKind {
     AccessToken,
     EncryptionKey,
@@ -76,8 +76,8 @@ fn fetch_keyring_secret(kind: SecretKind) -> anyhow::Result<String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, user)?;
     match entry.get_password() {
         Ok(password) => Ok(password),
-        Err(err) => {
-            if matches!(err, keyring::Error::NoEntry) {
+        Err(get_err) => {
+            if matches!(get_err, keyring::Error::NoEntry) {
                 info!("entry {user:?} not found in keyring");
                 let prompt = match kind {
                     SecretKind::AccessToken => "Input access token: ",
@@ -91,13 +91,13 @@ fn fetch_keyring_secret(kind: SecretKind) -> anyhow::Result<String> {
                     Ok(()) => {
                         info!("entry {user:?} saved to keyring");
                     }
-                    Err(err) => {
-                        warn!("failed to save secret in keyring: {err}");
+                    Err(set_err) => {
+                        warn!("failed to save secret in keyring: {set_err}");
                     }
                 }
                 Ok(value)
             } else {
-                Err(err.into())
+                Err(get_err.into())
             }
         }
     }
@@ -108,6 +108,7 @@ pub struct Secrets {
     pub encryption_key: EncryptionKey,
 }
 
+#[inline(never)]
 pub async fn run(command: Command, config: Config, secrets: Option<Secrets>) -> Result<()> {
     let local_db_path = if let Some(v) = &config.local_db_path {
         v.clone()
@@ -149,10 +150,10 @@ pub async fn run(command: Command, config: Config, secrets: Option<Secrets>) -> 
     };
 
     let ctx = Arc::new(Ctx {
-        client: Client::new(config.server_url.clone(), access_token),
+        client: Client::new(config.server_url.clone(), access_token)?,
         cipher: Cipher::new(&encryption_key),
         config,
-        db: crate::db::Db::open(&local_db_path)?,
+        db: Db::open(&local_db_path)?,
         final_counters: Default::default(),
         intermediate_counters: Default::default(),
     });
@@ -270,6 +271,8 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
 }
 
 #[cfg(target_family = "unix")]
+#[must_use]
+#[inline]
 pub fn unix_mode(metadata: &Metadata) -> Option<u32> {
     use std::os::unix::prelude::PermissionsExt;
 
@@ -281,10 +284,15 @@ pub fn unix_mode(_metadata: &Metadata) -> Option<u32> {
     None
 }
 
+#[must_use]
+#[inline]
 pub fn symlinks_enabled() -> bool {
     cfg!(target_family = "unix")
 }
 
+#[inline]
+#[expect(clippy::print_stderr, reason = "intended")]
+#[expect(clippy::absolute_paths, reason = "for clarity")]
 pub fn setup_logger(log_file: Option<PathBuf>, log_filter: String) -> Result<()> {
     // Defaults to stdout if `data_dir()` fails.
     let log_file = log_file.or_else(|| {
@@ -302,7 +310,7 @@ pub fn setup_logger(log_file: Option<PathBuf>, log_filter: String) -> Result<()>
     Ok(())
 }
 
-pub fn show_notification(title: &str, text: &str) {
+fn show_notification(title: &str, text: &str) {
     #[cfg(target_os = "macos")]
     init_notifications();
 

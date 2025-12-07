@@ -3,6 +3,7 @@ use {
     aes_siv::{AeadCore, Aes256SivAead, Nonce},
     anyhow::Result,
     byteorder::{ByteOrder, WriteBytesExt, LE},
+    cadd::{ops::Cadd, prelude::IntoType},
     deflate::{write::DeflateEncoder, CompressionOptions},
     generic_array::typenum::ToInt,
     inflate::InflateWriter,
@@ -14,22 +15,24 @@ use {
         io::{self, Read, Write},
     },
     tempfile::SpooledTempFile,
+    tracing::error,
 };
 
 /// Max size of encrypted file content that will be stored in memory.
 /// Files exceeding this limit will be stored as a temporary file on disk.
 const MAX_IN_MEMORY: usize = 32 * 1024 * 1024;
 
-/// Max length of a file chunk that will be encrypted at once.
+/// Max length of an unencoded file chunk that will be encrypted at once.
 const BLOCK_SIZE: usize = 1024 * 1024;
+
+/// Size of the nonce included in each chunk.
+const NONCE_SIZE: usize = <Aes256SivAead as AeadCore>::NonceSize::INT;
+
+/// Max size of the encoded block payload (nonce + encrypted file data)
+const MAX_ENCODED_BLOCK_SIZE: usize = BLOCK_SIZE + NONCE_SIZE + 16;
 
 /// File type marker that is stored at the beginning of every encrypted file.
 const MAGIC_NUMBER: u32 = 3137690536;
-
-// It should be a constant, but it currently doesn't work.
-fn nonce_size() -> usize {
-    <Aes256SivAead as AeadCore>::NonceSize::to_int()
-}
 
 /// Passes through any writes and calculates Sha256 hash and size of the written data.
 struct HashingWriter<W> {
@@ -60,8 +63,14 @@ impl<W> HashingWriter<W> {
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let len = self.inner.write(buf)?;
-        self.hasher.update(&buf[..len]);
-        self.size += len as u64;
+        let written = buf
+            .get(..len)
+            .ok_or_else(|| io::Error::other("inner writer returned invalid length"))?;
+        self.hasher.update(written);
+        self.size = self
+            .size
+            .cadd(len.try_into_type::<u64>().map_err(io::Error::other)?)
+            .map_err(io::Error::other)?;
         Ok(len)
     }
 
@@ -101,16 +110,32 @@ impl<'a, W: Write> EncryptingWriter<'a, W> {
             .try_fill_bytes(&mut nonce)
             .map_err(|err| io::Error::other(format!("OsRng error: {err:?}")))?;
 
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "input_len < self.buf.len() - checked above"
+        )]
         let ciphertext = self
             .cipher
             .encrypt_bytes(&nonce, &self.buf[..input_len])
-            .map_err(|_| io::Error::other("encryption failed"))?;
-        let output_size = nonce.len() + ciphertext.len();
+            .map_err(|_e| io::Error::other("encryption failed"))?;
+        let output_size = nonce
+            .len()
+            .cadd(ciphertext.len())
+            .map_err(io::Error::other)?;
 
-        self.output.write_u32::<LE>(output_size as u32)?;
+        self.output
+            .write_u32::<LE>(output_size.try_into().map_err(io::Error::other)?)?;
         self.output.write_all(&nonce)?;
         self.output.write_all(&ciphertext)?;
-        self.encrypted_size += 4 + output_size as u64;
+        let written_size = output_size
+            .try_into_type::<u64>()
+            .map_err(io::Error::other)?
+            .cadd(4_u64)
+            .map_err(io::Error::other)?;
+        self.encrypted_size = self
+            .encrypted_size
+            .cadd(written_size)
+            .map_err(io::Error::other)?;
 
         self.buf.drain(..input_len);
 
@@ -124,8 +149,8 @@ impl<'a, W: Write> EncryptingWriter<'a, W> {
     }
 }
 
-impl<'a, W: Write> Write for EncryptingWriter<'a, W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl<W: Write> Write for EncryptingWriter<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buf.extend_from_slice(buf);
         if self.buf.len() >= BLOCK_SIZE {
             self.write_block()?;
@@ -133,7 +158,7 @@ impl<'a, W: Write> Write for EncryptingWriter<'a, W> {
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         self.output.flush()
     }
 }
@@ -141,7 +166,7 @@ impl<'a, W: Write> Write for EncryptingWriter<'a, W> {
 // Decrypts encrypted files.
 pub struct DecryptingWriter<'a, W: Write> {
     // Whether the magic number has been read.
-    got_header: bool,
+    got_file_header: bool,
     // Input data that is not yet decrypted.
     buf: Vec<u8>,
     cipher: &'a Cipher,
@@ -149,15 +174,17 @@ pub struct DecryptingWriter<'a, W: Write> {
 }
 
 impl<'a, W: Write> DecryptingWriter<'a, W> {
+    #[inline]
     pub fn new(cipher: &'a Cipher, output: W) -> Self {
         Self {
-            got_header: false,
+            got_file_header: false,
             buf: Vec::new(),
             cipher,
             output: InflateWriter::new(HashingWriter::new(output)),
         }
     }
 
+    #[inline]
     pub fn finish(mut self) -> io::Result<(W, ContentHash, u64)> {
         self.process_block()?;
         if !self.buf.is_empty() {
@@ -167,7 +194,7 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
     }
 
     fn process_block(&mut self) -> io::Result<()> {
-        if !self.got_header {
+        if !self.got_file_header {
             if self.buf.len() < 4 {
                 return Ok(());
             }
@@ -175,70 +202,78 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
                 return Err(io::Error::other("magic number mismatch"));
             }
             self.buf.drain(..4);
-            self.got_header = true;
+            self.got_file_header = true;
         }
-        if self.buf.len() < 4 {
+
+        let Some((len_bytes, rest_of_data)) = self.buf.split_at_checked(4) else {
+            // Haven't received enough data yet.
             return Ok(());
-        }
-        let len: usize = LE::read_u32(&self.buf)
+        };
+
+        let len: usize = LE::read_u32(len_bytes)
             .try_into()
             .map_err(io::Error::other)?;
-        let nonce_size = nonce_size();
-        let max_block_size = BLOCK_SIZE + nonce_size + 16;
-        if len > max_block_size {
+        if len > MAX_ENCODED_BLOCK_SIZE {
             return Err(io::Error::other(format!(
-                "block size is too large (expected {max_block_size}, got {len})"
+                "block size is too large (expected {MAX_ENCODED_BLOCK_SIZE}, got {len})"
             )));
         }
-        let rest_of_data = &self.buf[4..];
-        if rest_of_data.len() < len {
-            return Ok(());
-        }
-        let chunk_data = &rest_of_data[..len];
 
-        let nonce = chunk_data
-            .get(..nonce_size)
+        let Some(chunk_data) = &rest_of_data.get(..len) else {
+            // Haven't received enough data yet.
+            return Ok(());
+        };
+
+        let (nonce_bytes, encrypted_bytes) = chunk_data
+            .split_at_checked(NONCE_SIZE)
             .ok_or_else(|| io::Error::other("chunk data is too short"))?;
-        #[allow(deprecated)]
-        let nonce = Nonce::from_slice(nonce);
+        let nonce = Nonce::try_from(nonce_bytes).map_err(io::Error::other)?;
         let plaintext = self
             .cipher
-            .decrypt_bytes(nonce, &chunk_data[nonce_size..])
-            .map_err(|_| io::Error::other("decryption failed"))?;
+            .decrypt_bytes(&nonce, encrypted_bytes)
+            .map_err(|err| {
+                error!(?err, "decryption failed");
+                io::Error::other("decryption failed")
+            })?;
         self.output.write_all(&plaintext)?;
-        self.buf.drain(..4 + len);
+        let bytes_read = len.cadd(4_usize).map_err(io::Error::other)?;
+        self.buf.drain(..bytes_read);
         Ok(())
     }
 }
 
-impl<'a, W: Write> Write for DecryptingWriter<'a, W> {
+impl<W: Write> Write for DecryptingWriter<'_, W> {
+    #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buf.extend_from_slice(buf);
         self.process_block()?;
         Ok(buf.len())
     }
 
+    #[inline]
     fn flush(&mut self) -> io::Result<()> {
         self.output.flush()?;
         Ok(())
     }
 }
 
-impl Cipher {
-    pub fn encrypt_file_content(&self, mut file_content: impl Read) -> Result<EncryptedFileHead> {
-        let output = SpooledTempFile::new(MAX_IN_MEMORY);
-        let encryptor = EncryptingWriter::new(output, self)?;
-        let encoder = DeflateEncoder::new(encryptor, CompressionOptions::high());
-        let mut hasher = HashingWriter::new(encoder);
-        io::copy(&mut file_content, &mut hasher)?;
-        let (encoder, hash, original_size) = hasher.finish()?;
-        let encryptor = encoder.finish()?;
-        let (file, encrypted_size) = encryptor.finish()?;
-        Ok(EncryptedFileHead {
-            file,
-            hash,
-            original_size,
-            encrypted_size,
-        })
-    }
+#[expect(clippy::shadow_unrelated, reason = "false positive")]
+pub fn encrypt_file_content(
+    cipher: &Cipher,
+    mut file_content: impl Read,
+) -> Result<EncryptedFileHead> {
+    let output = SpooledTempFile::new(MAX_IN_MEMORY);
+    let encryptor = EncryptingWriter::new(output, cipher)?;
+    let encoder = DeflateEncoder::new(encryptor, CompressionOptions::high());
+    let mut hasher = HashingWriter::new(encoder);
+    io::copy(&mut file_content, &mut hasher)?;
+    let (encoder, hash, original_size) = hasher.finish()?;
+    let encryptor = encoder.finish()?;
+    let (file, encrypted_size) = encryptor.finish()?;
+    Ok(EncryptedFileHead {
+        file,
+        hash,
+        original_size,
+        encrypted_size,
+    })
 }

@@ -13,13 +13,8 @@ use {
 };
 
 #[tokio::main]
-async fn main() {
-    if let Err(err) = try_main().await {
-        println!("{err:?}");
-    }
-}
-
-async fn try_main() -> Result<()> {
+#[expect(clippy::print_stdout, reason = "intended")]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     if cli.command == Command::GenerateEncryptionKey {
         let key = EncryptionKey::generate()?;

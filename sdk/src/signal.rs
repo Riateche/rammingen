@@ -12,6 +12,7 @@ pub enum ShutdownSignal {
     Sigterm,
 }
 
+#[inline(never)]
 pub async fn shutdown_signal() -> Result<ShutdownSignal> {
     let sigint = ctrl_c().map(|signal| {
         signal

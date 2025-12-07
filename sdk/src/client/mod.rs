@@ -1,8 +1,10 @@
 mod download;
 
 use {
+    crate::{client::download::download_and_decrypt, content::LocalFileEntry, crypto::Cipher},
     anyhow::{bail, format_err, Error, Result},
     byteorder::{ByteOrder, LE},
+    cadd::{ops::Cadd, prelude::IntoType},
     futures::{Stream, StreamExt},
     rammingen_protocol::{
         encoding::{self, deserialize},
@@ -13,8 +15,10 @@ use {
     reqwest::{header::CONTENT_LENGTH, Body, Method, Url},
     serde::{de::DeserializeOwned, Serialize},
     std::{
+        fmt::Debug,
         future::Future,
         io::{self, Read, Seek, SeekFrom},
+        path::Path,
         sync::Arc,
         time::Duration,
     },
@@ -38,45 +42,49 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Loading large files may take a long time.
 pub const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3600 * 24);
 
+#[must_use]
+#[inline]
 pub fn upload_timeout(upload_size: u64) -> Duration {
-    DEFAULT_TIMEOUT + Duration::from_micros(upload_size)
+    // Assuming upload speed above 1 MB/s.
+    DEFAULT_TIMEOUT.saturating_add(Duration::from_micros(upload_size))
 }
 
 impl Client {
-    pub fn new(server_url: Url, token: AccessToken) -> Self {
-        Self {
+    #[inline]
+    pub fn new(server_url: Url, token: AccessToken) -> anyhow::Result<Self> {
+        Ok(Self {
             server_url,
             token,
             reqwest: reqwest::Client::builder()
                 .timeout(DEFAULT_TIMEOUT)
-                .build()
-                .unwrap(),
-        }
+                .build()?,
+        })
     }
 
     #[instrument(skip_all)]
+    #[inline(never)]
     pub async fn request_with_timeout<R>(
         &self,
         request: &R,
         timeout: Option<Duration>,
     ) -> Result<R::Response>
     where
-        R: RequestToResponse + Serialize,
-        R::Response: DeserializeOwned,
+        R: RequestToResponse + Serialize + Send + Sync,
+        R::Response: DeserializeOwned + Send + Sync,
     {
         let url = self.server_url.join(R::PATH)?;
         let body = encoding::serialize(&request)?;
         let bytes = ok_or_retry(|| async {
-            let mut request = self
+            let mut post_request = self
                 .reqwest
                 .request(Method::POST, url.clone())
                 .bearer_auth(self.token.as_unmasked_str())
                 .body(body.clone());
             if let Some(timeout) = timeout {
-                request = request.timeout(timeout);
+                post_request = post_request.timeout(timeout);
             }
 
-            request
+            post_request
                 .send()
                 .await
                 .map_err(RequestError::transport)?
@@ -90,14 +98,16 @@ impl Client {
         deserialize::<Result<_, String>>(&bytes)?.map_err(|msg| format_err!("server error: {msg}"))
     }
 
+    #[inline]
     pub async fn request<R>(&self, request: &R) -> Result<R::Response>
     where
-        R: RequestToResponse + Serialize,
-        R::Response: DeserializeOwned,
+        R: RequestToResponse + Serialize + Send + Sync,
+        R::Response: DeserializeOwned + Send + Sync,
     {
         self.request_with_timeout(request, None).await
     }
 
+    #[inline(never)]
     pub fn stream<R>(&self, request: &R) -> impl Stream<Item = Result<R::ResponseItem>>
     where
         R: RequestToStreamingResponse + Serialize + Send + Sync + 'static,
@@ -120,8 +130,8 @@ impl Client {
             let mut buf = Vec::new();
             while let Some(chunk) = timeout(DEFAULT_TIMEOUT, response.chunk()).await?? {
                 buf.extend_from_slice(&chunk);
-                while let Some((chunk, index)) = take_chunk(&buf) {
-                    let data = deserialize::<Result<Option<Vec<R::ResponseItem>>, String>>(chunk)?
+                while let Some((bytes, index)) = take_chunk(&buf)? {
+                    let data = deserialize::<Result<Option<Vec<R::ResponseItem>>, String>>(bytes)?
                         .map_err(|msg| format_err!("server error: {msg}"))?;
 
                     buf.drain(..index);
@@ -140,6 +150,7 @@ impl Client {
     }
 
     #[instrument(skip_all, fields(?hash))]
+    #[inline(never)]
     pub async fn upload(
         &self,
         hash: &EncryptedContentHash,
@@ -160,7 +171,7 @@ impl Client {
                 .bearer_auth(self.token.as_unmasked_str())
                 .header(CONTENT_LENGTH, size)
                 .body(Body::wrap_stream(
-                    stream_file(encrypted_file.clone()).map(io::Result::Ok),
+                    stream_file(Arc::clone(&encrypted_file)).map(io::Result::Ok),
                 ))
                 .send()
                 .await
@@ -180,17 +191,29 @@ impl Client {
             .push(&hash.to_url_safe());
         Ok(url)
     }
+
+    #[inline]
+    pub async fn download_and_decrypt(
+        &self,
+        local_entry: &LocalFileEntry,
+        path: impl AsRef<Path> + Send + Sync + Debug,
+        cipher: &Cipher,
+    ) -> Result<()> {
+        download_and_decrypt(self, local_entry, path, cipher).await
+    }
 }
 
-fn take_chunk(buf: &[u8]) -> Option<(&[u8], usize)> {
+fn take_chunk(buf: &[u8]) -> Result<Option<(&[u8], usize)>> {
     if buf.len() < 4 {
-        return None;
+        return Ok(None);
     }
-    let len = LE::read_u32(buf) as usize;
-    if buf.len() < 4 + len {
-        return None;
+    let len = LE::read_u32(buf).try_into_type::<usize>()?;
+    let end = len.cadd(4_usize)?;
+    if let Some(bytes) = buf.get(4..end) {
+        Ok(Some((bytes, end)))
+    } else {
+        Ok(None)
     }
-    Some((&buf[4..4 + len], 4 + len))
 }
 
 /// Retries the request if an error arises due to the transport.
@@ -203,7 +226,7 @@ where
     const RETRY_PERIOD: Duration = Duration::from_secs(10);
     let mut attempt = 0;
     loop {
-        attempt += 1;
+        attempt = attempt.cadd(1_usize)?;
         let transport_err = match f().await {
             Ok(x) => break Ok(x),
             Err(RequestError::Application(err)) => break Err(err),
@@ -233,10 +256,10 @@ impl RequestError {
 }
 
 impl From<RequestError> for Error {
+    #[inline]
     fn from(err: RequestError) -> Self {
         match err {
-            RequestError::Transport(err) => err,
-            RequestError::Application(err) => err,
+            RequestError::Transport(err) | RequestError::Application(err) => err,
         }
     }
 }

@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
+[lints]
+workspace = true
+
 [[bench]]
 name = "encryption"
 harness = false
@@ -16,6 +19,7 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
 byteorder = { workspace = true }
+cadd = { workspace = true }
 deflate = { workspace = true }
 derivative = { workspace = true }
 derive_more = { workspace = true }

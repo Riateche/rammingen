@@ -16,18 +16,19 @@ pub struct Cli {
     ///
     /// If omitted, default path is used:
     ///
-    /// - $XDG_CONFIG_HOME/rammingen.conf on Linux
+    /// - `$XDG_CONFIG_HOME/rammingen.conf` on Linux
     ///
-    /// - $HOME/Library/Application Support/rammingen.conf on macOS
+    /// - `$HOME/Library/Application Support/rammingen.conf` on macOS
     ///
-    /// - %APPDATA%\rammingen.conf on Windows
+    /// - `%APPDATA%\rammingen.conf` on Windows
     #[clap(long)]
     pub config: Option<PathBuf>,
     #[clap(subcommand)]
     pub command: Command,
 }
 
-fn display_path(path: anyhow::Result<PathBuf>) -> String {
+#[expect(clippy::print_stderr, reason = "intended")]
+fn display_path_or_print_err(path: anyhow::Result<PathBuf>) -> String {
     match path {
         Ok(path) => path.display().to_string(),
         Err(err) => {
@@ -40,8 +41,8 @@ fn display_path(path: anyhow::Result<PathBuf>) -> String {
 fn about() -> String {
     format!(
         "File sync and backup utility\nDefault config location: {}\nDefault log location: {}",
-        display_path(default_config_path()),
-        display_path(default_log_path()),
+        display_path_or_print_err(default_config_path()),
+        display_path_or_print_err(default_log_path()),
     )
 }
 
@@ -110,6 +111,7 @@ pub struct DateTimeArg(pub DateTimeUtc);
 impl FromStr for DateTimeArg {
     type Err = anyhow::Error;
 
+    #[inline]
     fn from_str(input: &str) -> Result<Self> {
         let naive: NaiveDateTime = NaiveDateTime::parse_from_str(input, DATE_TIME_FORMAT)?;
         Ok(Self(
@@ -122,11 +124,13 @@ impl FromStr for DateTimeArg {
     }
 }
 
+#[inline]
 pub fn default_config_path() -> anyhow::Result<PathBuf> {
     let config_dir = dirs::config_dir().context("cannot find config dir")?;
     Ok(config_dir.join("rammingen.conf"))
 }
 
+#[inline]
 pub fn default_log_path() -> anyhow::Result<PathBuf> {
     Ok(dirs::data_dir()
         .context("cannot find data dir")?

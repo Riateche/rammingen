@@ -5,6 +5,7 @@ use {
     },
     anyhow::{Context as _, Result},
     byte_unit::{Byte, UnitType},
+    cadd::ops::Cadd,
     chrono::{DateTime, Local, SubsecRound, Timelike},
     futures::TryStreamExt,
     itertools::Itertools,
@@ -86,7 +87,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     info!("Path: {}", main_entry.path);
     let encrypted = ctx.cipher.encrypt_path(path)?;
     info!("Encrypted archive path: {}", encrypted);
-    info!("Recorded at: {}", pretty_time(main_entry.recorded_at));
+    info!("Recorded at: {}", pretty_time(main_entry.recorded_at)?);
     info!("Source id: {}", sources.format(main_entry.source_id));
     info!("Record trigger: {:?}", main_entry.record_trigger);
     if let Some(kind) = main_entry.kind {
@@ -96,7 +97,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
                 let content = main_entry
                     .file_data
                     .context("missing content for file entry")?;
-                info!("FS modified at: {}", pretty_time(content.modified_at));
+                info!("FS modified at: {}", pretty_time(content.modified_at)?);
                 info!(
                     "Original size: {} ({} bytes)",
                     pretty_size(content.original_size),
@@ -116,7 +117,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
                     info!("Symlink: {is_symlink}");
                 } else {
                     info!("Symlink: n/a");
-                };
+                }
                 info!("Content hash: {}", content.hash);
             }
             EntryKind::Directory => {
@@ -137,7 +138,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     }
     // already sorted by path, so we use stable sort
     entries.sort_by_key(|entry| match &entry.kind {
-        Some(EntryKind::Directory) => 0,
+        Some(EntryKind::Directory) => 0u32,
         Some(EntryKind::File) => 1,
         None => 2,
     });
@@ -147,14 +148,14 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     }
     let mut table = Table::new();
     table.set_format(FormatBuilder::new().column_separator(' ').build());
-    let mut num_hidden_deleted = 0;
+    let mut num_hidden_deleted = 0u32;
     for entry in entries {
         let name = entry.path.last_name().with_context(|| {
             format!("any child entry must have last name (path: {})", entry.path)
         })?;
-        let recorded_at = pretty_time(entry.recorded_at);
+        let recorded_at = pretty_time(entry.recorded_at)?;
         if entry.kind.is_none() && !show_deleted {
-            num_hidden_deleted += 1;
+            num_hidden_deleted = num_hidden_deleted.cadd(1u32)?;
             continue;
         }
         let status = pretty_status(&entry)?;
@@ -174,13 +175,16 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
 
 pub const DATE_TIME_FORMAT: &str = "%Y-%m-%d_%H:%M:%S";
 
-fn pretty_time(value: DateTimeUtc) -> impl Display {
+fn pretty_time(value: DateTimeUtc) -> anyhow::Result<impl Display> {
     let mut local = DateTime::<Local>::from(value);
     if local.nanosecond() != 0 {
-        local = local.trunc_subsecs(0) + chrono::Duration::seconds(1);
+        local = local
+            .trunc_subsecs(0)
+            .checked_add_signed(chrono::Duration::seconds(1))
+            .context("time overflow")?;
     }
 
-    local.format(DATE_TIME_FORMAT)
+    Ok(local.format(DATE_TIME_FORMAT))
 }
 
 fn pretty_status(entry: &LocalArchiveEntry) -> Result<String> {
@@ -198,10 +202,10 @@ fn pretty_status(entry: &LocalArchiveEntry) -> Result<String> {
                 };
                 format!("{} {}", mode, pretty_size(content.original_size))
             }
-            EntryKind::Directory => "DIR".to_string(),
+            EntryKind::Directory => "DIR".to_owned(),
         }
     } else {
-        "DEL".to_string()
+        "DEL".to_owned()
     };
     Ok(text)
 }
@@ -228,7 +232,7 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
     table.add_row(header);
     while let Some(item) = stream.try_next().await? {
         let entry = LocalArchiveEntry::decrypt(item.data, &ctx.cipher)?;
-        let recorded_at = pretty_time(entry.recorded_at);
+        let recorded_at = pretty_time(entry.recorded_at)?;
         let status = pretty_status(&entry)?;
         let trigger = format!("{:?}", entry.record_trigger);
         let mut row = row![
@@ -245,9 +249,9 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
                     .with_context(|| {
                         format!("strip_prefix({:?}, {:?}) failed", entry.path, parent)
                     })?
-                    .to_string()
+                    .to_owned()
             } else {
-                entry.path.to_str_without_prefix().to_string()
+                entry.path.to_str_without_prefix().to_owned()
             };
             row.add_cell(cell!(relative_path));
         }

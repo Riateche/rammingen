@@ -2,7 +2,8 @@ use {
     anyhow::{anyhow, bail, Context as _, Result},
     serde::{de::Error, Deserialize, Serialize},
     std::{
-        fmt::Display,
+        fmt::{self, Display, Formatter},
+        io,
         path::{Component, Path, PathBuf},
         str::FromStr,
     },
@@ -12,31 +13,36 @@ use {
 pub struct SanitizedLocalPath(PathBuf);
 
 impl From<SanitizedLocalPath> for PathBuf {
+    #[inline]
     fn from(value: SanitizedLocalPath) -> Self {
         value.0
     }
 }
 
 impl From<&SanitizedLocalPath> for PathBuf {
+    #[inline]
     fn from(value: &SanitizedLocalPath) -> Self {
         value.0.clone()
     }
 }
 
 impl AsRef<Path> for SanitizedLocalPath {
+    #[inline]
     fn as_ref(&self) -> &Path {
         self.0.as_ref()
     }
 }
 
 impl AsRef<[u8]> for SanitizedLocalPath {
+    #[inline]
     fn as_ref(&self) -> &[u8] {
         self.as_str().as_bytes()
     }
 }
 
 impl Display for SanitizedLocalPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", dunce::simplified(&self.0).display())
     }
 }
@@ -65,11 +71,13 @@ fn canonicalize(path: &Path) -> Result<PathBuf> {
 }
 
 impl SanitizedLocalPath {
+    #[inline]
     pub fn canonicalize(&self) -> Result<Self> {
         let path = canonicalize(&self.0)?;
         Self::new(path)
     }
 
+    #[inline]
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if path.to_str().is_none() {
@@ -85,6 +93,7 @@ impl SanitizedLocalPath {
         Ok(Self(path.into()))
     }
 
+    #[inline]
     pub fn join(&self, relative_path: impl AsRef<Path>) -> Result<Self> {
         let relative_path = relative_path.as_ref();
         if !relative_path.is_relative() {
@@ -102,13 +111,19 @@ impl SanitizedLocalPath {
         Self::new(self.0.join(relative_path))
     }
 
+    #[must_use]
+    #[inline]
+    #[expect(
+        clippy::expect_used,
+        reason = "SanitizedLocalPath can only contain valid unicode paths"
+    )]
     pub fn file_name(&self) -> Option<&str> {
-        self.0.file_name().map(|s| {
-            s.to_str()
-                .expect("previously checked that it can be converted")
-        })
+        self.0
+            .file_name()
+            .map(|s| s.to_str().expect("non-unicode path in SanitizedLocalPath"))
     }
 
+    #[inline]
     pub fn parent(&self) -> Result<Option<Self>> {
         if let Some(parent) = self.0.parent() {
             Ok(Some(Self::new(parent)?))
@@ -117,22 +132,32 @@ impl SanitizedLocalPath {
         }
     }
 
+    #[must_use]
+    #[inline]
     pub fn as_path(&self) -> &Path {
         &self.0
     }
 
+    #[must_use]
+    #[inline]
+    #[expect(
+        clippy::expect_used,
+        reason = "SanitizedLocalPath can only contain valid unicode paths"
+    )]
     pub fn as_str(&self) -> &str {
         self.0
             .to_str()
-            .expect("previously checked that it can be converted")
+            .expect("non-unicode path in SanitizedLocalPath")
     }
 
-    pub fn try_exists_nofollow(&self) -> std::io::Result<bool> {
+    #[inline]
+    pub fn try_exists_nofollow(&self) -> io::Result<bool> {
         self.0.try_exists_nofollow()
     }
 }
 
 impl<'de> Deserialize<'de> for SanitizedLocalPath {
+    #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -147,20 +172,22 @@ impl<'de> Deserialize<'de> for SanitizedLocalPath {
 impl FromStr for SanitizedLocalPath {
     type Err = anyhow::Error;
 
+    #[inline]
     fn from_str(s: &str) -> Result<Self> {
         Self::new(s)?.canonicalize()
     }
 }
 
 pub trait PathExt {
-    fn try_exists_nofollow(&self) -> std::io::Result<bool>;
+    fn try_exists_nofollow(&self) -> io::Result<bool>;
 }
 
 impl PathExt for Path {
-    fn try_exists_nofollow(&self) -> std::io::Result<bool> {
+    #[inline]
+    fn try_exists_nofollow(&self) -> io::Result<bool> {
         match fs_err::symlink_metadata(self) {
             Ok(_) => Ok(true),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error),
         }
     }

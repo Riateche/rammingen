@@ -18,7 +18,6 @@ const KEY_NOTIFICATION_STATS: [u8; 4] = [0, 0, 0, 2];
 const KEY_SERVER_ID: [u8; 4] = [0, 0, 0, 3];
 
 pub struct Db {
-    #[allow(dead_code)]
     db: sled::Db,
     archive_entries: sled::Tree,
     local_entries: sled::Tree,
@@ -266,7 +265,7 @@ impl Db {
         };
         let mut output = Vec::new();
         let mut keys_to_remove = Vec::new();
-        for entry in self.local_entries.iter() {
+        for entry in &self.local_entries {
             let (key, value) = entry.context("database iterator failed")?;
             match load(&key, &value) {
                 Ok((path, data)) => output.push((path, data)),

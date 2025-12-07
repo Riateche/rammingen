@@ -132,18 +132,18 @@ pub async fn download(
     dry_run: bool,
 ) -> Result<bool> {
     interrupt_on_error(|error_sender| async move {
-        let ctx2 = ctx.clone();
+        let ctx2 = Arc::clone(ctx);
         let (file_download_sender, file_download_receiver) = mpsc::channel(100_000);
 
         let content_upload_task = task::spawn(download_files_task(
-            ctx.clone(),
+            Arc::clone(ctx),
             file_download_receiver,
             error_sender.clone(),
         ));
 
         let (finalize_sender, finalize_receiver) = mpsc::channel(100_000);
         let versions_task = task::spawn(finalize_download_task(
-            ctx.clone(),
+            Arc::clone(ctx),
             finalize_receiver,
             error_sender,
         ));
@@ -315,7 +315,7 @@ impl TmpGuard {
     fn path(&self) -> &SanitizedLocalPath {
         &self.0
     }
-    fn clean(&mut self) -> Result<()> {
+    fn clean(&self) -> Result<()> {
         if self.0.try_exists_nofollow()? {
             remove_file(&self.0)?;
         }
@@ -345,8 +345,11 @@ async fn download_files_task(
 ) {
     let semaphore = Arc::new(Semaphore::new(8));
     while let Some(item) = receiver.recv().await {
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
-        let ctx = ctx.clone();
+        let Ok(permit) = Arc::clone(&semaphore).acquire_owned().await else {
+            warn!("download_files_task failed to acquire semaphore because it was closed");
+            return;
+        };
+        let ctx = Arc::clone(&ctx);
         let error_sender = error_sender.clone();
         task::spawn(async move {
             let _permit = permit;
@@ -373,10 +376,14 @@ async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
     if tmp_path.try_exists_nofollow()? {
         remove_file(&tmp_path)?;
     }
-    ctx.client
-        .download_and_decrypt(&item.local_entry, &tmp_path, &ctx.cipher)
-        .await
-        .with_context(|| format!("failed to download file {}", item.local_path))?;
+    rammingen_sdk::Client::download_and_decrypt(
+        &ctx.client,
+        &item.local_entry,
+        &tmp_path,
+        &ctx.cipher,
+    )
+    .await
+    .with_context(|| format!("failed to download file {}", item.local_path))?;
     let _ = item.sender.send(tmp_guard);
     Ok(())
 }
@@ -432,7 +439,8 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 }
             }
             if item.must_delete {
-                if !remove_dir_or_file(&item.local_path)? {
+                let r = remove_dir_or_file(&item.local_path)?;
+                if !r {
                     return Ok(());
                 }
             }
@@ -464,7 +472,8 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 }
             }
             if item.must_delete {
-                if !remove_dir_or_file(&item.local_path)? {
+                let r = remove_dir_or_file(&item.local_path)?;
+                if !r {
                     return Ok(());
                 }
             }
@@ -472,6 +481,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 let link_target = fs_err::read_to_string(tmp_file.path())
                     .context("failed to read symlink target from downloaded file")?;
                 #[cfg(target_family = "unix")]
+                #[expect(clippy::absolute_paths, reason = "single use")]
                 {
                     fs_err::os::unix::fs::symlink(link_target, &item.local_path)?;
                 }

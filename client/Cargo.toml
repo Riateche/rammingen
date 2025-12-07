@@ -5,6 +5,9 @@ edition = "2021"
 default-run = "rammingen"
 license = "MIT OR Apache-2.0"
 
+[lints]
+workspace = true
+
 [features]
 default = ["keyring"]
 

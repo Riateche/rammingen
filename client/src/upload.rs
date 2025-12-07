@@ -138,18 +138,18 @@ pub async fn upload(
     dry_run: bool,
 ) -> Result<()> {
     interrupt_on_error(|error_sender| async move {
-        let ctx2 = ctx.clone();
+        let ctx2 = Arc::clone(ctx);
         let (content_sender, content_receiver) = mpsc::channel(100_000);
 
         let content_upload_task = task::spawn(content_upload_task(
-            ctx.clone(),
+            Arc::clone(ctx),
             content_receiver,
             error_sender.clone(),
         ));
 
         let (versions_sender, versions_receiver) = mpsc::channel(100_000);
         let versions_task = task::spawn(add_versions_task(
-            ctx.clone(),
+            Arc::clone(ctx),
             versions_receiver,
             error_sender,
         ));
@@ -228,7 +228,7 @@ fn upload_inner<'a>(
             oneshot_receiver = None;
         } else {
             let mut modified = None;
-            for _ in 0..5 {
+            for _ in 0u32..5 {
                 metadata = fs_err::symlink_metadata(local_path)?;
                 let new_modified = metadata.modified()?;
                 if new_modified.elapsed()? < TOO_RECENT_INTERVAL {
@@ -251,10 +251,10 @@ fn upload_inner<'a>(
 
             let maybe_changed = db_data.as_ref().is_none_or(|db_data| {
                 db_data.kind != kind || {
-                    db_data.file_data.as_ref().is_none_or(|content| {
-                        content.modified_at != modified_datetime
-                            || content.unix_mode != unix_mode
-                            || content.is_symlink != is_symlink
+                    db_data.file_data.as_ref().is_none_or(|db_content| {
+                        db_content.modified_at != modified_datetime
+                            || db_content.unix_mode != unix_mode
+                            || db_content.is_symlink != is_symlink
                     })
                 }
             });
@@ -297,10 +297,10 @@ fn upload_inner<'a>(
 
                 changed = db_data.as_ref().is_none_or(|db_data| {
                     db_data.kind != kind || {
-                        db_data.file_data.as_ref().is_none_or(|content| {
-                            content.hash != local_entry.hash
-                                || content.unix_mode != local_entry.unix_mode
-                                || content.is_symlink != local_entry.is_symlink
+                        db_data.file_data.as_ref().is_none_or(|db_content| {
+                            db_content.hash != local_entry.hash
+                                || db_content.unix_mode != local_entry.unix_mode
+                                || db_content.is_symlink != local_entry.is_symlink
                         })
                     }
                 });
@@ -319,6 +319,10 @@ fn upload_inner<'a>(
                         oneshot_receiver = None;
                     } else {
                         let (sender, receiver) = oneshot::channel();
+                        #[expect(
+                            clippy::map_err_ignore,
+                            reason = "mpsc send error is unambiguous"
+                        )]
                         ctx.content_upload_sender
                             .send(ContentUploadTaskItem {
                                 hash: local_entry.hash.clone(),
@@ -340,7 +344,7 @@ fn upload_inner<'a>(
                 content = None;
                 oneshot_receiver = None;
             }
-        };
+        }
 
         let new_local_entry = LocalEntry {
             kind,
@@ -379,6 +383,7 @@ fn upload_inner<'a>(
                     local_path: local_path.clone(),
                     local_entry_info: new_local_entry,
                 };
+                #[expect(clippy::map_err_ignore, reason = "mpsc send error is unambiguous")]
                 ctx.add_versions_sender
                     .send((item, oneshot_receiver))
                     .await
@@ -438,8 +443,11 @@ async fn content_upload_task(
 ) {
     let semaphore = Arc::new(Semaphore::new(8));
     while let Some(item) = receiver.recv().await {
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
-        let ctx = ctx.clone();
+        let Ok(permit) = Arc::clone(&semaphore).acquire_owned().await else {
+            warn!("content_upload_task failed to acquire semaphore because it was closed");
+            return;
+        };
+        let ctx = Arc::clone(&ctx);
         let error_sender = error_sender.clone();
         task::spawn(async move {
             let _permit = permit;
@@ -523,7 +531,7 @@ async fn add_versions_batch(ctx: &Ctx, items: Vec<AddVersionsTaskItem>) -> Resul
 
     ctx.intermediate_counters
         .unqueued_upload_entries
-        .fetch_add(items.len() as u64, Ordering::Relaxed);
+        .fetch_add(items.len().try_into()?, Ordering::Relaxed);
 
     for (result, item) in results.into_iter().zip(items) {
         if result.added {

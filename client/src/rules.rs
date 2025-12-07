@@ -14,10 +14,12 @@ pub struct Rules {
 }
 
 impl Rules {
+    #[must_use]
+    #[inline]
     pub fn new(rules: &[&[Rule]], root: SanitizedLocalPath) -> Self {
         let mut vec = Vec::new();
-        for &rules in rules {
-            vec.extend_from_slice(rules);
+        for &rules_item in rules {
+            vec.extend_from_slice(rules_item);
         }
         Self {
             rules: vec,
@@ -26,6 +28,7 @@ impl Rules {
         }
     }
 
+    #[inline]
     pub fn matches(&mut self, path: &SanitizedLocalPath) -> Result<bool> {
         if let Some(value) = self.cache.get(path) {
             Ok(*value)
@@ -101,10 +104,14 @@ impl Rule {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, fs_err::canonicalize, once_cell::sync::Lazy, std::path::PathBuf};
+    use {
+        super::*,
+        fs_err::canonicalize,
+        std::{path::PathBuf, sync::LazyLock},
+    };
 
     // TODO: remove canonicalize?
-    static TMP_PATH: Lazy<PathBuf> = Lazy::new(|| canonicalize("/tmp").unwrap());
+    static TMP_PATH: LazyLock<PathBuf> = LazyLock::new(|| canonicalize("/tmp").unwrap());
 
     fn p(s: &str) -> SanitizedLocalPath {
         let path = TMP_PATH.join(s);
@@ -122,7 +129,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        let mut rules = rules(r#"[]"#);
+        let mut rules = rules("[]");
         i(&mut rules, "1");
         i(&mut rules, "1/abc");
         i(&mut rules, "1/abc/def");

@@ -1,11 +1,9 @@
 use {
     crate::{info::pretty_size, Ctx},
+    cadd::ops::Cadd,
     itertools::Itertools,
     serde::{Deserialize, Serialize},
-    std::{
-        ops::AddAssign,
-        sync::atomic::{AtomicU64, Ordering},
-    },
+    std::sync::atomic::{AtomicU64, Ordering},
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -36,19 +34,18 @@ pub struct NotificationCounters {
     pub completed_syncs: u64,
 }
 
-impl AddAssign for NotificationCounters {
-    fn add_assign(&mut self, rhs: Self) {
-        self.deleted_entries += rhs.deleted_entries;
-        self.downloaded_entries += rhs.downloaded_entries;
-        self.downloaded_bytes += rhs.downloaded_bytes;
-        self.uploaded_entries += rhs.uploaded_entries;
-        self.uploaded_large_files += rhs.uploaded_large_files;
-        self.uploaded_bytes += rhs.uploaded_bytes;
-        self.completed_syncs += rhs.completed_syncs;
-    }
-}
-
 impl NotificationCounters {
+    pub fn cadd(&mut self, other: &Self) -> anyhow::Result<()> {
+        self.deleted_entries = self.deleted_entries.cadd(other.deleted_entries)?;
+        self.downloaded_entries = self.downloaded_entries.cadd(other.downloaded_entries)?;
+        self.downloaded_bytes = self.downloaded_bytes.cadd(other.downloaded_bytes)?;
+        self.uploaded_entries = self.uploaded_entries.cadd(other.uploaded_entries)?;
+        self.uploaded_large_files = self.uploaded_large_files.cadd(other.uploaded_large_files)?;
+        self.uploaded_bytes = self.uploaded_bytes.cadd(other.uploaded_bytes)?;
+        self.completed_syncs = self.completed_syncs.cadd(other.completed_syncs)?;
+        Ok(())
+    }
+
     pub fn report(&self, dry_run: bool, accumulated: bool, ctx: &Ctx) -> String {
         let mut output = Vec::new();
         if accumulated {

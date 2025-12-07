@@ -47,14 +47,22 @@ fn true_() -> bool {
     true
 }
 
+#[must_use]
+#[inline]
+#[expect(clippy::expect_used, reason = "hardcoded value is correct")]
 pub fn default_desktop_notification_interval() -> Duration {
-    parse_duration("1hour").unwrap()
+    parse_duration("1hour").expect("incorrect hardcoded value")
 }
 
+#[must_use]
+#[inline]
 pub fn default_log_filter() -> String {
     "info".into()
 }
 
+#[must_use]
+#[inline]
+#[expect(clippy::expect_used, reason = "hardcoded value is correct")]
 pub fn default_warn_about_files_larger_than() -> Byte {
-    "50 MB".parse().unwrap()
+    "50 MB".parse().expect("incorrect hardcoded value")
 }

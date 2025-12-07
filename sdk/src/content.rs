@@ -9,7 +9,7 @@ use {
     tempfile::SpooledTempFile,
 };
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalFileEntry {
     pub modified_at: DateTimeUtc,
     pub original_size: u64,
@@ -19,12 +19,13 @@ pub struct LocalFileEntry {
     pub is_symlink: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalEntry {
     pub kind: EntryKind,
     pub file_data: Option<LocalFileEntry>,
 }
 
+#[expect(clippy::match_same_arms, reason = "separated for clarity")]
 fn is_same_optional<T: PartialEq>(local: Option<T>, other: Option<T>) -> bool {
     match (local, other) {
         // Property is not locally supported, so no need to update the local file regardless of other value.
@@ -37,6 +38,8 @@ fn is_same_optional<T: PartialEq>(local: Option<T>, other: Option<T>) -> bool {
 }
 
 impl LocalEntry {
+    #[must_use]
+    #[inline]
     pub fn is_same_as_entry(&self, other: &LocalArchiveEntry) -> bool {
         if Some(self.kind) != other.kind {
             return false;
@@ -54,6 +57,7 @@ impl LocalEntry {
         }
     }
 
+    #[inline]
     pub fn matches_real(&self, path: impl AsRef<Path>) -> Result<bool> {
         let metadata = fs_err::symlink_metadata(path)?;
         if metadata.is_dir() != (self.kind == EntryKind::Directory) {
@@ -83,6 +87,7 @@ pub struct LocalArchiveEntry {
 }
 
 impl LocalArchiveEntry {
+    #[inline]
     pub fn decrypt(data: EntryVersionData, cipher: &Cipher) -> Result<Self> {
         Ok(Self {
             path: cipher.decrypt_path(&data.path)?,
@@ -111,34 +116,4 @@ pub struct EncryptedFileHead {
     pub hash: ContentHash,
     pub original_size: u64,
     pub encrypted_size: u64,
-}
-
-#[test]
-fn t1() {
-    // let entry = LocalEntry {
-    //     kind: EntryKind::File,
-    //     file_data: Some(LocalFileEntry {
-    //         modified_at: Default::default(),
-    //         original_size: 1,
-    //         encrypted_size: 2,
-    //         hash: ContentHash::new([0; 32]),
-    //         unix_mode: Some(1),
-    //     }),
-    // };
-
-    let entry = LocalArchiveEntry {
-        path: "ar:/a/c".parse().unwrap(),
-        recorded_at: Default::default(),
-        source_id: 1.into(),
-        record_trigger: RecordTrigger::Move,
-        kind: Some(EntryKind::Directory),
-        file_data: None,
-    };
-
-    println!(
-        "{:?}",
-        rammingen_protocol::encoding::serialize(&entry).unwrap()
-    );
-    const MAGIC: u32 = 40000;
-    println!("{:?}", MAGIC.to_le_bytes());
 }

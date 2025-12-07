@@ -12,7 +12,7 @@
 //! encoded in base64. An encrypted path is then reconstructed from the encrypted components.
 //! Thus, encrypted path is still a valid archive path, and
 //! parent-child relationships are preserved even in encrypted form. This is important for
-//! certain server operations. For example, if a MovePath or RemovePath command is issued,
+//! certain server operations. For example, if a `MovePath` or `RemovePath` command is issued,
 //! the server should be able to find all paths nested in the specified path.
 //!
 //! When encrypting file content, it's first compressed using deflate and then split into fixed-size blocks.

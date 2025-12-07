@@ -18,6 +18,7 @@ use {
     tracing::{debug, info, warn},
 };
 
+#[inline(never)]
 pub fn serve_connection<C, H, Fut, B>(
     io: C,
     shutdown_watcher: &ShutdownWatcher,
@@ -38,6 +39,7 @@ where
     async move {
         if let Err(err) = serving.await {
             if let Some(err) = err.source().and_then(|err| err.downcast_ref::<io::Error>()) {
+                #[expect(clippy::wildcard_enum_match_arm, reason = "safe default")]
                 match err.kind() {
                     io::ErrorKind::NotConnected | io::ErrorKind::ConnectionReset => {
                         debug!(error = ?err, "canceled request");
@@ -59,10 +61,12 @@ pub struct ShutdownWatcher {
 }
 
 impl ShutdownWatcher {
+    #[inline]
     pub fn watch<C: GracefulConnection>(&self, io: C) -> impl Future<Output = C::Output> {
         self.inner.watch(io)
     }
 
+    #[inline]
     pub async fn shutdown(self) {
         const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
         let Ok(()) = timeout(SHUTDOWN_TIMEOUT, self.inner.shutdown()).await else {

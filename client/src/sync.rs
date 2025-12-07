@@ -9,6 +9,7 @@ use {
         Ctx,
     },
     anyhow::{Context, Result},
+    cadd::ops::Cadd,
     chrono::{TimeDelta, Utc},
     humantime::format_duration,
     itertools::Itertools,
@@ -86,14 +87,20 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                     warn!("Failed to load notification stats from db: {err}");
                 })
                 .unwrap_or_default();
-            stats.pending_counters += NotificationCounters::from(&ctx.final_counters);
-            stats.pending_counters.completed_syncs += 1;
+            stats
+                .pending_counters
+                .cadd(&NotificationCounters::from(&ctx.final_counters))?;
+            stats.pending_counters.completed_syncs = stats
+                .pending_counters
+                .completed_syncs
+                .cadd(1u64)
+                .context("completed_syncs overflow")?;
             let now = Utc::now();
             let desktop_notification_interval =
                 TimeDelta::from_std(ctx.config.desktop_notification_interval)
                     .context("config.desktop_notification_interval out of range")?;
             let show = stats.last_notified_at.is_none_or(|last_notified_at| {
-                (now - last_notified_at) > desktop_notification_interval
+                now.signed_duration_since(last_notified_at) > desktop_notification_interval
             });
             if show {
                 let has_interval = ctx.config.desktop_notification_interval != Duration::ZERO;
@@ -103,7 +110,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                         format_duration(ctx.config.desktop_notification_interval),
                     )
                 } else {
-                    "".to_string()
+                    String::new()
                 };
                 show_notification(
                     "rammingen sync complete",

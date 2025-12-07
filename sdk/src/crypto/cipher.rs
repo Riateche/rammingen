@@ -1,12 +1,14 @@
 use {
+    crate::{content::EncryptedFileHead, crypto::io::encrypt_file_content},
     aes_siv::{aead::Aead, Aes256SivAead, KeyInit, Nonce},
-    anyhow::{ensure, Context, Result},
+    anyhow::{Context, Result},
     base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine},
+    cadd::prelude::IntoType,
     rammingen_protocol::{
         ArchivePath, ContentHash, EncryptedArchivePath, EncryptedContentHash, EncryptedSize,
         EncryptionKey,
     },
-    std::mem::size_of,
+    std::{io::Read, mem::size_of},
 };
 
 pub struct Cipher {
@@ -14,24 +16,29 @@ pub struct Cipher {
 }
 
 impl Cipher {
+    #[must_use]
+    #[inline]
     pub fn new(key: &EncryptionKey) -> Self {
         Self {
             inner: Aes256SivAead::new(key.get()),
         }
     }
 
+    #[inline]
     pub fn encrypt_bytes(&self, nonce: &Nonce, plaintext: &[u8]) -> Result<Vec<u8>> {
         self.inner
             .encrypt(nonce, plaintext)
             .context("encryption failed for bytes")
     }
 
+    #[inline]
     pub fn decrypt_bytes(&self, nonce: &Nonce, ciphertext: &[u8]) -> Result<Vec<u8>> {
         self.inner
             .decrypt(nonce, ciphertext)
             .context("decryption failed for bytes")
     }
 
+    #[inline]
     pub fn encrypt_str(&self, value: &str) -> Result<String> {
         let ciphertext = self
             .inner
@@ -40,6 +47,7 @@ impl Cipher {
         Ok(BASE64_URL_SAFE_NO_PAD.encode(ciphertext))
     }
 
+    #[inline]
     pub fn decrypt_str(&self, value: &str) -> Result<String> {
         let ciphertext = BASE64_URL_SAFE_NO_PAD.decode(value)?;
         let plaintext = self
@@ -49,6 +57,7 @@ impl Cipher {
         Ok(String::from_utf8(plaintext)?)
     }
 
+    #[inline]
     pub fn encrypt_path(&self, value: &ArchivePath) -> Result<EncryptedArchivePath> {
         let parts = value
             .to_str_without_prefix()
@@ -64,6 +73,7 @@ impl Cipher {
         EncryptedArchivePath::from_encrypted_without_prefix(&parts.join("/"))
     }
 
+    #[inline]
     pub fn decrypt_path(&self, value: &EncryptedArchivePath) -> Result<ArchivePath> {
         let parts = value
             .to_str_without_prefix()
@@ -79,6 +89,7 @@ impl Cipher {
         ArchivePath::from_str_without_prefix(&parts.join("/"))
     }
 
+    #[inline]
     pub fn encrypt_content_hash(&self, value: &ContentHash) -> Result<EncryptedContentHash> {
         let ciphertext = self
             .inner
@@ -87,6 +98,7 @@ impl Cipher {
         Ok(EncryptedContentHash::from_encrypted(ciphertext))
     }
 
+    #[inline]
     pub fn decrypt_content_hash(&self, value: &EncryptedContentHash) -> Result<ContentHash> {
         self.inner
             .decrypt(&Nonce::default(), value.as_slice())
@@ -94,6 +106,7 @@ impl Cipher {
             .try_into()
     }
 
+    #[inline]
     pub fn encrypt_size(&self, value: u64) -> Result<EncryptedSize> {
         let ciphertext = self
             .inner
@@ -102,23 +115,40 @@ impl Cipher {
         Ok(EncryptedSize::from_encrypted(ciphertext))
     }
 
+    #[inline]
     pub fn decrypt_size(&self, value: &EncryptedSize) -> Result<u64> {
         const SIZE_LENGTH: usize = size_of::<u64>();
         let plaintext = self
             .inner
             .decrypt(&Nonce::default(), value.as_slice())
             .with_context(|| format!("decryption failed for {value:?}"))?;
-        ensure!(
-            plaintext.len() == SIZE_LENGTH,
-            "invalid decrypted length: {}, expected {SIZE_LENGTH}",
-            plaintext.len(),
-        );
-        Ok(u64::from_le_bytes(plaintext.try_into().unwrap()))
+
+        Ok(u64::from_le_bytes(
+            plaintext
+                .try_into_type::<[u8; SIZE_LENGTH]>()
+                .map_err(|vec| {
+                    anyhow::format_err!(
+                        "invalid decrypted length: {}, expected {}",
+                        vec.len(),
+                        SIZE_LENGTH
+                    )
+                })?,
+        ))
+    }
+
+    #[inline]
+    pub fn encrypt_file_content(&self, file_content: impl Read) -> Result<EncryptedFileHead> {
+        encrypt_file_content(self, file_content)
     }
 }
 
 #[cfg(test)]
-mod test {
+#[expect(
+    clippy::default_numeric_fallback,
+    clippy::indexing_slicing,
+    reason = "test"
+)]
+mod tests {
     use {
         super::*,
         crate::crypto::DecryptingWriter,
