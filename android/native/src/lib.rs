@@ -1,5 +1,3 @@
-#![allow(clippy::missing_safety_doc)]
-
 use {
     anyhow::{Context as _, bail, format_err},
     byte_unit::Byte,
@@ -35,6 +33,7 @@ use {
         sync::Once,
         time::Duration,
     },
+    tokio::runtime,
     tracing::{Level, error},
     url::Url,
 };
@@ -42,12 +41,12 @@ use {
 thread_local!(static JNI_ENV: Cell<*mut sys::JNIEnv> = const { Cell::new(ptr::null_mut()) });
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
+pub extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
     mut env: JNIEnv,
     _class: JObject,
     app_dir: JString,
     storage_root: JString,
-    config: JString,
+    config_file_content: JString,
     access_token: JString,
     encryption_key: JString,
     args: JString,
@@ -65,12 +64,12 @@ pub unsafe extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
 
     let r = run(
         &mut env,
-        app_dir,
-        storage_root,
-        config,
-        access_token,
-        encryption_key,
-        args,
+        &app_dir,
+        &storage_root,
+        &config_file_content,
+        &access_token,
+        &encryption_key,
+        &args,
     );
     match r {
         Ok(()) => 1,
@@ -124,41 +123,41 @@ fn log_to_android(env: &mut JNIEnv<'_>, text: impl Display) {
 
 fn run(
     env: &mut JNIEnv<'_>,
-    app_dir: JString,
-    storage_root: JString,
-    config: JString,
-    access_token: JString,
-    encryption_key: JString,
-    args: JString,
+    app_dir: &JString,
+    storage_root: &JString,
+    config_file_content: &JString,
+    access_token: &JString,
+    encryption_key: &JString,
+    args: &JString,
 ) -> anyhow::Result<()> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
 
     let app_dir = env
-        .get_string(&app_dir)
+        .get_string(app_dir)
         .context("failed to get java string")?
         .into_type::<String>()
         .into_type::<PathBuf>();
     let storage_root = env
-        .get_string(&storage_root)
+        .get_string(storage_root)
         .context("failed to get java string")?
         .into_type::<String>()
         .into_type::<PathBuf>();
-    let config = env
-        .get_string(&config)
+    let config_file_content = env
+        .get_string(config_file_content)
         .context("failed to get java string")?
         .into_type::<String>();
     let access_token = env
-        .get_string(&access_token)
+        .get_string(access_token)
         .context("failed to get java string")?
         .into_type::<String>();
     let encryption_key = env
-        .get_string(&encryption_key)
+        .get_string(encryption_key)
         .context("failed to get java string")?
         .into_type::<String>();
     let args = env
-        .get_string(&args)
+        .get_string(args)
         .context("failed to get java string")?
         .into_type::<String>();
 
@@ -170,7 +169,7 @@ fn run(
         fs_err::read_to_string(config_path)?
     } else {
         log_to_android(env, "using config content from argument");
-        config
+        config_file_content
     };
     let config = prepare_config(&app_dir, &storage_root, &config_content)?;
     log_to_android(env, format!("config: {config:?}"));
@@ -188,12 +187,12 @@ fn run(
         ))?;
         anyhow::Ok(())
     })
-    .map_err(|err| format_err!("panic: {}", format_panic_message(err)))?
+    .map_err(|err| format_err!("panic: {}", format_panic_message(&*err)))?
 }
 
-fn format_panic_message(err: Box<dyn Any + Send + 'static>) -> String {
+fn format_panic_message(err: &(dyn Any + Send + 'static)) -> String {
     err.downcast_ref::<&'static str>()
-        .map(|s| s.to_string())
+        .map(|&s| s.to_owned())
         .or_else(|| err.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| format!("{err:?}"))
 }
@@ -224,14 +223,14 @@ fn with_jni_env(f: impl FnOnce(JNIEnv<'_>)) {
         if let Ok(jni_env) = jni_env {
             f(jni_env);
         }
-    })
+    });
 }
 
 impl Term for NativeBridgeTerm {
     fn set_status(&mut self, status: &str) {
         with_jni_env(|mut env| {
             let status = env
-                .new_string(status.to_string())
+                .new_string(status.to_owned())
                 .unwrap_or_else(|e| env.fatal_error(format!("new_string failed: {e:?}")));
             env.call_method(
                 &self.log_receiver,
@@ -251,7 +250,7 @@ impl Term for NativeBridgeTerm {
         with_jni_env(|mut env| {
             log_to_android(&mut env, "ok before term write");
             let text = env
-                .new_string(text.to_string())
+                .new_string(text.to_owned())
                 .unwrap_or_else(|e| env.fatal_error(format!("new_string failed: {e:?}")));
             env.call_method(
                 &self.log_receiver,
@@ -320,6 +319,7 @@ fn prepare_config(
         encryption_key: None,
         server_url,
         access_token: None,
+        #[expect(clippy::or_fun_call, reason = "Path::new is cheap")]
         local_db_path: Some(
             app_dir.join(
                 local_db_path
