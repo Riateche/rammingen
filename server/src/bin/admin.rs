@@ -4,7 +4,7 @@ use {
     rammingen_protocol::AccessToken,
     rammingen_server::{
         default_config_path,
-        util::{add_source, set_access_token, sources},
+        util::{add_source, migrate, set_access_token, sources, update_server_id},
         Config,
     },
     sqlx::PgPool,
@@ -36,7 +36,7 @@ pub struct ConfigSpecifier {
     #[clap(long)]
     pub config: Option<PathBuf>,
     /// URL of the database, e.g.
-    /// "postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+    /// `postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME`
     #[clap(long)]
     pub database_url: Option<String>,
 }
@@ -56,6 +56,7 @@ pub enum Command {
 }
 
 #[tokio::main]
+#[expect(clippy::print_stdout, reason = "intended")]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     ensure!(
@@ -104,13 +105,13 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Migrate => {
             println!("Running migrations...");
-            rammingen_server::util::migrate(&pool).await?;
+            migrate(&pool).await?;
             println!("Done");
         }
         Command::UpdateServerId => {
-            rammingen_server::util::update_server_id(&pool).await?;
+            update_server_id(&pool).await?;
             println!("Done");
         }
-    };
+    }
     Ok(())
 }

@@ -262,13 +262,13 @@ async fn add_version_inner<'a>(
             .content
             .as_ref()
             .and_then(|c| c.unix_mode)
-            .or_else(|| entry.data.content.as_ref().and_then(|ec| ec.unix_mode))
+            .or_else(|| entry.data.content.as_ref()?.unix_mode)
             .map(i64::from);
         let is_symlink_db = request
             .content
             .as_ref()
             .and_then(|c| c.is_symlink)
-            .or_else(|| entry.data.content.as_ref().and_then(|ec| ec.is_symlink));
+            .or_else(|| entry.data.content.as_ref()?.is_symlink);
         query!(
             "UPDATE entries
             SET update_number = nextval('entry_update_numbers'),
@@ -338,7 +338,7 @@ async fn add_version_inner<'a>(
         )
         .fetch_one(&mut **tx)
         .await?;
-    };
+    }
     Ok(AddVersionResponse { added: true })
 }
 
@@ -398,7 +398,7 @@ pub async fn get_direct_child_entries(
 
 /// Get the last version at or before `recorded_at` of the entry for `path` and
 /// all entries for direct or indirect subdirectories of `path`.
-async fn get_versions_inner<'a>(
+fn get_versions_inner<'a>(
     recorded_at: DateTimeUtc,
     path: &'a EncryptedArchivePath,
     tx: &'a mut Transaction<'_, Postgres>,
@@ -426,7 +426,7 @@ pub async fn get_entry_versions_at_time(
     sender: Sender<Result<StreamingResponseItem<GetEntryVersionsAtTime>>>,
 ) -> Result<()> {
     let mut tx = ctx.db_pool.begin().await?;
-    let entries = get_versions_inner(request.recorded_at, &request.path, &mut tx).await?;
+    let entries = get_versions_inner(request.recorded_at, &request.path, &mut tx)?;
     tokio::pin!(entries);
 
     while let Some(entry) = entries.try_next().await? {
@@ -596,8 +596,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
     .fetch_all(&mut *tx)
     .await?;
 
-    let entries: Vec<_> = get_versions_inner(request.recorded_at, &request.path, &mut tx)
-        .await?
+    let entries: Vec<_> = get_versions_inner(request.recorded_at, &request.path, &mut tx)?
         .try_collect()
         .await?;
     let new_existing_ids: HashSet<i64> = entries
@@ -631,7 +630,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
             )
             .execute(&mut *tx)
             .await?;
-            affected_paths += 1;
+            affected_paths = affected_paths.cadd(1u64)?;
         }
     }
 
@@ -649,7 +648,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
             )
             .await?;
             if r.added {
-                affected_paths += 1;
+                affected_paths = affected_paths.cadd(1u64)?;
             }
         }
     }
@@ -750,7 +749,7 @@ pub async fn content_hash_exists(
 }
 
 /// Get available space on the server.
-#[allow(deprecated)]
+#[expect(deprecated, reason = "handling deprecated request")]
 pub async fn get_server_status_v1_legacy(
     ctx: Context,
     _request: v1_legacy::GetServerStatus,

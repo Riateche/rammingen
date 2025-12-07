@@ -132,19 +132,24 @@ impl Storage {
     }
 }
 
-#[test]
-fn basic() {
-    use {std::io::Read, tempfile::TempDir};
+#[cfg(test)]
+mod tests {
+    use {crate::storage::Storage, rammingen_protocol::EncryptedContentHash, std::io::Write};
 
-    let dir = TempDir::new().unwrap();
-    let storage = Storage::new(dir.path().into()).unwrap();
-    let hash = EncryptedContentHash::from_encrypted((0..64).collect());
-    let mut file = storage.create_file().unwrap();
-    writeln!(file, "ok").unwrap();
-    storage.commit_file(file, &hash).unwrap();
+    #[test]
+    fn basic() {
+        use {std::io::Read, tempfile::TempDir};
 
-    let mut file2 = storage.open_file(&hash).unwrap();
-    let mut buf = String::new();
-    file2.read_to_string(&mut buf).unwrap();
-    assert_eq!(buf, "ok\n");
+        let dir = TempDir::new().unwrap();
+        let storage = Storage::new(dir.path().into()).unwrap();
+        let hash = EncryptedContentHash::from_encrypted((0..64).collect());
+        let mut file = storage.create_file().unwrap();
+        writeln!(file, "ok").unwrap();
+        storage.commit_file(file, &hash).unwrap();
+
+        let mut file2 = storage.open_file(&hash).unwrap();
+        let mut buf = String::new();
+        file2.read_to_string(&mut buf).unwrap();
+        assert_eq!(buf, "ok\n");
+    }
 }

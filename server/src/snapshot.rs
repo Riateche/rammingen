@@ -1,6 +1,7 @@
 use {
     crate::{handler::DateTimeUtcExt, Context},
     anyhow::{Context as _, Result},
+    cadd::ops::Cadd,
     chrono::Utc,
     futures::TryStreamExt,
     rammingen_protocol::{DateTimeUtc, EncryptedContentHash},
@@ -58,7 +59,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     let num_added = versions.len();
 
     let mut hashes_to_check = HashSet::new();
-    let mut num_deleted = 0;
+    let mut num_deleted = 0u32;
     {
         // Delete all non-snapshot entry versions at or before the new snapshot's timestamp.
         let mut deleted_rows = query_scalar!(
@@ -69,7 +70,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         )
         .fetch(&mut *tx);
         while let Some(hash) = deleted_rows.try_next().await? {
-            num_deleted += 1;
+            num_deleted = num_deleted.cadd(1u32)?;
             if let Some(hash) = hash {
                 hashes_to_check.insert(EncryptedContentHash::from_encrypted(hash));
             }
@@ -132,10 +133,10 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     tx.commit().await?;
 
     // Remove files that are no longer referenced by any entry versions.
-    let mut num_removed_files = 0;
+    let mut num_removed_files = 0u32;
     for hash in hashes_to_remove {
         match ctx.storage.remove_file(&hash) {
-            Ok(()) => num_removed_files += 1,
+            Ok(()) => num_removed_files = num_removed_files.cadd(1u32)?,
             Err(err) => {
                 warn!(?err, "failed to remove content file");
             }

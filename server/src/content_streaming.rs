@@ -1,6 +1,7 @@
 use {
     crate::handler,
     anyhow::Context as _,
+    cadd::{ops::Cadd, prelude::IntoType},
     futures::StreamExt,
     http_body_util::{combinators::BoxBody, BodyExt, Empty, StreamBody},
     hyper::{
@@ -14,7 +15,7 @@ use {
     },
     std::{convert::Infallible, io::Write, sync::Arc},
     tokio::sync::Mutex,
-    tracing::warn,
+    tracing::{error, warn},
 };
 
 /// Read file content from `request` and save it to the file storage.
@@ -56,7 +57,14 @@ pub async fn upload(
             warn!("Unexpected trailer frame in request");
             StatusCode::BAD_REQUEST
         })?;
-        received_length += data.len() as u64;
+        let data_len = data.len().try_into_type::<u64>().map_err(|err| {
+            warn!(?err, "data len overflow");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        received_length = received_length.cadd(data_len).map_err(|err| {
+            warn!(?err, "received_length overflow");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         maybe_block_in_place(|| file.write_all(data)).map_err(|err| {
             warn!(?err, "failed to write to content file");
             StatusCode::INTERNAL_SERVER_ERROR
@@ -84,8 +92,8 @@ pub async fn upload(
 }
 
 /// Read file content from storage and construct a response to the client.
-pub async fn download(
-    ctx: handler::Context,
+pub fn download(
+    ctx: &handler::Context,
     hash: &EncryptedContentHash,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, StatusCode> {
     let file = maybe_block_in_place(|| ctx.storage.open_file(hash)).map_err(|err| {
@@ -99,10 +107,13 @@ pub async fn download(
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .len();
-    Ok(Response::builder()
+    Response::builder()
         .header(CONTENT_LENGTH, len)
         .body(BodyExt::boxed(StreamBody::new(
             stream_file(Arc::new(Mutex::new(file))).map(|bytes| Ok(Frame::data(bytes))),
         )))
-        .expect("response builder failed"))
+        .map_err(|err| {
+            error!(?err, "response builder failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
 }

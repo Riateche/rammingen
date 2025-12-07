@@ -1,11 +1,12 @@
 use {
-    anyhow::{bail, ensure, Result},
+    anyhow::{bail, ensure, Context as _, Result},
     rammingen_protocol::AccessToken,
     rand::distr::{Alphanumeric, SampleString},
     sqlx::{query, query_scalar, PgPool},
 };
 
 /// Get names of configured sources (clients).
+#[inline]
 pub async fn sources(db: &PgPool) -> Result<Vec<String>> {
     query_scalar!("SELECT name FROM sources ORDER BY name")
         .fetch_all(db)
@@ -14,6 +15,7 @@ pub async fn sources(db: &PgPool) -> Result<Vec<String>> {
 }
 
 /// Add a source to the database.
+#[inline]
 pub async fn add_source(db: &PgPool, name: &str, access_token: &AccessToken) -> Result<()> {
     query!(
         "INSERT INTO sources (name, access_token) VALUES ($1, $2)",
@@ -26,6 +28,7 @@ pub async fn add_source(db: &PgPool, name: &str, access_token: &AccessToken) -> 
 }
 
 /// Change access token for an existing source.
+#[inline]
 pub async fn set_access_token(db: &PgPool, name: &str, access_token: &AccessToken) -> Result<()> {
     let rows = query!(
         "UPDATE sources SET access_token = $1 WHERE name = $2",
@@ -44,11 +47,15 @@ pub async fn set_access_token(db: &PgPool, name: &str, access_token: &AccessToke
 
 const SERVER_ID_LENGTH: usize = 16;
 
+#[must_use]
+#[inline]
 pub fn generate_server_id() -> String {
     Alphanumeric.sample_string(&mut rand::rng(), SERVER_ID_LENGTH)
 }
 
 /// Create a new server ID and write it to the database.
+#[inline(never)]
+#[expect(clippy::print_stdout, reason = "intended")]
 pub async fn update_server_id(db_pool: &PgPool) -> anyhow::Result<()> {
     let mut tx = db_pool.begin().await?;
     let rows = query_scalar!("SELECT server_id FROM server_id")
@@ -65,7 +72,10 @@ pub async fn update_server_id(db_pool: &PgPool) -> anyhow::Result<()> {
         .execute(&mut *tx)
         .await?;
     } else {
-        println!("Old server ID was {:?}", rows[0]);
+        println!(
+            "Old server ID was {:?}",
+            rows.first().context("not enough rows")?
+        );
         query!("UPDATE server_id SET server_id = $1", new_server_id)
             .execute(&mut *tx)
             .await?;
@@ -76,6 +86,7 @@ pub async fn update_server_id(db_pool: &PgPool) -> anyhow::Result<()> {
 }
 
 /// Apply migrations to the database.
+#[inline]
 pub async fn migrate(db: &PgPool) -> Result<()> {
     sqlx::migrate!().run(db).await?;
     Ok(())

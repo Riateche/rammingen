@@ -1,5 +1,3 @@
-#![allow(clippy::collapsible_else_if)]
-
 mod content_streaming;
 mod handler;
 mod snapshot;
@@ -10,7 +8,7 @@ use {
     crate::{snapshot::make_snapshot, util::generate_server_id},
     anyhow::{ensure, Context as _, Result},
     bytes::{BufMut, BytesMut},
-    cadd::prelude::IntoType,
+    cadd::{ops::Cdiv, prelude::IntoType},
     futures::{Future, StreamExt, TryStreamExt},
     http_body_util::{combinators::BoxBody, BodyExt, Full, StreamBody},
     humantime_serde::re::humantime::parse_duration,
@@ -66,7 +64,7 @@ const SOURCES_CACHE_INTERVAL: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// URL of the database, e.g.
-    /// "postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+    /// `postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME`
     pub database_url: String,
     /// Path to the local file storage.
     pub storage_path: PathBuf,
@@ -90,15 +88,18 @@ pub struct Config {
     pub retain_detailed_history_for: Duration,
 }
 
+#[expect(clippy::expect_used, reason = "hardcoded value is correct")]
 fn default_snapshot_interval() -> Duration {
-    parse_duration("1week").unwrap()
+    parse_duration("1week").expect("incorrect hardcoded value")
 }
 
+#[expect(clippy::expect_used, reason = "hardcoded value is correct")]
 fn default_retain_detailed_history_for() -> Duration {
-    parse_duration("1week").unwrap()
+    parse_duration("1week").expect("incorrect hardcoded value")
 }
 
 impl Config {
+    #[inline]
     pub fn parse(config_path: impl AsRef<Path>) -> Result<Self> {
         Ok(json5::from_str(&fs_err::read_to_string(config_path)?)?)
     }
@@ -135,6 +136,7 @@ async fn load_sources(db_pool: &PgPool) -> Result<HashMap<String, SourceId>> {
         .map_err(Into::into)
 }
 
+#[inline(never)]
 pub async fn run(
     config: Config,
     mut test_snapshot_tick_receiver: Option<mpsc::Receiver<()>>,
@@ -158,7 +160,7 @@ pub async fn run(
     let listener = TcpListener::bind(&config.bind_addr).await?;
     info!("Listening on {}", config.bind_addr);
 
-    let snapshot_check_interval = min(config.snapshot_interval / 2, Duration::from_secs(60));
+    let snapshot_check_interval = min(config.snapshot_interval.cdiv(2)?, Duration::from_secs(60));
     let ctx2 = ctx.clone();
     task::spawn(async move {
         let mut interval = interval(snapshot_check_interval);
@@ -223,14 +225,15 @@ async fn handle_request(
     try_handle_request(ctx, request)
         .await
         .unwrap_or_else(|code| {
+            #[expect(clippy::expect_used, reason = "should never fail")]
             Response::builder()
                 .status(code)
-                .body(Full::new(Bytes::from(code.as_str().to_string())).boxed())
+                .body(Full::new(Bytes::from(code.as_str().to_owned())).boxed())
                 .expect("response builder failed")
         })
 }
 
-#[allow(deprecated)]
+#[expect(deprecated, reason = "handling deprecated request")]
 async fn try_handle_request(
     ctx: Context,
     request: Request<body::Incoming>,
@@ -257,7 +260,7 @@ async fn try_handle_request(
         if request.method() == Method::PUT {
             content_streaming::upload(ctx, request, &hash).await
         } else if request.method() == Method::GET {
-            content_streaming::download(ctx, &hash).await
+            content_streaming::download(&ctx, &hash)
         } else {
             Err(StatusCode::NOT_FOUND)
         }
@@ -325,16 +328,17 @@ async fn serialize_and_send<T>(
     data: Result<Option<&[StreamingResponseItem<T>]>>,
 ) where
     T: RequestToStreamingResponse,
+    T::ResponseItem: Send + Sync,
     StreamingResponseItem<T>: Serialize,
 {
     match serialize_response_with_length(data) {
         Ok(v) => y.send(v).await,
-        Err(error) => {
-            let error_data: Result<Option<&[StreamingResponseItem<T>]>> = Err(error);
+        Err(send_error) => {
+            let error_data: Result<Option<&[StreamingResponseItem<T>]>> = Err(send_error);
             match serialize_response_with_length(error_data) {
                 Ok(v) => y.send(v).await,
-                Err(error) => {
-                    error!(?error, "failed to serialize error response");
+                Err(error_serialize_error) => {
+                    error!(?error_serialize_error, "failed to serialize error response");
                 }
             }
         }
@@ -431,7 +435,9 @@ fn serialize_response_with_length<T: Serialize>(data: Result<T>) -> anyhow::Resu
         }),
     )?;
     // Write the actual length.
-    buf[0..4].copy_from_slice(&len.try_into_type::<u32>()?.to_le_bytes());
+    buf.get_mut(..4)
+        .context("unexpectedly small buf")?
+        .copy_from_slice(&len.try_into_type::<u32>()?.to_le_bytes());
     Ok(buf.freeze())
 }
 
@@ -469,6 +475,7 @@ fn default_config_dir() -> Result<PathBuf> {
     dirs::config_dir().ok_or_else(|| anyhow::anyhow!("failed to get config dir"))
 }
 
+#[inline]
 pub fn default_config_path() -> Result<PathBuf> {
     Ok(default_config_dir()?.join("rammingen-server.conf"))
 }

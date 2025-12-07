@@ -14,7 +14,7 @@ use {
         thread::sleep,
         time::Duration,
     },
-    tracing::{debug, info},
+    tracing::debug,
 };
 
 #[allow(clippy::collapsible_if)]
@@ -120,16 +120,12 @@ fn create(dir: &Path, rng: &mut impl Rng) -> Result<()> {
         // symlink
         #[cfg(target_family = "unix")]
         {
-            use {anyhow::Context as _, pathdiff::diff_paths, tracing::info};
+            use {anyhow::Context as _, pathdiff::diff_paths};
 
             let target_absolute = choose_path(dir, true, true, true, true, true, rng)?.unwrap();
             let target_relative =
                 diff_paths(&target_absolute, parent).context("diff_paths failed")?;
             fs_err::os::unix::fs::symlink(&target_relative, &path)?;
-            info!(
-                "ok1 created symlink {:?} -> {:?} (abs: {:?})",
-                path, target_relative, target_absolute
-            );
         }
         #[cfg(not(target_family = "unix"))]
         {
