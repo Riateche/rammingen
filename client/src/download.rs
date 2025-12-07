@@ -478,11 +478,12 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 }
             }
             if symlinks_enabled() && content.is_symlink == Some(true) {
-                let link_target = fs_err::read_to_string(tmp_file.path())
-                    .context("failed to read symlink target from downloaded file")?;
                 #[cfg(target_family = "unix")]
                 #[expect(clippy::absolute_paths, reason = "single use")]
                 {
+                    let link_target = fs_err::read_to_string(tmp_file.path())
+                        .context("failed to read symlink target from downloaded file")?;
+
                     fs_err::os::unix::fs::symlink(link_target, &item.local_path)?;
                 }
                 #[cfg(not(target_family = "unix"))]

@@ -463,6 +463,10 @@ async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<Source
 }
 
 #[cfg(target_os = "linux")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "must have same signature on all platforms"
+)]
 fn default_config_dir() -> Result<PathBuf> {
     Ok("/etc".into())
 }
@@ -471,7 +475,7 @@ fn default_config_dir() -> Result<PathBuf> {
 // macOS: $HOME/Library/Application Support
 #[cfg(not(target_os = "linux"))]
 fn default_config_dir() -> Result<PathBuf> {
-    dirs::config_dir().ok_or_else(|| anyhow::anyhow!("failed to get config dir"))
+    dirs::config_dir().context("failed to get config dir")
 }
 
 #[inline]

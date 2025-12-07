@@ -28,6 +28,11 @@ pub async fn shutdown_signal() -> Result<ShutdownSignal> {
     signal
 }
 
+#[allow(
+    clippy::allow_attributes,
+    clippy::unnecessary_wraps,
+    reason = "must have same signature on all platforms"
+)]
 fn sigterm() -> Result<impl Future<Output = ()>> {
     #[cfg(target_family = "unix")]
     {
