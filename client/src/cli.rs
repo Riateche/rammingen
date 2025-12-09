@@ -67,7 +67,7 @@ pub enum Command {
         version: Option<DateTimeArg>,
     },
     /// Show information about a local path.
-    LocalStatus { path: SanitizedLocalPath },
+    LocalStatus { path: Option<SanitizedLocalPath> },
     /// Show information about an archive path.
     Ls {
         path: ArchivePath,

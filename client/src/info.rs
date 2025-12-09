@@ -1,7 +1,7 @@
 use {
     crate::{
         Ctx, path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules,
-        upload::to_archive_path,
+        sync::since_last_sync_text, upload::to_archive_path,
     },
     anyhow::{Context as _, Result},
     byte_unit::{Byte, UnitType},
@@ -35,41 +35,46 @@ async fn get_sources(ctx: &Ctx) -> Result<Sources> {
     ctx.client.request(&GetSources).await.map(Sources)
 }
 
-pub async fn local_status(ctx: &Ctx, path: &SanitizedLocalPath) -> Result<()> {
-    pull_updates(ctx).await?;
-    let mut mount_points = ctx
-        .config
-        .mount_points
-        .iter()
-        .map(|mount_point| {
-            let rules = Rules::new(
-                &[&ctx.config.always_exclude, &mount_point.exclude],
-                mount_point.local_path.clone(),
-            );
-            (mount_point, rules)
-        })
-        .collect_vec();
+pub async fn local_status(ctx: &Ctx, path: Option<SanitizedLocalPath>) -> Result<()> {
+    if let Some(path) = path {
+        pull_updates(ctx).await?;
+        let mut mount_points = ctx
+            .config
+            .mount_points
+            .iter()
+            .map(|mount_point| {
+                let rules = Rules::new(
+                    &[&ctx.config.always_exclude, &mount_point.exclude],
+                    mount_point.local_path.clone(),
+                );
+                (mount_point, rules)
+            })
+            .collect_vec();
 
-    info!("Normalized local path: {}", path);
+        info!("Normalized local path: {}", path);
 
-    if let Some((archive_path, rules)) = to_archive_path(path, &mut mount_points)? {
-        if rules.matches(path)? {
-            info!("This path is ignored according to the configured exclude rules");
+        if let Some((archive_path, rules)) = to_archive_path(&path, &mut mount_points)? {
+            if rules.matches(&path)? {
+                info!("This path is ignored according to the configured exclude rules");
+            } else {
+                info!("Archive path: {}", archive_path);
+                let encrypted = ctx.cipher.encrypt_path(&archive_path)?;
+                info!("Encrypted archive path: {}", encrypted);
+                info!(
+                    "Archive entry in local db: {:?}",
+                    ctx.db.get_archive_entry(&archive_path)?
+                );
+                info!(
+                    "Local entry in local db: {:?}",
+                    ctx.db.get_local_entry(&path)?
+                );
+            }
         } else {
-            info!("Archive path: {}", archive_path);
-            let encrypted = ctx.cipher.encrypt_path(&archive_path)?;
-            info!("Encrypted archive path: {}", encrypted);
-            info!(
-                "Archive entry in local db: {:?}",
-                ctx.db.get_archive_entry(&archive_path)?
-            );
-            info!(
-                "Local entry in local db: {:?}",
-                ctx.db.get_local_entry(path)?
-            );
+            info!("This path is not inside any of the configured mount points");
         }
     } else {
-        info!("This path is not inside any of the configured mount points");
+        info!("{}", since_last_sync_text(ctx)?);
+        info!("You can provide a local path to get detailed information about it.");
     }
 
     Ok(())

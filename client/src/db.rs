@@ -314,5 +314,6 @@ fn into_abort_err(e: impl Debug) -> ConflictableTransactionError<io::Error> {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NotificationStats {
     pub last_notified_at: Option<DateTimeUtc>,
+    pub last_successful_sync_at: Option<DateTimeUtc>,
     pub pending_counters: NotificationCounters,
 }

@@ -160,7 +160,7 @@ pub async fn run(command: Command, config: Config, secrets: Option<Secrets>) -> 
 
     let dry_run = command == cli::Command::DryRun;
     let result = handle_command(command, &ctx).await;
-    let report = NotificationCounters::from(&ctx.final_counters).report(dry_run, false, &ctx);
+    let report = NotificationCounters::from(&ctx.final_counters).report(dry_run, &ctx);
     if !report.is_empty() {
         info!("{}", report);
     }
@@ -213,7 +213,7 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
                 bail!("no matching entries found");
             }
         }
-        cli::Command::LocalStatus { path } => local_status(ctx, &path).await?,
+        cli::Command::LocalStatus { path } => local_status(ctx, path).await?,
         cli::Command::Ls { path, deleted } => ls(ctx, &path, deleted).await?,
         cli::Command::Reset {
             archive_path,

@@ -23,10 +23,31 @@ pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
             if dry_run {
                 show_notification("rammingen dry run failed", &err.to_string());
             } else {
-                show_notification("rammingen sync failed", &err.to_string());
+                let since_last_sync_text = since_last_sync_text(ctx)
+                    .inspect_err(|error| warn!(?error, "since_last_sync_text failed"))
+                    .unwrap_or_default();
+
+                let mut text = format!("{err:?}");
+                if !since_last_sync_text.is_empty() {
+                    text.push('\n');
+                    text.push_str(&since_last_sync_text);
+                }
+
+                show_notification("rammingen sync failed", &text);
             }
         }
     })
+}
+
+pub fn since_last_sync_text(ctx: &Ctx) -> anyhow::Result<String> {
+    let Some(last_sync_at) = ctx.db.notification_stats()?.last_successful_sync_at else {
+        return Ok(String::new());
+    };
+    let since_last_sync = Utc::now().signed_duration_since(last_sync_at).to_std()?;
+    Ok(format!(
+        "Last successful sync was {} ago",
+        format_duration(since_last_sync)
+    ))
 }
 
 async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
@@ -76,8 +97,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     }
     if ctx.config.enable_desktop_notifications {
         if dry_run {
-            let report =
-                NotificationCounters::from(&ctx.final_counters).report(dry_run, false, ctx);
+            let report = NotificationCounters::from(&ctx.final_counters).report(dry_run, ctx);
             show_notification("rammingen dry run complete", &report);
         } else {
             let mut stats = ctx
@@ -117,12 +137,13 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                     &format!(
                         "{}{}",
                         interval_str,
-                        stats.pending_counters.report(dry_run, has_interval, ctx)
+                        stats.pending_counters.report(dry_run, ctx)
                     ),
                 );
                 stats.last_notified_at = Some(now);
                 stats.pending_counters = NotificationCounters::default();
             }
+            stats.last_successful_sync_at = Some(Utc::now());
             ctx.db.set_notification_stats(&stats)?;
         }
     }

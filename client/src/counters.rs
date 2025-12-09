@@ -46,14 +46,8 @@ impl NotificationCounters {
         Ok(())
     }
 
-    pub fn report(&self, dry_run: bool, accumulated: bool, ctx: &Ctx) -> String {
+    pub fn report(&self, dry_run: bool, ctx: &Ctx) -> String {
         let mut output = Vec::new();
-        if accumulated {
-            output.push(format!(
-                "Total sync runs completed: {}",
-                self.completed_syncs
-            ));
-        }
         if self.uploaded_large_files > 0 {
             let size = pretty_size(ctx.config.warn_about_files_larger_than.as_u64());
             if dry_run {
