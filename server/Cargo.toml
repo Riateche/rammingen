@@ -1,7 +1,7 @@
 [package]
 name = "rammingen_server"
 description = "File synchronization and backup server"
-version = "0.1.0"
+version = "0.2.0-alpha.1"
 default-run = "rammingen-server"
 
 edition = { workspace = true }

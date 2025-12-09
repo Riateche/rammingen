@@ -1,8 +1,8 @@
 [package]
 name = "rammingen_sdk"
 description = "File synchronization and backup SDK"
-version = "0.1.0"
 
+version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }

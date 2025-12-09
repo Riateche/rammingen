@@ -13,6 +13,7 @@ resolver = "2"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Riateche/rammingen"
 edition = "2024"
+version = "0.2.0-alpha.1"
 
 [workspace.dependencies]
 aes-siv = { version = "0.8.0-rc.2" }
