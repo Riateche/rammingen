@@ -123,6 +123,9 @@ fn create(dir: &Path, rng: &mut impl Rng) -> Result<()> {
             use {anyhow::Context as _, pathdiff::diff_paths};
 
             let target_absolute = choose_path(dir, true, true, true, true, true, rng)?.unwrap();
+            if target_absolute == parent {
+                return Ok(());
+            }
             let target_relative =
                 diff_paths(&target_absolute, parent).context("diff_paths failed")?;
             fs_err::os::unix::fs::symlink(&target_relative, &path)?;
@@ -190,12 +193,12 @@ fn edit(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     Ok(())
 }
 
-fn change_mode(_dir: &Path, rng: &mut impl Rng) -> Result<()> {
+fn change_mode(dir: &Path, rng: &mut impl Rng) -> Result<()> {
     #[cfg(target_family = "unix")]
     {
         use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
 
-        let Some(path) = choose_path(_dir, true, false, false, true, false, rng)? else {
+        let Some(path) = choose_path(dir, true, false, false, true, false, rng)? else {
             return Ok(());
         };
         let mode = [0o777, 0o774, 0o744, 0o700, 0o666, 0o664, 0o644, 0o600]
@@ -205,6 +208,8 @@ fn change_mode(_dir: &Path, rng: &mut impl Rng) -> Result<()> {
         fs_err::set_permissions(&path, Permissions::from_mode(*mode))?;
         debug!("Changed mode of file {} to {:#o}", path.display(), mode);
     }
+    #[cfg(not(target_family = "unix"))]
+    let _ = (dir, rng);
     Ok(())
 }
 

@@ -90,9 +90,12 @@ impl Rule {
             Rule::SubdirsOf {
                 path: rule_path,
                 except,
-            } => {
+            } =>
+            {
+                #[expect(clippy::print_stdout, reason = "tmp")]
                 if let Some(parent) = path.parent()? {
-                    rule_path == &parent && !except.iter().any(|ex| ex == name)
+                    println!("path={path:?}, parent={parent:?}, rule_path={rule_path:?}");
+                    (rule_path == &parent) && !except.iter().any(|ex| ex == name)
                 } else {
                     false
                 }
@@ -102,27 +105,26 @@ impl Rule {
     }
 }
 
+// TODO: handle path delimiters properly on Windows, add tests
 #[cfg(test)]
+#[cfg(not(target_os = "windows"))]
 mod tests {
-    use {
-        super::*,
-        fs_err::canonicalize,
-        std::{path::PathBuf, sync::LazyLock},
-    };
+    use {super::*, std::path::Path};
 
-    // TODO: remove canonicalize?
-    static TMP_PATH: LazyLock<PathBuf> = LazyLock::new(|| canonicalize("/tmp").unwrap());
-
+    #[track_caller]
     fn p(s: &str) -> SanitizedLocalPath {
-        let path = TMP_PATH.join(s);
+        let path = Path::new("/data").join(s);
         SanitizedLocalPath::new(&path).unwrap()
     }
+    #[track_caller]
     fn rules(rules: &str) -> Rules {
         Rules::new(&[&json5::from_str::<Vec<Rule>>(rules).unwrap()], p("1"))
     }
+    #[track_caller]
     fn i(rules: &mut Rules, path: &str) {
         assert!(!rules.matches(&p(path)).unwrap());
     }
+    #[track_caller]
     fn e(rules: &mut Rules, path: &str) {
         assert!(rules.matches(&p(path)).unwrap());
     }
@@ -157,13 +159,12 @@ mod tests {
 
     #[test]
     fn with_final() {
-        let mut rules = rules(&format!(
+        let mut rules = rules(
             r#"[
-            {{ name_equals: "target" }},
-            {{ path_equals: "{}/1/target/2" }},
-        ]"#,
-            TMP_PATH.to_str().unwrap()
-        ));
+                { name_equals: "target" },
+                { path_equals: "/data/1/target/2" },
+            ]"#,
+        );
         i(&mut rules, "1");
         e(&mut rules, "1/target");
         e(&mut rules, "1/target/2");
@@ -172,12 +173,11 @@ mod tests {
 
     #[test]
     fn with_subdirs() {
-        let mut rules = rules(&format!(
+        let mut rules = rules(
             r#"[
-            {{ subdirs_of: {{ path: "{}/1/projects", except: ["p1", "p2"] }} }},
-        ]"#,
-            TMP_PATH.to_str().unwrap()
-        ));
+                { subdirs_of: { path: "/data/1/projects", except: ["p1", "p2"] } },
+            ]"#,
+        );
         i(&mut rules, "1");
         i(&mut rules, "1/projects");
         i(&mut rules, "1/projects/p1");

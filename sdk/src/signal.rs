@@ -44,5 +44,6 @@ fn sigterm() -> Result<impl Future<Output = ()>> {
     }
 
     #[cfg(not(target_family = "unix"))]
+    #[expect(clippy::absolute_paths, reason = "single use")]
     Ok(std::future::pending())
 }

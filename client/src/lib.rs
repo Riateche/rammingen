@@ -280,6 +280,8 @@ pub fn unix_mode(metadata: &Metadata) -> Option<u32> {
 }
 
 #[cfg(not(target_family = "unix"))]
+#[must_use]
+#[inline]
 pub fn unix_mode(_metadata: &Metadata) -> Option<u32> {
     None
 }

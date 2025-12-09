@@ -30,15 +30,14 @@ use {
     std::{
         net::SocketAddr,
         path::{Path, PathBuf},
-        time::Duration,
+        time::{Duration, Instant},
     },
     tempfile::TempDir,
-    tokio::{
-        sync::mpsc,
-        time::{interval, sleep},
-    },
+    tokio::{sync::mpsc, time::sleep},
     tracing::{debug, error, info},
 };
+
+const TEST_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(10);
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
     create_dir_all(&dst)?;
@@ -47,9 +46,9 @@ fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
         let metadata = fs_err::symlink_metadata(entry.path())?;
         let new_path = dst.as_ref().join(entry.file_name());
         if metadata.is_symlink() {
-            let link_target = fs_err::read_link(entry.path())?;
             #[cfg(target_family = "unix")]
             {
+                let link_target = fs_err::read_link(entry.path())?;
                 fs_err::os::unix::fs::symlink(link_target, &new_path)?;
             }
             #[cfg(not(target_family = "unix"))]
@@ -63,13 +62,6 @@ fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
         }
     }
     Ok(())
-}
-
-#[tokio::main]
-async fn main() {
-    if let Err(err) = try_main().await {
-        error!("{:?}", err);
-    }
 }
 
 #[derive(Debug, Parser)]
@@ -93,7 +85,8 @@ pub enum Command {
     ServerOnly,
 }
 
-async fn try_main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // TODO: remove into_path
     let dir = TempDir::new()?.keep();
     let cli = Cli::parse();
@@ -114,11 +107,14 @@ async fn try_main() -> Result<()> {
         let storage_path = dir.join("storage");
         create_dir_all(&storage_path)?;
 
-        let bind_addr = if let Some(bind_addr) = cli.bind_addr {
-            bind_addr
+        let (bind_addr, connect_addr) = if let Some(bind_addr) = cli.bind_addr {
+            (bind_addr, bind_addr)
         } else {
             let port = pick_unused_port().expect("failed to pick port");
-            SocketAddr::new("0.0.0.0".parse()?, port)
+            (
+                SocketAddr::new("0.0.0.0".parse()?, port),
+                SocketAddr::new("127.0.0.1".parse()?, port),
+            )
         };
         let server_config = rammingen_server::Config {
             bind_addr,
@@ -128,11 +124,11 @@ async fn try_main() -> Result<()> {
             log_filter: String::new(),
             retain_detailed_history_for: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(40),
+                Command::Snapshot => TEST_SNAPSHOT_INTERVAL * 2,
             },
             snapshot_interval: match &cli.command {
                 Command::Shuffle | Command::ServerOnly => Duration::from_secs(3600),
-                Command::Snapshot => Duration::from_secs(20),
+                Command::Snapshot => TEST_SNAPSHOT_INTERVAL,
             },
         };
         write(
@@ -161,7 +157,7 @@ async fn try_main() -> Result<()> {
                 std::process::exit(1);
             }
         });
-        format!("http://{bind_addr}/").parse()?
+        format!("http://{connect_addr}/").parse()?
     } else if let Some(server_url) = cli.server_url {
         server_url
     } else {
@@ -491,15 +487,16 @@ async fn test_snapshot(
 ) -> Result<()> {
     let index = 0;
     let mut snapshots = Vec::<(PathBuf, DateTimeUtc)>::new();
-    let mut interval = interval(Duration::from_secs(2));
     let steps = 30;
+    let started_at = Instant::now();
+    info!("Started at {}", Utc::now());
+    let mut next_snapshot_instant = None;
     for i in 0..steps {
-        interval.tick().await;
         info!(
-            "Shuffling mount: step {} / {} at {}",
+            "Shuffling mount: step {} / {} at {:?}",
             i + 1,
             steps,
-            Utc::now()
+            started_at.elapsed()
         );
         while snapshots
             .iter()
@@ -507,16 +504,31 @@ async fn test_snapshot(
         {
             shuffle(&ctx.clients[index].mount_dir, rng)?;
         }
-        debug!("Syncing client {index}");
+        info!("Shuffling done at {:?}", started_at.elapsed());
+        info!("Syncing client {index}");
         ctx.clients[index].sync().await?;
         let snapshot_path = ctx.dir.join(format!("snapshot_{i}"));
-        debug!("Recording snapshot {i}");
+        info!("Syncing done at {:?}", started_at.elapsed());
+        if i == 0 {
+            // First entries added.
+            next_snapshot_instant = Some(Instant::now() + TEST_SNAPSHOT_INTERVAL);
+        }
+        info!("Recording snapshot {i}");
         copy_dir_all(&ctx.clients[index].mount_dir, &snapshot_path)?;
         snapshots.push((snapshot_path, Utc::now()));
         ctx.clients[0].check_integrity().await?;
 
-        interval.tick().await;
         test_snapshot_tick_sender.send(()).await?;
+
+        if i % 5 == 4 {
+            // Last update that will be included in the snapshot.
+            assert!(Instant::now() < next_snapshot_instant.unwrap(), "too slow");
+            info!("Waiting starts at {:?}", started_at.elapsed());
+            sleep(next_snapshot_instant.unwrap() - Instant::now() + Duration::from_millis(100))
+                .await;
+            info!("Waiting done at {:?}", started_at.elapsed());
+            next_snapshot_instant = Some(next_snapshot_instant.unwrap() + TEST_SNAPSHOT_INTERVAL);
+        }
     }
     let download_path = ctx.dir.join("download");
     let mut results = Vec::new();
@@ -561,16 +573,20 @@ async fn test_snapshot(
             None,
             None,
             None,
+            // Time slots 5..9 map to the first snapshot (after i = 4).
             Some(4),
             Some(4),
             Some(4),
             Some(4),
             Some(4),
+            // Time slots 9..14 map to the second snapshot (after i = 9).
             Some(9),
             Some(9),
             Some(9),
             Some(9),
             Some(9),
+            // At i > 14, not enough time has passed to create another snapshot, so
+            // the detailed history is preserved.
             Some(15),
             Some(16),
             Some(17),
