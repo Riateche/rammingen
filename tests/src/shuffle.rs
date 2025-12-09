@@ -4,10 +4,10 @@ use {
     fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write},
     rammingen::{path::PathExt, symlinks_enabled},
     rand::{
-        distr::{weighted::WeightedIndex, Alphanumeric, SampleString},
+        Rng,
+        distr::{Alphanumeric, SampleString, weighted::WeightedIndex},
         prelude::Distribution,
         seq::IndexedRandom,
-        Rng,
     },
     std::{
         path::{Path, PathBuf},

@@ -174,6 +174,8 @@ response_type!(GetServerStatus, ServerStatus, "v2");
 pub struct ServerStatus {
     /// Permanent ID of the server.
     pub server_id: String,
+    /// Version of the server software.
+    pub server_version: String,
     /// Available space in the file storage directory in bytes.
     pub available_space: u64,
 }

@@ -1,6 +1,6 @@
 use {
     crate::is_ignored,
-    anyhow::{bail, Result},
+    anyhow::{Result, bail},
     fs_err::{read_dir, symlink_metadata},
     rammingen::unix_mode,
     std::path::Path,

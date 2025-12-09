@@ -2,7 +2,7 @@ mod diff;
 mod shuffle;
 
 use {
-    anyhow::{bail, Context as _, Result},
+    anyhow::{Context as _, Result, bail},
     chrono::{DateTime, FixedOffset, Utc},
     clap::{Parser, Subcommand},
     diff::{diff, diff_ignored, is_leftover_dir_with_ignored_files},
@@ -16,13 +16,13 @@ use {
         path::{PathExt, SanitizedLocalPath},
         rules::Rule,
         setup_logger,
-        term::{clear_status, set_term, StdoutTerm},
+        term::{StdoutTerm, clear_status, set_term},
     },
     rammingen_protocol::{
-        util::native_to_archive_relative_path, AccessToken, ArchivePath, DateTimeUtc, EncryptionKey,
+        AccessToken, ArchivePath, DateTimeUtc, EncryptionKey, util::native_to_archive_relative_path,
     },
     rammingen_server::util::{add_source, migrate},
-    rand::{seq::IndexedRandom, Rng, SeedableRng},
+    rand::{Rng, SeedableRng, seq::IndexedRandom},
     rand_chacha::ChaCha12Rng,
     reqwest::Url,
     shuffle::{choose_path, random_content, random_name, shuffle},

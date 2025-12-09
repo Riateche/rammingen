@@ -766,6 +766,7 @@ pub async fn get_server_status(
 ) -> Result<Response<GetServerStatus>> {
     Ok(ServerStatus {
         server_id: ctx.server_id.to_string(),
+        server_version: env!("CARGO_PKG_VERSION").into(),
         available_space: ctx.storage.available_space()?,
     })
 }

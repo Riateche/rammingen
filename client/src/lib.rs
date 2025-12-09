@@ -252,7 +252,8 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
         }
         cli::Command::ServerStatus => {
             let status = ctx.client.request(&GetServerStatus).await?;
-            info!("ServerID: {:?}", status.server_id);
+            info!("Server ID: {:?}", status.server_id);
+            info!("Server version: {:?}", status.server_version);
             info!(
                 "Available space on server: {}",
                 pretty_size(status.available_space)
