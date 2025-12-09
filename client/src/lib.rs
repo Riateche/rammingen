@@ -39,6 +39,7 @@ use {
         fs::Metadata,
         path::PathBuf,
         sync::{Arc, Mutex},
+        time::Duration,
     },
     sync::sync,
     term::TermLayer,
@@ -335,4 +336,10 @@ fn init_notifications() {
             warn!("Failed to init notifications: {err}");
         }
     });
+}
+
+#[expect(clippy::arithmetic_side_effects, reason = "never fails")]
+fn truncate_duration_to_minute(duration: Duration) -> Duration {
+    let secs = duration.as_secs() / 60 * 60;
+    Duration::from_secs(secs)
 }

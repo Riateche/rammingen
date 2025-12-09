@@ -23,4 +23,7 @@ BEGIN
 END;
 $$;
 
+UPDATE entries SET is_symlink = false WHERE kind = 1;
+UPDATE entry_versions SET is_symlink = false WHERE kind = 1;
+
 COMMIT;

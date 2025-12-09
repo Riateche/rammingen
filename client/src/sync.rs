@@ -5,7 +5,7 @@ use {
         download::download_latest,
         pull_updates::pull_updates,
         rules::Rules,
-        show_notification,
+        show_notification, truncate_duration_to_minute,
         upload::{find_local_deletions, upload},
     },
     anyhow::{Context, Result},
@@ -13,7 +13,7 @@ use {
     chrono::{TimeDelta, Utc},
     humantime::format_duration,
     itertools::Itertools,
-    std::{collections::HashSet, sync::Arc, time::Duration},
+    std::{collections::HashSet, fmt::Write, sync::Arc, time::Duration},
     tracing::warn,
 };
 
@@ -23,14 +23,19 @@ pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
             if dry_run {
                 show_notification("rammingen dry run failed", &err.to_string());
             } else {
-                let since_last_sync_text = since_last_sync_text(ctx)
-                    .inspect_err(|error| warn!(?error, "since_last_sync_text failed"))
+                let duration_since_last_sync = duration_since_last_sync(ctx)
+                    .inspect_err(|error| warn!(?error, "duration_since_last_sync failed"))
                     .unwrap_or_default();
 
                 let mut text = format!("{err:?}");
-                if !since_last_sync_text.is_empty() {
-                    text.push('\n');
-                    text.push_str(&since_last_sync_text);
+                if let Some(duration) = duration_since_last_sync {
+                    #[expect(clippy::expect_used, reason = "never fails")]
+                    write!(
+                        text,
+                        "\nLast successful sync was {} ago",
+                        format_duration(truncate_duration_to_minute(duration))
+                    )
+                    .expect("write failed");
                 }
 
                 show_notification("rammingen sync failed", &text);
@@ -39,14 +44,12 @@ pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     })
 }
 
-pub fn since_last_sync_text(ctx: &Ctx) -> anyhow::Result<String> {
+fn duration_since_last_sync(ctx: &Ctx) -> anyhow::Result<Option<Duration>> {
     let Some(last_sync_at) = ctx.db.notification_stats()?.last_successful_sync_at else {
-        return Ok(String::new());
+        return Ok(None);
     };
-    let since_last_sync = Utc::now().signed_duration_since(last_sync_at).to_std()?;
-    Ok(format!(
-        "Last successful sync was {} ago",
-        format_duration(since_last_sync)
+    Ok(Some(
+        Utc::now().signed_duration_since(last_sync_at).to_std()?,
     ))
 }
 

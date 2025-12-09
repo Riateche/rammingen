@@ -37,7 +37,7 @@ use {
     tracing::{debug, error, info},
 };
 
-const TEST_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(10);
+const TEST_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(15);
 
 fn copy_dir_all(src: &Path, dst: impl AsRef<Path>) -> Result<()> {
     create_dir_all(&dst)?;

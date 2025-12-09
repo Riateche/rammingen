@@ -66,12 +66,12 @@ pub enum Command {
         /// Accepted timestamp format: %Y-%m-%d_%H:%M:%S
         version: Option<DateTimeArg>,
     },
-    /// Show information about a local path.
+    /// Show last sync time or show information about a local path.
     LocalStatus { path: Option<SanitizedLocalPath> },
     /// Show information about an archive path.
     Ls {
         path: ArchivePath,
-        /// Also shows deleted entries.
+        /// Also show deleted entries.
         #[arg(short, long)]
         deleted: bool,
     },

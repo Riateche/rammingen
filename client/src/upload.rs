@@ -123,7 +123,6 @@ async fn record_deletion_batch(
                 .fetch_add(1, Ordering::Relaxed);
             info!("Recorded deletion of {}", local_path);
         }
-        info!("ok4 record_deletion: remove_local_entry {local_path}");
         ctx.db.remove_local_entry(&local_path)?;
     }
     Ok(())

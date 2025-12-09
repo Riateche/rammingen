@@ -1,13 +1,14 @@
 use {
     crate::{
         Ctx, path::SanitizedLocalPath, pull_updates::pull_updates, rules::Rules,
-        sync::since_last_sync_text, upload::to_archive_path,
+        truncate_duration_to_minute, upload::to_archive_path,
     },
     anyhow::{Context as _, Result},
     byte_unit::{Byte, UnitType},
     cadd::ops::Cadd,
-    chrono::{DateTime, Local, SubsecRound, Timelike},
+    chrono::{DateTime, Local, SubsecRound, Timelike, Utc},
     futures::TryStreamExt,
+    humantime::format_duration,
     itertools::Itertools,
     prettytable::{Table, cell, format::FormatBuilder, row},
     rammingen_protocol::{
@@ -73,7 +74,14 @@ pub async fn local_status(ctx: &Ctx, path: Option<SanitizedLocalPath>) -> Result
             info!("This path is not inside any of the configured mount points");
         }
     } else {
-        info!("{}", since_last_sync_text(ctx)?);
+        if let Some(last_sync_at) = ctx.db.notification_stats()?.last_successful_sync_at {
+            let duration_since = Utc::now().signed_duration_since(last_sync_at).to_std()?;
+            info!(
+                "Last successful sync was {} ({} ago)",
+                last_sync_at,
+                format_duration(truncate_duration_to_minute(duration_since))
+            );
+        }
         info!("You can provide a local path to get detailed information about it.");
     }
 
