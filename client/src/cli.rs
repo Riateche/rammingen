@@ -70,7 +70,7 @@ pub enum Command {
     LocalStatus { path: Option<SanitizedLocalPath> },
     /// Show information about an archive path.
     Ls {
-        path: ArchivePath,
+        path: String,
         /// Also show deleted entries.
         #[arg(short, long)]
         deleted: bool,

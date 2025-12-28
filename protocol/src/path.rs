@@ -297,6 +297,18 @@ impl fmt::Display for EncryptedArchivePath {
     }
 }
 
+impl FromStr for EncryptedArchivePath {
+    type Err = anyhow::Error;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let path = s
+            .strip_prefix("en")
+            .context("encrypted archive path must start with 'enar:/'")?;
+        ArchivePath::from_str(path).map(Self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {crate::ArchivePath, std::str::FromStr};

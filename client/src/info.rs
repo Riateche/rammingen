@@ -12,11 +12,11 @@ use {
     itertools::Itertools,
     prettytable::{Table, cell, format::FormatBuilder, row},
     rammingen_protocol::{
-        ArchivePath, DateTimeUtc, EntryKind, SourceId,
+        ArchivePath, DateTimeUtc, EncryptedArchivePath, EntryKind, SourceId,
         endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
     },
     rammingen_sdk::content::LocalArchiveEntry,
-    std::fmt::Display,
+    std::{fmt::Display, str::FromStr},
     tracing::{error, info},
 };
 
@@ -88,17 +88,24 @@ pub async fn local_status(ctx: &Ctx, path: Option<SanitizedLocalPath>) -> Result
     Ok(())
 }
 
-pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()> {
+pub async fn ls(ctx: &Ctx, path: &str, show_deleted: bool) -> Result<()> {
+    let path = if path.starts_with("enar:") {
+        ctx.cipher
+            .decrypt_path(&EncryptedArchivePath::from_str(path)?)?
+    } else {
+        ArchivePath::from_str(path)?
+    };
+
     pull_updates(ctx).await?;
     let sources = get_sources(ctx).await?;
 
-    let Some(main_entry) = ctx.db.get_archive_entry(path)? else {
+    let Some(main_entry) = ctx.db.get_archive_entry(&path)? else {
         error!("no such path");
         return Ok(());
     };
 
     info!("Path: {}", main_entry.path);
-    let encrypted = ctx.cipher.encrypt_path(path)?;
+    let encrypted = ctx.cipher.encrypt_path(&path)?;
     info!("Encrypted archive path: {}", encrypted);
     info!("Recorded at: {}", pretty_time(main_entry.recorded_at)?);
     info!("Source id: {}", sources.format(main_entry.source_id));
@@ -144,7 +151,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
     let mut entries = Vec::new();
     let mut stream = ctx
         .client
-        .stream(&GetDirectChildEntries(ctx.cipher.encrypt_path(path)?));
+        .stream(&GetDirectChildEntries(ctx.cipher.encrypt_path(&path)?));
 
     while let Some(entry) = stream.try_next().await? {
         entries.push(LocalArchiveEntry::decrypt(entry.data, &ctx.cipher)?);
