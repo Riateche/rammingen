@@ -2,6 +2,8 @@
 
 package me.darkecho.rammingen
 
+import android.text.method.LinkMovementMethod
+import android.widget.TextView
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,13 +42,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.text.HtmlCompat
 import java.io.File
 
 @Composable
@@ -81,6 +87,7 @@ fun FileBrowserScreen(viewModel: FileBrowserViewModel) {
     }
 }
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun TopBar(viewModel: FileBrowserViewModel) {
     val resources = LocalResources.current
@@ -101,6 +108,7 @@ fun TopBar(viewModel: FileBrowserViewModel) {
             val (expanded, setExpanded) = remember { mutableStateOf(false) }
             val (confirmClearLocalCache, setConfirmClearLocalCache) = remember { mutableStateOf(false) }
             val (confirmDeleteLocalFiles, setConfirmDeleteLocalFiles) = remember { mutableStateOf(false) }
+            val (showAbout, setShowAbout) = remember { mutableStateOf(false) }
             IconButton(onClick = { setExpanded(!expanded) }) {
                 Icon(
                     Icons.Default.MoreVert,
@@ -169,6 +177,13 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                         viewModel.openCustomCommandDialog()
                     },
                 )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.about)) },
+                    onClick = {
+                        setExpanded(false)
+                        setShowAbout(true)
+                    },
+                )
             }
             if (confirmClearLocalCache) {
                 AlertDialog(
@@ -213,6 +228,43 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                     },
                 )
             }
+            if (showAbout) {
+                AlertDialog(
+                    onDismissRequest = { setShowAbout(false) },
+                    title = { Text(stringResource(R.string.about)) },
+                    text = {
+                        Column {
+                            HtmlText(stringResource(R.string.about_text))
+                            Text(stringResource(R.string.app_version) + BuildConfig.VERSION_NAME)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { setShowAbout(false) }) {
+                            Text(stringResource(R.string.ok))
+                        }
+                    },
+                )
+            }
+        },
+    )
+}
+
+@Composable
+fun HtmlText(
+    html: String,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    AndroidView(
+        modifier = modifier.fillMaxWidth(),
+        factory = {
+            TextView(context).apply {
+                // Make links clickable
+                movementMethod = LinkMovementMethod.getInstance()
+            }
+        },
+        update = { tv ->
+            tv.text = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT)
         },
     )
 }
