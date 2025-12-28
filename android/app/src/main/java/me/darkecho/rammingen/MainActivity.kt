@@ -51,6 +51,9 @@ class MainActivity : ComponentActivity() {
                     if (uiState.settingsRequest) {
                         goToSettings()
                     }
+                    if (uiState.deleteLocalFilesRequest) {
+                        deleteLocalFiles()
+                    }
                     if (uiState.fileActionRequest != null) {
                         runFileAction(uiState.fileActionRequest)
                     }
@@ -104,6 +107,26 @@ class MainActivity : ComponentActivity() {
     private fun goToSettings() {
         val intent = Intent(this, SettingsActivity::class.java)
         startActivity(intent)
+    }
+
+    private fun cleanDirectory(dir: File) {
+        val files = dir.listFiles()
+        if (files != null) {
+            for (file in files) {
+                if (file.isDirectory()) {
+                    cleanDirectory(file)
+                }
+                file.delete()
+            }
+        }
+    }
+
+    private fun deleteLocalFiles() {
+        val storageRoot = prepareStorageRoot()
+        if (storageRoot != null) {
+            cleanDirectory(storageRoot)
+            recreate()
+        }
     }
 
     private fun runFileAction(request: FileActionRequest) {

@@ -20,4 +20,8 @@
     <string name="share">Share</string>
     <string name="edit_as_plain_text">Edit as plain text</string>
     <string name="go_to_parent_directory">Go to parent directory</string>
+    <string name="clear_local_cache">Clear local cache</string>
+    <string name="confirm_clearing_local_cache">Clear local cache? The client will re-sync the entire state with the server during the next sync. If there are any local files in mount directories, they will be uploaded as new changes.</string>
+    <string name="delete_local_files">Delete local files</string>
+    <string name="confirm_deleting_local_files">Delete all local files from app storage?</string>
 </resources>

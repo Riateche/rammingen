@@ -99,6 +99,8 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                 Icon(Icons.Default.Sync, contentDescription = stringResource(R.string.sync))
             }
             val (expanded, setExpanded) = remember { mutableStateOf(false) }
+            val (confirmClearLocalCache, setConfirmClearLocalCache) = remember { mutableStateOf(false) }
+            val (confirmDeleteLocalFiles, setConfirmDeleteLocalFiles) = remember { mutableStateOf(false) }
             IconButton(onClick = { setExpanded(!expanded) }) {
                 Icon(
                     Icons.Default.MoreVert,
@@ -137,6 +139,20 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                     },
                 )
                 DropdownMenuItem(
+                    text = { Text(stringResource(R.string.clear_local_cache)) },
+                    onClick = {
+                        setExpanded(false)
+                        setConfirmClearLocalCache(true)
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.delete_local_files)) },
+                    onClick = {
+                        setExpanded(false)
+                        setConfirmDeleteLocalFiles(true)
+                    },
+                )
+                DropdownMenuItem(
                     text = { Text(stringResource(R.string.command_line_help)) },
                     onClick = {
                         setExpanded(false)
@@ -151,6 +167,49 @@ fun TopBar(viewModel: FileBrowserViewModel) {
                     onClick = {
                         setExpanded(false)
                         viewModel.openCustomCommandDialog()
+                    },
+                )
+            }
+            if (confirmClearLocalCache) {
+                AlertDialog(
+                    onDismissRequest = { setConfirmClearLocalCache(false) },
+                    title = { Text(stringResource(R.string.clear_local_cache)) },
+                    text = { Text(stringResource(R.string.confirm_clearing_local_cache)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            setConfirmClearLocalCache(false)
+                            viewModel.requestRunCommand(
+                                NativeBridge.COMMAND_CLEAR_LOCAL_CACHE,
+                                resources.getString(R.string.clear_local_cache),
+                            )
+                        }) {
+                            Text(stringResource(R.string.clear_local_cache))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { setConfirmClearLocalCache(false) }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    },
+                )
+            }
+            if (confirmDeleteLocalFiles) {
+                AlertDialog(
+                    onDismissRequest = { setConfirmDeleteLocalFiles(false) },
+                    title = { Text(stringResource(R.string.delete_local_files)) },
+                    text = { Text(stringResource(R.string.confirm_deleting_local_files)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            setConfirmDeleteLocalFiles(false)
+                            viewModel.requestDeleteLocalFiles()
+                        }) {
+                            Text(stringResource(R.string.delete_local_files))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { setConfirmDeleteLocalFiles(false) }) {
+                            Text(stringResource(R.string.cancel))
+                        }
                     },
                 )
             }

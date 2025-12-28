@@ -39,10 +39,10 @@ class RunActivity :
     ComponentActivity(),
     Receiver {
     companion object {
-        private val ARG_COMMAND = "command"
-        private val ARG_TITLE = "title"
-        private val ARG_STORAGE_ROOT = "storageRoot"
-        private val ARG_CURRENT_DIR = "currentDir"
+        private const val ARG_COMMAND = "command"
+        private const val ARG_TITLE = "title"
+        private const val ARG_STORAGE_ROOT = "storageRoot"
+        private const val ARG_CURRENT_DIR = "currentDir"
 
         fun createIntent(
             context: Context,
@@ -81,6 +81,7 @@ class RunActivity :
                             },
                             navigationIcon = {
                                 IconButton(onClick = {
+                                    startActivity(Intent(applicationContext, MainActivity::class.java))
                                     onBackPressedDispatcher.onBackPressed()
                                 }) {
                                     Icon(

@@ -37,6 +37,7 @@ data class FileBrowserState(
     val customCommand: String? = null,
     val runCommandRequest: RunCommandRequest? = null,
     val settingsRequest: Boolean = false,
+    val deleteLocalFilesRequest: Boolean = false,
     val fileActionRequest: FileActionRequest? = null,
 ) {
     fun isContextMenuOpen(path: String): Boolean = path == contextMenuEntryPath
@@ -164,11 +165,18 @@ class FileBrowserViewModel : ViewModel() {
         requestRunCommand(customCommand, customCommand)
     }
 
+    fun requestDeleteLocalFiles() {
+        _uiState.update { state ->
+            state.copy(deleteLocalFilesRequest = true)
+        }
+    }
+
     fun clearRequests() {
         _uiState.update { state ->
             state.copy(
                 runCommandRequest = null,
                 settingsRequest = false,
+                deleteLocalFilesRequest = false,
                 fileActionRequest = null,
             )
         }

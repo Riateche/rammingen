@@ -15,7 +15,8 @@ class NativeBridge {
     companion object {
         const val COMMAND_SYNC = "sync"
         const val COMMAND_DRY_RUN = "dry-run"
-        const val COMMAND_SERVER_STATUS = "status"
+        const val COMMAND_SERVER_STATUS = "server-status"
+        const val COMMAND_CLEAR_LOCAL_CACHE = "clear-local-cache"
         const val COMMAND_HELP = "help"
     }
 
