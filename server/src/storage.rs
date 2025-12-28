@@ -1,5 +1,6 @@
 use {
     anyhow::{Context as _, Result, bail},
+    cadd::prelude::Cinto,
     fs_err::{File, PathExt, create_dir_all, read_dir, remove_file, rename, symlink_metadata},
     fs2::available_space,
     rammingen_protocol::EncryptedContentHash,
@@ -121,8 +122,8 @@ impl Storage {
                 let name = path
                     .file_name()
                     .with_context(|| format!("found path without file name: {:?}", path))?
-                    .to_str()
-                    .with_context(|| format!("invalid file name: {:?}", path))?;
+                    .cinto()
+                    .context("invalid file name")?;
                 let hash = EncryptedContentHash::from_url_safe(name)?;
                 let size = meta.len();
                 out.insert(hash, size);

@@ -1,5 +1,6 @@
 use {
     anyhow::{Context as _, Result, anyhow, bail},
+    cadd::prelude::{Cinto, IntoType},
     serde::{Deserialize, Serialize, de::Error},
     std::{
         fmt::{self, Display, Formatter},
@@ -80,9 +81,7 @@ impl SanitizedLocalPath {
     #[inline]
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        if path.to_str().is_none() {
-            bail!("unsupported path (not valid unicode): {:?}", path);
-        }
+        let _ = path.cinto_type::<&str>()?;
 
         if path.components().any(|c| matches!(c, Component::CurDir)) {
             bail!("'/./' is not allowed in SanitizedLocalPath: {:?}", path);
@@ -120,7 +119,7 @@ impl SanitizedLocalPath {
     pub fn file_name(&self) -> Option<&str> {
         self.0
             .file_name()
-            .map(|s| s.to_str().expect("non-unicode path in SanitizedLocalPath"))
+            .map(|s| s.cinto().expect("non-unicode path in SanitizedLocalPath"))
     }
 
     #[inline]
@@ -146,7 +145,8 @@ impl SanitizedLocalPath {
     )]
     pub fn as_str(&self) -> &str {
         self.0
-            .to_str()
+            .as_path()
+            .cinto()
             .expect("non-unicode path in SanitizedLocalPath")
     }
 

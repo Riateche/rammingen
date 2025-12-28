@@ -17,6 +17,7 @@ base64 = { workspace = true }
 bincode = { workspace = true }
 byte-unit = { workspace = true }
 bytes = { workspace = true }
+cadd = { workspace = true }
 chrono = { workspace = true }
 derive_more = { workspace = true }
 fs-err = { workspace = true }

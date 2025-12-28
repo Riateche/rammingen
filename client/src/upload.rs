@@ -263,12 +263,15 @@ fn upload_inner<'a>(
                 let file_data = if symlinks_enabled() && metadata.is_symlink() {
                     maybe_block_in_place(|| {
                         let link_content = fs_err::read_link(local_path)?;
-                        let link_content = link_content.to_str().with_context(|| {
-                            format!(
-                                "non-unicode link target: {:?} -> {:?}",
-                                local_path, link_content
-                            )
-                        })?;
+                        let link_content = link_content
+                            .as_path()
+                            .cinto_type::<&str>()
+                            .with_context(|| {
+                                format!(
+                                    "non-unicode link target: {:?} -> {:?}",
+                                    local_path, link_content
+                                )
+                            })?;
                         ctx.ctx.cipher.encrypt_file_content(link_content.as_bytes())
                     })?
                 } else {
@@ -411,10 +414,10 @@ fn upload_inner<'a>(
                 let entry_path = entry.path();
                 let file_name = entry.file_name();
                 let file_name_str = file_name
-                    .to_str()
-                    .with_context(|| format!("Unsupported file name: {:?}", entry_path))?;
-                let entry_local_path = local_path.join(file_name_str)?;
-                let entry_archive_path = archive_path.join_one(file_name_str).map_err(|err| {
+                    .cinto_type::<String>()
+                    .context("unsupported file name")?;
+                let entry_local_path = local_path.join(&file_name_str)?;
+                let entry_archive_path = archive_path.join_one(&file_name_str).map_err(|err| {
                     anyhow!(
                         "Failed to construct archive path for {:?}: {:?}",
                         entry_path,

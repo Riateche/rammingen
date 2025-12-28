@@ -2866,6 +2866,7 @@ dependencies = [
  "bincode",
  "byte-unit",
  "bytes",
+ "cadd",
  "chrono",
  "derive_more",
  "fs-err",

@@ -1,6 +1,7 @@
 use {
     anyhow::{Context as _, Result, bail},
     bytes::Bytes,
+    cadd::prelude::IntoType,
     fs_err::OpenOptions,
     futures::future,
     itertools::Itertools,
@@ -77,7 +78,7 @@ pub fn native_to_archive_relative_path(relative_path: &Path) -> Result<String> {
         if let path::Component::Normal(component) = component {
             result.push(
                 component
-                    .to_str()
+                    .cinto_type::<&str>()
                     .with_context(|| format!("unsupported path: {:?}", relative_path))?,
             );
         } else {
