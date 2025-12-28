@@ -4,6 +4,20 @@ set -e -o pipefail
 
 cd "$(dirname "$0")"
 
+PACKAGE_VERSION=$(
+    cargo metadata --format-version=1 --no-deps | \
+        jq -r '.packages[] | select(.name == "rammingen_android") | .version'
+)
+ANDROID_VERSION=$(
+    grep "versionName" ../app/build.gradle.kts | cut -d'"' -f 2
+)
+if [[ $PACKAGE_VERSION != $ANDROID_VERSION ]]; then
+    echo 'version mismatch in app/build.gradle.kts'
+    echo "expected: '$PACKAGE_VERSION'"
+    echo "got: '$ANDROID_VERSION'"
+    exit 1
+fi
+
 if [[ -z $ANDROID_TOOLCHAINS ]]; then
     echo 'missing ANDROID_TOOLCHAINS env var'
     exit 1
