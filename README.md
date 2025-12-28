@@ -1,24 +1,31 @@
 # Rammingen
 
-Rammingen is a self-hosted file synchronization and backup system.
+**Rammingen** is a self-hosted file synchronization and backup system.
 
-Rammingen client periodically runs in background, scans local files and uploads any new detected changes to your server. It also pulls changes from the server and applies them to the local files.
+The rammingen client runs periodically in background, scanning local files and uploading any file changes to your server. It also pulls updates from the server and applies them locally, keeping your files in sync.
+
+Supported platforms: **Windows, Linux, macOS, Android**.
 
 ## Features
 
-1. Rammingen server can work with multiple clients. The client supports Linux, Windows and osX.
-1. Fully configurable path management: you can specify multiple local directories for periodic sync and map each of them to a virtual archive path that is shared among all clients. The same virtual archive path can be mapped to different local paths in different clients.
-1. Flexible file ignore rules (name- or path-based, exact name match or regex, can be configured separately for each directory).
-1. Non-automatic download and upload using `rammingen` cli for one-time operations.
-1. End-to-end encryption: file contents and all metadata (including path names) are sent to the server in an encrypted form using a private key that never leaves your local systems. It uses AES-CMAC-SIV in AEAD mode with 512-bit key size.
-1. Files with the same content (or renamed/moved files) will be deduplicated, i.e. the content will only be uploaded and downloaded once.
-1. All files are compressed using DEFLATE.
-1. Every version of each file is stored independently. You can use `rammingen` command to see all versions of a certain file or all changes within a certain directory. You can also download a specific version of a file or even a version of a directory at a particular time, serving essentially as a time machine.
-1. Old versions of files are periodically cleaned up, leaving only the last version. You can configure the time interval after which that happens.
-1. Rammingen runs in background and doesn't require any user intervention. It can show desktop notifications in case of errors or periodic notifications about file sync statistics (the interval of notifications can be configured).
-1. Rammingen never modifies file names or content. In case of conflicted changes for a file, it overwrites the file with the latest version. However, you can always see all the versions and reset the file to the correct version.
-1. It's optimized for slow networks and slow servers. You can run the server on the cheapest VDS configuration.
-1. It's also optimized for large amounts of files. It can handle millions of files without issues.
+1. **Cross-platform syncing:** A single Rammingen server can work with multiple clients running simultaneously on any supported system. All files are placed in a unified virtual file tree, where files and directories can be referenced by *archive path*.
+1. **Fully configurable path management:** Configure multiple local directories for periodic sync and map each of them to an archive path. Each client can have its own independent mapping configuration.
+1. **Powerful ignore rules:** Exclude files by name or path using exact matches or regex, with rules configurable globally or per directory.
+1. **Extensive command line interface:**
+    1. Upload and download files and directories on demand.
+    2. Show the history of changes for any file or directory.
+    3. Restore a file or directory to an earlier version.
+    4. Move or delete archived files remotely.
+1. **End-to-end encryption:** File contents and most metadata (including path names) are encrypted client-side using a private key that never leaves your devices. Rammingen uses AES-CMAC-SIV in AEAD mode with a 512-bit key.
+1. **Content deduplication:** Identical file contents are stored only once, reducing storage and transfer overhead and improving sync performance when files are moved or renamed.
+1. **Compression:** All files are compressed using DEFLATE.
+1. **Full version history:** Each version of every file is stored independently. Browse all versions of a file or all historical changes in a directory. Download any specific version of a file or even the entire directory state at a chosen point in time.
+1. **Automatic cleanup:** Old versions are periodically pruned while retaining snapshots at configured intervals. The default policy keeps all versions for two weeks and weekly snapshots for older data.
+1. **Unattended operation:** Rammingen runs in the background and requires no user intervention. It can show desktop notifications for errors or periodic sync statistics, with configurable intervals.
+1. **No unexpected file changes:** Rammingen never modifies file names or contents. It does not create duplicate files during conflicts; instead, the most recent version is applied while all historical versions remain available for recovery.
+1. **Optimized for slow networks and modest servers:** The server can run smoothly even on the cheapest VDS/VPS plans.
+1. **Performant on millions of files:** Designed with git repositories and large codebases in mind, Rammingen handles large amounts of files efficiently.
+1. **Rigorously tested:** A fuzz test simulates real-world user behavior (editing files, syncing, uploading, downloading, and more) across multiple devices to ensure synchronization is correct every time.
 
 ## Setup
 
@@ -52,7 +59,7 @@ graph BT
     tls_proxy --> server
 ```
 
-In order to use rammingen, you will need a server with a Postgres database and some space in the filesystem for storage. You also need to set up a rammingen client on your local system.
+In order to use Rammingen, you will need a server with a Postgres database and some space in the filesystem for storage. You also need to set up a Rammingen client on your local system.
 
 ### Server setup
 
@@ -142,4 +149,6 @@ This guide assumes using Linux on the server. However, rammingen-server should a
     ```
 ## Caveats
 
-Note that rammingen doesn't perform diffing and partial uploads of files - if a file is changed, the full file will be uploaded and stored.
+- Rammingen doesn't perform diffing and partial uploads of files - if a file is changed, that entire file will be uploaded and stored, unless it's exactly the same as a file uploaded earlier.
+- There is no conflict resolution. If you make conflicting changes to the same files at two devices simultaneously, the more recent change will overwrite the older one. Both versions will be available for manual selection though.
+- Rammingen is not a full backup solution. When setting up the server, you are expected to set up backups for the database and the file storage that it uses.

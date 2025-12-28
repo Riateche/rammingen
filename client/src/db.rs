@@ -2,6 +2,7 @@ use {
     crate::{counters::NotificationCounters, path::SanitizedLocalPath},
     anyhow::{Context as _, Result, bail},
     byteorder::{ByteOrder, LE},
+    cadd::prelude::Cinto,
     rammingen_protocol::{
         ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryUpdateNumber, RecordTrigger,
         SourceId, encoding,
@@ -57,7 +58,7 @@ struct LocalArchiveEntryLegacyV1 {
 }
 
 fn decode_local_entry(bytes: &[u8]) -> anyhow::Result<LocalEntry> {
-    let version = u32::from_le_bytes(bytes.get(0..4).context("not enough data")?.try_into()?);
+    let version = u32::from_le_bytes(bytes.get(0..4).context("not enough data")?.cinto()?);
     // V1 entry was serialized without version. First 4 bytes were `EntryKind` (0 or 1 in LE).
     if version < local_entry_version::V2 {
         let value = encoding::deserialize::<LocalEntryLegacyV1>(bytes)?;
@@ -87,7 +88,7 @@ fn encode_local_entry(entry: &LocalEntry) -> anyhow::Result<Vec<u8>> {
 }
 
 fn decode_archive_entry(bytes: &[u8]) -> anyhow::Result<LocalArchiveEntry> {
-    let version = u32::from_le_bytes(bytes.get(0..4).context("not enough data")?.try_into()?);
+    let version = u32::from_le_bytes(bytes.get(0..4).context("not enough data")?.cinto()?);
     // V1 entry was serialized without version. First 8 bytes were the length of `path`.
     // Typical max path length is up to 4096, so we assume that it's always less than `V2`.
     if version < archive_entry_version::V2 {

@@ -436,7 +436,7 @@ fn serialize_response_with_length<T: Serialize>(data: Result<T>) -> anyhow::Resu
     // Write the actual length.
     buf.get_mut(..4)
         .context("unexpectedly small buf")?
-        .copy_from_slice(&len.try_into_type::<u32>()?.to_le_bytes());
+        .copy_from_slice(&len.cinto_type::<u32>()?.to_le_bytes());
     Ok(buf.freeze())
 }
 

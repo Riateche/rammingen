@@ -70,7 +70,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
         )
         .fetch(&mut *tx);
         while let Some(hash) = deleted_rows.try_next().await? {
-            num_deleted = num_deleted.cadd(1u32)?;
+            num_deleted.cadd_assign(1)?;
             if let Some(hash) = hash {
                 hashes_to_check.insert(EncryptedContentHash::from_encrypted(hash));
             }
@@ -136,7 +136,7 @@ pub async fn make_snapshot(ctx: &Context) -> Result<()> {
     let mut num_removed_files = 0u32;
     for hash in hashes_to_remove {
         match ctx.storage.remove_file(&hash) {
-            Ok(()) => num_removed_files = num_removed_files.cadd(1u32)?,
+            Ok(()) => num_removed_files.cadd_assign(1)?,
             Err(err) => {
                 warn!(?err, "failed to remove content file");
             }

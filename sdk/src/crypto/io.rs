@@ -3,7 +3,10 @@ use {
     aes_siv::{AeadCore, Aes256SivAead, Nonce},
     anyhow::Result,
     byteorder::{ByteOrder, LE, WriteBytesExt},
-    cadd::{ops::Cadd, prelude::IntoType},
+    cadd::{
+        ops::Cadd,
+        prelude::{Cinto, IntoType},
+    },
     deflate::{CompressionOptions, write::DeflateEncoder},
     generic_array::typenum::ToInt,
     inflate::InflateWriter,
@@ -67,9 +70,8 @@ impl<W: Write> Write for HashingWriter<W> {
             .get(..len)
             .ok_or_else(|| io::Error::other("inner writer returned invalid length"))?;
         self.hasher.update(written);
-        self.size = self
-            .size
-            .cadd(len.try_into_type::<u64>().map_err(io::Error::other)?)
+        self.size
+            .cadd_assign(len.cinto().map_err(io::Error::other)?)
             .map_err(io::Error::other)?;
         Ok(len)
     }
@@ -124,17 +126,16 @@ impl<'a, W: Write> EncryptingWriter<'a, W> {
             .map_err(io::Error::other)?;
 
         self.output
-            .write_u32::<LE>(output_size.try_into().map_err(io::Error::other)?)?;
+            .write_u32::<LE>(output_size.cinto().map_err(io::Error::other)?)?;
         self.output.write_all(&nonce)?;
         self.output.write_all(&ciphertext)?;
         let written_size = output_size
-            .try_into_type::<u64>()
+            .cinto_type::<u64>()
             .map_err(io::Error::other)?
-            .cadd(4_u64)
+            .cadd(4)
             .map_err(io::Error::other)?;
-        self.encrypted_size = self
-            .encrypted_size
-            .cadd(written_size)
+        self.encrypted_size
+            .cadd_assign(written_size)
             .map_err(io::Error::other)?;
 
         self.buf.drain(..input_len);
@@ -210,9 +211,7 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
             return Ok(());
         };
 
-        let len: usize = LE::read_u32(len_bytes)
-            .try_into()
-            .map_err(io::Error::other)?;
+        let len: usize = LE::read_u32(len_bytes).cinto().map_err(io::Error::other)?;
         if len > MAX_ENCODED_BLOCK_SIZE {
             return Err(io::Error::other(format!(
                 "block size is too large (expected {MAX_ENCODED_BLOCK_SIZE}, got {len})"
@@ -236,7 +235,7 @@ impl<'a, W: Write> DecryptingWriter<'a, W> {
                 io::Error::other("decryption failed")
             })?;
         self.output.write_all(&plaintext)?;
-        let bytes_read = len.cadd(4_usize).map_err(io::Error::other)?;
+        let bytes_read = len.cadd(4).map_err(io::Error::other)?;
         self.buf.drain(..bytes_read);
         Ok(())
     }

@@ -10,7 +10,7 @@ use {
         unix_mode,
     },
     anyhow::{Context, Result, anyhow, bail},
-    cadd::convert::IntoType,
+    cadd::{convert::IntoType, prelude::Cinto},
     fs_err::File,
     futures::future::BoxFuture,
     rammingen_protocol::{
@@ -532,7 +532,7 @@ async fn add_versions_batch(ctx: &Ctx, items: Vec<AddVersionsTaskItem>) -> Resul
 
     ctx.intermediate_counters
         .unqueued_upload_entries
-        .fetch_add(items.len().try_into()?, Ordering::Relaxed);
+        .fetch_add(items.len().cinto()?, Ordering::Relaxed);
 
     for (result, item) in results.into_iter().zip(items) {
         if result.added {

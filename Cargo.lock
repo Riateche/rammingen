@@ -518,8 +518,6 @@ checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 [[package]]
 name = "cadd"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f3d6ef59bfc61b33b7e31f0f51a56c8b93a4c0f4724453f12e2a99810d61424"
 
 [[package]]
 name = "cast"

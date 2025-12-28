@@ -57,11 +57,11 @@ pub async fn upload(
             warn!("Unexpected trailer frame in request");
             StatusCode::BAD_REQUEST
         })?;
-        let data_len = data.len().try_into_type::<u64>().map_err(|err| {
+        let data_len = data.len().cinto_type::<u64>().map_err(|err| {
             warn!(?err, "data len overflow");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-        received_length = received_length.cadd(data_len).map_err(|err| {
+        received_length.cadd_assign(data_len).map_err(|err| {
             warn!(?err, "received_length overflow");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;

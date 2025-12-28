@@ -2,6 +2,7 @@ use {
     crate::storage::Storage,
     anyhow::{Context as _, Result, bail},
     cadd::{
+        convert::Cinto,
         ops::{Cadd, Cmul},
         prelude::IntoType,
     },
@@ -87,7 +88,7 @@ macro_rules! convert_version_data {
                     encrypted_size: row
                         .encrypted_size
                         .context("missing encrypted_size for file")?
-                        .try_into()?,
+                        .cinto()?,
                     hash: EncryptedContentHash::from_encrypted(
                         row.content_hash
                             .context("missing content_hash for file")?
@@ -223,7 +224,7 @@ async fn add_version_inner<'a>(
     let encrypted_size_db = request
         .content
         .as_ref()
-        .map(|c| c.encrypted_size.try_into_type::<i64>())
+        .map(|c| c.encrypted_size.cinto_type::<i64>())
         .transpose()?;
     let modified_at_db = request
         .content
@@ -548,7 +549,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
 
     remove_entries_in_dir(&ctx, &request.old_path, RecordTrigger::Move, &mut tx).await?;
 
-    let affected_paths = old_entries.len().try_into()?;
+    let affected_paths = old_entries.len().cinto()?;
     for entry in old_entries {
         let new_path = if entry.data.path == request.old_path {
             request.new_path.clone()
@@ -630,7 +631,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
             )
             .execute(&mut *tx)
             .await?;
-            affected_paths = affected_paths.cadd(1u64)?;
+            affected_paths.cadd_assign(1)?;
         }
     }
 
@@ -648,7 +649,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
             )
             .await?;
             if r.added {
-                affected_paths = affected_paths.cadd(1u64)?;
+                affected_paths.cadd_assign(1)?;
             }
         }
     }
@@ -676,7 +677,7 @@ pub async fn check_integrity(
         let size = row
             .encrypted_size
             .context("expected size to exist in query output")?
-            .try_into_type::<u64>()?;
+            .cinto_type::<u64>()?;
         db_hashes.insert(hash, size);
     }
 
@@ -730,12 +731,12 @@ impl DateTimeUtcExt for DateTimeUtc {
             .timestamp()
             .into_type::<i128>()
             .cmul(NANOS_IN_SECOND)?
-            .cadd(self.timestamp_subsec_nanos().into_type::<i128>())?;
+            .cadd(self.timestamp_subsec_nanos().into())?;
         OffsetDateTime::from_unix_timestamp_nanos(ts_nanos).map_err(Into::into)
     }
 
     fn from_db(value: OffsetDateTime) -> Result<Self> {
-        let ts_nanos = value.unix_timestamp_nanos().try_into()?;
+        let ts_nanos = value.unix_timestamp_nanos().cinto()?;
         Ok(Utc.timestamp_nanos(ts_nanos))
     }
 }

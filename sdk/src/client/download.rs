@@ -34,10 +34,10 @@ pub async fn download_and_decrypt(
         {
             let chunk_len = chunk
                 .len()
-                .try_into_type::<u64>()
+                .cinto_type::<u64>()
                 .map_err(RequestError::application)?;
-            actual_encrypted_size = actual_encrypted_size
-                .cadd(chunk_len)
+            actual_encrypted_size
+                .cadd_assign(chunk_len)
                 .map_err(RequestError::application)?;
             maybe_block_in_place(|| decryptor.write_all(&chunk))
                 .map_err(RequestError::application)?;

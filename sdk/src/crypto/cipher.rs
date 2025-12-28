@@ -125,14 +125,8 @@ impl Cipher {
 
         Ok(u64::from_le_bytes(
             plaintext
-                .try_into_type::<[u8; SIZE_LENGTH]>()
-                .map_err(|vec| {
-                    anyhow::format_err!(
-                        "invalid decrypted length: {}, expected {}",
-                        vec.len(),
-                        SIZE_LENGTH
-                    )
-                })?,
+                .cinto_type::<[u8; SIZE_LENGTH]>()
+                .context("invalid decrypted length")?,
         ))
     }
 

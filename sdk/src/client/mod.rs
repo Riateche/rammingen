@@ -207,8 +207,8 @@ fn take_chunk(buf: &[u8]) -> Result<Option<(&[u8], usize)>> {
     if buf.len() < 4 {
         return Ok(None);
     }
-    let len = LE::read_u32(buf).try_into_type::<usize>()?;
-    let end = len.cadd(4_usize)?;
+    let len = LE::read_u32(buf).cinto_type::<usize>()?;
+    let end = len.cadd(4)?;
     if let Some(bytes) = buf.get(4..end) {
         Ok(Some((bytes, end)))
     } else {
@@ -226,7 +226,7 @@ where
     const RETRY_PERIOD: Duration = Duration::from_secs(10);
     let mut attempt = 0;
     loop {
-        attempt = attempt.cadd(1_usize)?;
+        attempt.cadd_assign(1)?;
         let transport_err = match f().await {
             Ok(x) => break Ok(x),
             Err(RequestError::Application(err)) => break Err(err),

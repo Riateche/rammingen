@@ -112,11 +112,11 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                 .unwrap_or_default();
             stats
                 .pending_counters
-                .cadd(&NotificationCounters::from(&ctx.final_counters))?;
-            stats.pending_counters.completed_syncs = stats
+                .cadd_assign(&NotificationCounters::from(&ctx.final_counters))?;
+            stats
                 .pending_counters
                 .completed_syncs
-                .cadd(1u64)
+                .cadd_assign(1)
                 .context("completed_syncs overflow")?;
             let now = Utc::now();
             let desktop_notification_interval =

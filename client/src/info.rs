@@ -168,7 +168,7 @@ pub async fn ls(ctx: &Ctx, path: &ArchivePath, show_deleted: bool) -> Result<()>
         })?;
         let recorded_at = pretty_time(entry.recorded_at)?;
         if entry.kind.is_none() && !show_deleted {
-            num_hidden_deleted = num_hidden_deleted.cadd(1u32)?;
+            num_hidden_deleted.cadd_assign(1)?;
             continue;
         }
         let status = pretty_status(&entry)?;

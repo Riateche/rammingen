@@ -35,14 +35,16 @@ pub struct NotificationCounters {
 }
 
 impl NotificationCounters {
-    pub fn cadd(&mut self, other: &Self) -> anyhow::Result<()> {
-        self.deleted_entries = self.deleted_entries.cadd(other.deleted_entries)?;
-        self.downloaded_entries = self.downloaded_entries.cadd(other.downloaded_entries)?;
-        self.downloaded_bytes = self.downloaded_bytes.cadd(other.downloaded_bytes)?;
-        self.uploaded_entries = self.uploaded_entries.cadd(other.uploaded_entries)?;
-        self.uploaded_large_files = self.uploaded_large_files.cadd(other.uploaded_large_files)?;
-        self.uploaded_bytes = self.uploaded_bytes.cadd(other.uploaded_bytes)?;
-        self.completed_syncs = self.completed_syncs.cadd(other.completed_syncs)?;
+    pub fn cadd_assign(&mut self, other: &Self) -> anyhow::Result<()> {
+        self.deleted_entries.cadd_assign(other.deleted_entries)?;
+        self.downloaded_entries
+            .cadd_assign(other.downloaded_entries)?;
+        self.downloaded_bytes.cadd_assign(other.downloaded_bytes)?;
+        self.uploaded_entries.cadd_assign(other.uploaded_entries)?;
+        self.uploaded_large_files
+            .cadd_assign(other.uploaded_large_files)?;
+        self.uploaded_bytes.cadd_assign(other.uploaded_bytes)?;
+        self.completed_syncs.cadd_assign(other.completed_syncs)?;
         Ok(())
     }
 
