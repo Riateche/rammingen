@@ -2,6 +2,10 @@ name: Check Android app
 
 on:
   push:
+    branches:
+      - "*"
+    tags:
+      - "*"
   pull_request:
 
 jobs:
@@ -18,6 +22,13 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache: true
+      - name: Detect version
+        run: |
+          VERSION=$(
+            cargo metadata --format-version=1 --no-deps | \
+              jq -r '.packages[] | select(.name == "rammingen_android") | .version'
+          )
+          echo "APP_VERSION=$VERSION" > "$GITHUB_ENV"
       - name: Add Rust targets
         run: |
           rustup target add \
@@ -44,5 +55,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-unsigned.apk
+          name: rammingen-${{ env.APP_VERSION }}.apk
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
