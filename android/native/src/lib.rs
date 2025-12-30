@@ -248,7 +248,6 @@ impl Term for NativeBridgeTerm {
 
     fn write(&mut self, level: Level, text: &str) {
         with_jni_env(|mut env| {
-            log_to_android(&mut env, "ok before term write");
             let text = env
                 .new_string(text.to_owned())
                 .unwrap_or_else(|e| env.fatal_error(format!("new_string failed: {e:?}")));
@@ -259,7 +258,6 @@ impl Term for NativeBridgeTerm {
                 &[JValue::Int(level_to_i32(level)), JValue::Object(&text)],
             )
             .unwrap_or_else(|e| env.fatal_error(format!("onNativeBridgeLog failed: {e:?}")));
-            log_to_android(&mut env, "ok after term write");
         });
     }
 }

@@ -360,7 +360,7 @@ fun Files(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(0.dp, 12.dp)
+                            .padding(16.dp, 12.dp)
                             .combinedClickable(
                                 onClick = { openFile(entry.absolutePath) },
                                 onLongClick = { openContextMenu(entry.absolutePath) },

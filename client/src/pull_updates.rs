@@ -8,6 +8,8 @@ use {
     tracing::info,
 };
 
+const BATCH_SIZE: usize = 1024;
+
 pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     let _status = set_status("Pulling updates from server");
     let server_id = ctx.client.request(&GetServerStatus).await?.server_id;
@@ -28,6 +30,11 @@ pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     while let Some(update) = stream.try_next().await? {
         decrypted.push(LocalArchiveEntry::decrypt(update.data, &ctx.cipher)?);
         last_update_number = max(last_update_number, update.update_number);
+        if decrypted.len() >= BATCH_SIZE {
+            ctx.db
+                .update_archive_entries(&decrypted, last_update_number)?;
+            decrypted.clear();
+        }
     }
     ctx.db
         .update_archive_entries(&decrypted, last_update_number)?;

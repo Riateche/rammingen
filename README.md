@@ -63,90 +63,217 @@ In order to use Rammingen, you will need a server with a Postgres database and s
 
 ### Server setup
 
-This guide assumes using Linux on the server. However, rammingen-server should also work on other systems.
+This guide assumes using Ubuntu on the server.
+However, rammingen-server also supports other Linux distributions, Windows, and macOS.
+For more information, see also [server README](server/README.md).
 
-1. Install Nginx, Postgres and Docker from system repository (e.g. using `apt`).
-1. Set up a Postgres user and database.
-1. Create a local directory for storage.
-1. Create a server configuration file. You may store it in the custom directory or use default path:
+1. Install Nginx, Postgres and Docker from system repository:
+    ```sh
+    sudo apt update
+    sudo apt install nginx postgresql docker.io
+    ```
+1. Set up a Postgres user and database (replace `dbpassword` with a new password):
+    ```sh
+    sudo -u postgres psql -c "CREATE USER rammingen WITH ENCRYPTED PASSWORD 'dbpassword';"
+    sudo -u postgres psql -c "CREATE DATABASE rammingen;"
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE rammingen TO rammingen;"
+    ```
+1. Create a local directory for storage:
+    ```sh
+    sudo mkdir /var/storage
+    ```
+1. Create a server configuration file at `/etc/rammingen-server.conf`:
+    ```json5
+    {
+        // URL of the database.
+        database_url: "postgres://rammingen:dbpassword@127.0.0.1:5432/rammingen",
+        // Path to the local file storage.
+        storage_path: "/var/storage",
+        // IP and port that the server will listen.
+        bind_addr: "127.0.0.1:8080",
+        // Time between snapshots. A snapshot is a copy of the state
+        // of all archive entries at a certain time.
+        // Snapshots are not deleted automatically.
+        // Supported duration formats: https://docs.rs/humantime/latest/humantime/fn.parse_duration.html
+        snapshot_interval: "1week",
+        // Time during which all recorded entry versions are stored in the database.
+        // Entry versions that are older than `retain_detailed_history_for` will
+        // eventually be deleted, except for entry versions that are part of a snapshot.
+        retain_detailed_history_for: "1week",
 
-    - Linux: `/etc/rammingen-server.conf`
-    - macOS: `$HOME/Library/Application Support/rammingen-server.conf`
-    - Windows: `%APPDATA%\rammingen-server.conf`
+        // Path to the log file. If not specified, log will be written to stdout.
+        // log_file: "/var/log/rammingen.conf",
 
-    The format of this config is specified in the [template](etc/rammingen-server.template.conf).
-    You can use [JSON5 syntax](https://json5.org/).
-
+        // Log filter (optional).
+        // Log filter format: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html
+        // log_filter: "trace",
+    }
+    ```
 1. Restrict access to Postgres password:
-
     ```sh
-    chmod 600 rammingen-server.conf
+    sudo chmod 600 /etc/rammingen-server.conf
+    ```
+1. Create database structure:
+    ```sh
+    sudo docker run \
+        --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
+        --entrypoint /sbin/rammingen-admin \
+        --network host \
+        riateche/rammingen:0.2.0-alpha.1 \
+        migrate
+    ```
+1. Add a new source (replace `example` with desired source name):
+    ```sh
+    sudo docker run \
+        --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
+        --entrypoint /sbin/rammingen-admin \
+        --network host \
+        riateche/rammingen:0.2.0-alpha.1 \
+        add-source example
+    ```
+    Save the generated access token. Repeat this step for each client.
+    You should typically have one client per PC or phone.
+
+1. Set up a systemd unit for Rammingen server. Create `/etc/systemd/system/rammingen.service` file:
+    ```conf
+    [Unit]
+    Description=Rammingen server
+    After=docker.service
+    Requires=docker.service
+
+    [Service]
+    TimeoutStartSec=0
+    Restart=always
+    ExecStartPre=-/usr/bin/docker stop %n
+    ExecStartPre=-/usr/bin/docker rm %n
+    ExecStart=/usr/bin/docker run \
+        --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
+        --volume /var/storage:/var/storage \
+        --network host \
+        --rm \
+        --name %n \
+        riateche/rammingen:0.2.0-alpha.1
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+1. Start the server and enable auto-start:
+    ```sh
+    sudo systemctl daemon-reload
+    sudo systemctl start rammingen
+    sudo systemctl enable rammingen
     ```
 
-1. Initialize the database and user credentials with rammingen-admin:
-
+1. Create a temporary HTTP configuration file for nginx at `/etc/nginx/sites-enabled/rammingen` (replace `example.com` with your domain name):
     ```sh
-    docker run --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
-        --entrypoint /sbin/rammingen-admin riateche/rammingen add-source main
+    server {
+        server_name example.com;
+        charset utf-8;
+        listen 80;
+        client_max_body_size 10G;
+        location / {
+            proxy_pass http://127.0.0.1:8080;
+        }
+    }
     ```
-
-    — new backup source will be called `main`. You'll receive an access token for the Rammingen client.
-
-1. Run the server:
-
+    Reload nginx config:
     ```sh
-    docker run --volume /etc/rammingen-server.conf:/etc/rammingen-server.conf:ro \
-        --volume "$HOME/backup-storage/:/app/backup-storage/" \
-        riateche/rammingen
+    sudo systemctl reload nginx
     ```
+    In the next steps, we'll use certbot to enable HTTPS for the service.
 
-1. Set up Nginx.
+    **Note: it's necessary to use an encrypted connection (HTTPS) to connect to Rammingen server.** While the file contents and metadata are always encrypted before transfer, HTTPS is still necessary to protect against MitM attacks. Connecting over plain HTTP would allow a potential attacker to do some destructive actions, such as deleting or corrupting files.
 
-    1. Generate private key and certificate:
+1. Install certbot:
+    ```sh
+    sudo apt install certbot python3-certbot-nginx
+    ```
+    Depending on the challenge you intend to use, you may also need to install additional packages.
 
-        ```sh
-        openssl req -newkey rsa:4096 -subj /CN=. -days 3660 -x509 -nodes \
-            -keyout selfsigned.key -out selfsigned.crt
-        ```
+1. Run certbot to obtain a certificate and reconfigure nginx:
+    ```sh
+    sudo certbot
+    ```
+    If using an alternative challenge (e.g. DNS-based), pass `--installer nginx` and the parameters for the challenge, for example:
+    ```sh
+    sudo certbot --installer nginx \
+        --dns-standalone-address=1.2.3.4 ...
+    ```
+    Follow instructions in the terminal to complete the setup. Once it's complete, verify new content of the `/etc/nginx/sites-enabled/rammingen` file.
 
-    1. Generate Diffie-Hellman group:
+1. Set up backups for your server. **Both database and file storage should be backed up to protect against data loss.**
 
-        ```sh
-        openssl dhparam -out dhparam.pem 4096
-        ```
 
-        This command may take about 15 minutes to complete.
-
-    1. Write a config for Nginx, you can use the [template](etc/proxy/).
-
-    1. Run Nginx:
-
-        ```sh
-        docker run --volume ./etc/proxy/:/etc/nginx/conf.d/:ro \
-            --volume selfsigned.key:/etc/ssl/private/selfsigned.key:ro \
-            --volume selfsigned.crt:/etc/ssl/certs/selfsigned.crt:ro \
-            --volume dhparam.pem:/etc/nginx/dhparam.pem:ro \
-            --expose 8009:8009 \
-            nginx:1.27.1
-        ```
+See [server README](server/README.md) for more information about Rammingen server.
 
 ### Client host
 
-1. Decide which local directory you would like to backup.
-1. Create an encryption key:
+1. Install [rustup](https://rustup.rs/) or install `rustc` and `cargo` using a system package manager.
+1. Install rammingen:
+    ```sh
+    cargo install --locked rammingen@0.2.0-alpha.1
+    ```
+1. Create and save an encryption key:
 
     ```sh
-    docker run --entrypoint /sbin/rammingen riateche/rammingen generate-encryption-key
+    rammingen generate-encryption-key
     ```
-
-1. Create client configuration file, you can use the [template](etc/rammingen.template.conf).
-1. Upload a backup using the Rammingen client.
-
+1. Run `rammingen help` to determine default config path:
     ```sh
-    docker run --volume "$HOME/Desktop/:/root/source/" \
-        --volume /etc/rammingen.conf:/etc/rammingen.conf:ro \
-        --entrypoint /sbin/rammingen riateche/rammingen --config /etc/rammingen.conf sync
+    rammingen help
+    File sync and backup utility
+    Default config location: /Users/username/Library/Application Support/rammingen.conf
+    ...
     ```
+1. Create a configuration file at the default location:
+    ```json5
+    {
+        // Exclude common generated and temporary files.
+        always_exclude: [
+            { name_equals: "target" },
+            { name_equals: ".DS_Store" },
+            { name_equals: ".idea" },
+            { name_equals: "node_modules" },
+            { name_equals: "dist" },
+            { name_equals: "Thumbs.db" },
+            { name_equals: "tmp" },
+            { name_equals: "temp" },
+            { name_equals: "storage.bin" },
+            { name_matches: "^build" },
+            { name_matches: "\\.bak$" },
+            { name_matches: "\\.swp$" },
+        ],
+        // List of synchronized local paths.
+        mount_points: [
+            {
+                // Path on the current system.
+                local_path: "/Users/username/documents",
+                // Path in the global virtual tree
+                // shared between all clients.
+                archive_path: "ar:/documents",
+            },
+            {
+                local_path: "/Users/username/pictures",
+                archive_path: "ar:/pictures",
+            },
+        ],
+        // Your server's domain name.
+        server_url: "https://example.com/",
+        // Store access token and encryption key in system keyring.
+        use_keyring: true,
+    }
+    ```
+
+1. Run the sync and input access token and encryption key when prompted:
+    ```sh
+    rammingen sync
+    ```
+1. Set up periodic execution of `rammingen sync`.
+
+### Android
+
+See [Android app README](android/README.md) for setting up Rammingen client on an Android device.
+
 ## Caveats
 
 - Rammingen doesn't perform diffing and partial uploads of files - if a file is changed, that entire file will be uploaded and stored, unless it's exactly the same as a file uploaded earlier.
