@@ -268,7 +268,7 @@ See [server README](server/README.md) for more information about Rammingen serve
     ```sh
     rammingen sync
     ```
-1. Set up periodic execution of `rammingen sync`.
+1. Configure your OS to run `rammingen auto-sync` on startup. This command will continue running in background and perform sync periodically.
 
 ### Android
 

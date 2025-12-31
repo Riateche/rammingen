@@ -52,6 +52,8 @@ pub enum Command {
     DryRun,
     /// Sync all mount point with the server.
     Sync,
+    /// Start a long-lived process that runs sync periodically.
+    AutoSync,
     /// Upload a file or directory to the server.
     Upload {
         local_path: SanitizedLocalPath,

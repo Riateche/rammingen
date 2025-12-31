@@ -12,7 +12,7 @@ use {
     futures::future::pending,
     portpicker::pick_unused_port,
     rammingen::{
-        config::MountPoint,
+        config::{MountPoint, default_desktop_notification_interval, default_sync_interval},
         path::{PathExt, SanitizedLocalPath},
         rules::Rule,
         setup_logger,
@@ -196,7 +196,8 @@ async fn main() -> Result<()> {
             log_filter: String::new(),
             warn_about_files_larger_than: "50 MB".parse().unwrap(),
             enable_desktop_notifications: false,
-            desktop_notification_interval: Default::default(),
+            desktop_notification_interval: default_desktop_notification_interval(),
+            sync_interval: default_sync_interval(),
         };
         let config_path = client_dir.join("rammingen.conf");
         write(&config_path, json5::to_string(&config)?)?;

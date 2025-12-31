@@ -26,6 +26,8 @@ pub struct Config {
     pub encryption_key: Option<EncryptionKey>,
     pub server_url: Url,
     pub access_token: Option<AccessToken>,
+    #[serde(with = "humantime_serde", default = "default_sync_interval")]
+    pub sync_interval: Duration,
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
     #[serde(default)]
@@ -45,6 +47,13 @@ pub struct Config {
 
 fn true_() -> bool {
     true
+}
+
+#[must_use]
+#[inline]
+#[expect(clippy::expect_used, reason = "hardcoded value is correct")]
+pub fn default_sync_interval() -> Duration {
+    parse_duration("5min").expect("incorrect hardcoded value")
 }
 
 #[must_use]

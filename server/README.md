@@ -10,7 +10,7 @@ Rammingen uses end-to-end encryption to store file content and metadata on the s
 
 ## Setting up
 
-The [top level README](../README.md) contains a step-by-step guide for setting up Rammingen server on Ubuntu. This section covers advanced details and tips for setting up.
+The [top level README](../README.md) contains a step-by-step guide for setting up Rammingen server on Ubuntu.
 
 ## Config path
 

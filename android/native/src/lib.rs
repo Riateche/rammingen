@@ -13,7 +13,7 @@ use {
         cli::Cli,
         config::{
             Config, MountPoint, default_desktop_notification_interval, default_log_filter,
-            default_warn_about_files_larger_than,
+            default_sync_interval, default_warn_about_files_larger_than,
         },
         path::SanitizedLocalPath,
         rules::Rule,
@@ -274,6 +274,7 @@ fn prepare_config(
         encryption_key,
         server_url,
         access_token,
+        sync_interval,
         local_db_path,
         log_file,
         log_filter,
@@ -296,6 +297,9 @@ fn prepare_config(
     }
     if desktop_notification_interval.is_some() {
         bail!("desktop_notification_interval is not available on android");
+    }
+    if sync_interval.is_some() {
+        bail!("sync_interval is not available on android yet");
     }
 
     Ok(Config {
@@ -330,6 +334,7 @@ fn prepare_config(
         warn_about_files_larger_than,
         enable_desktop_notifications: false,
         desktop_notification_interval: default_desktop_notification_interval(),
+        sync_interval: default_sync_interval(),
     })
 }
 
@@ -342,6 +347,8 @@ pub struct AndroidConfig {
     pub encryption_key: Option<EncryptionKey>,
     pub server_url: Url,
     pub access_token: Option<AccessToken>,
+    #[serde(default, with = "humantime_serde")]
+    pub sync_interval: Option<Duration>,
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
     #[serde(default)]

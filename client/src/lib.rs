@@ -267,7 +267,7 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
         cli::Command::ClearLocalCache => {
             clear_local_cache(ctx).await?;
         }
-        cli::Command::GenerateEncryptionKey => unreachable!(),
+        cli::Command::GenerateEncryptionKey | cli::Command::AutoSync => unreachable!(),
     }
     Ok(())
 }
