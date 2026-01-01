@@ -30,6 +30,8 @@ use {
     tracing::{instrument, warn},
 };
 
+/// Client for the Rammingen server.
+///
 /// Reuse created client or clone it in order to reuse a connection pool.
 #[derive(Clone)]
 pub struct Client {
@@ -39,7 +41,7 @@ pub struct Client {
 }
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-/// Loading large files may take a long time.
+/// Loading large files may take a longer time.
 pub const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3600 * 24);
 
 #[must_use]
@@ -61,6 +63,9 @@ impl Client {
         })
     }
 
+    /// Send a request, possibly with a custom `timeout`.
+    ///
+    /// This function retries on network errors.
     #[instrument(skip_all)]
     #[inline(never)]
     pub async fn request_with_timeout<R>(
@@ -98,6 +103,9 @@ impl Client {
         deserialize::<Result<_, String>>(&bytes)?.map_err(|msg| format_err!("server error: {msg}"))
     }
 
+    /// Send a request with default timeout.
+    ///
+    /// This function retries on network errors.
     #[inline]
     pub async fn request<R>(&self, request: &R) -> Result<R::Response>
     where
@@ -107,6 +115,7 @@ impl Client {
         self.request_with_timeout(request, None).await
     }
 
+    /// Send a request with a streaming response.
     #[inline(never)]
     pub fn stream<R>(&self, request: &R) -> impl Stream<Item = Result<R::ResponseItem>> + use<R>
     where
@@ -149,6 +158,7 @@ impl Client {
         .boxed()
     }
 
+    /// Send a file upload request.
     #[instrument(skip_all, fields(?hash))]
     #[inline(never)]
     pub async fn upload(
@@ -183,6 +193,7 @@ impl Client {
         .await
     }
 
+    /// Returns URL for file download or upload request.
     fn content_url(&self, hash: &EncryptedContentHash) -> Result<Url> {
         let mut url = self.server_url.clone();
         url.path_segments_mut()
@@ -192,6 +203,10 @@ impl Client {
         Ok(url)
     }
 
+    /// Downloads and decrypts a file and writes it to `path`.
+    ///
+    /// This function retries on network errors. It also checks encrypted size,
+    /// unencrypted size, and content hash against metadata in `local_entry`.
     #[inline]
     pub async fn download_and_decrypt(
         &self,
@@ -203,6 +218,10 @@ impl Client {
     }
 }
 
+/// Reads a chunk of data with length header from the start of `buf`.
+///
+/// On success, returns chunk data (excluding header) and total number of bytes in the encoded chunk.
+/// Returns `None` if `buf` doesn't contain a full chunk.
 fn take_chunk(buf: &[u8]) -> Result<Option<(&[u8], usize)>> {
     if buf.len() < 4 {
         return Ok(None);
@@ -240,8 +259,11 @@ where
     }
 }
 
+/// Error wrapper that distinguishes between retriable and non-retriable errors.
 enum RequestError {
+    /// Transport level, recoverable error.
     Transport(Error),
+    /// Application level, non-recoverable error.
     Application(Error),
 }
 

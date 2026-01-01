@@ -6,35 +6,49 @@ use {
     std::sync::atomic::{AtomicU64, Ordering},
 };
 
+/// Statistics of an operation (sync, download, upload, etc.).
+///
+/// Displayed after the operation is complete.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct FinalCounters {
     pub deleted_entries: AtomicU64,
     pub downloaded_entries: AtomicU64,
     pub downloaded_bytes: AtomicU64,
     pub uploaded_entries: AtomicU64,
+    /// Number of files larger than `warn_about_files_larger_than` config field.
     pub uploaded_large_files: AtomicU64,
     pub uploaded_bytes: AtomicU64,
 }
 
+/// Statistics of an in-progress operation.
+///
+/// Used to display progress status.
 #[derive(Debug, Default)]
 pub struct IntermediateCounters {
+    /// Number of entries that were marked for download.
     pub queued_download_entries: AtomicU64,
+    /// Number of entries that were marked for upload.
     pub queued_upload_entries: AtomicU64,
-    pub unqueued_upload_entries: AtomicU64,
+    /// Number of completed entry uploads.
+    pub unqueued_upload_entries: AtomicU64, // TODO: why not use `final_counters.uploaded_entries`?
 }
 
+/// Statistics of multiple sync operations.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NotificationCounters {
     pub deleted_entries: u64,
     pub downloaded_entries: u64,
     pub downloaded_bytes: u64,
     pub uploaded_entries: u64,
+    /// Number of files larger than `warn_about_files_larger_than` config field.
     pub uploaded_large_files: u64,
     pub uploaded_bytes: u64,
+    /// Number of sync operations included in these values.
     pub completed_syncs: u64,
 }
 
 impl NotificationCounters {
+    /// Add values from `other` to `self`.
     pub fn cadd_assign(&mut self, other: &Self) -> anyhow::Result<()> {
         self.deleted_entries.cadd_assign(other.deleted_entries)?;
         self.downloaded_entries
@@ -48,6 +62,7 @@ impl NotificationCounters {
         Ok(())
     }
 
+    /// Returns a user-facing string representation of `self`.
     pub fn report(&self, dry_run: bool, ctx: &Ctx) -> String {
         let mut output = Vec::new();
         if self.uploaded_large_files > 0 {

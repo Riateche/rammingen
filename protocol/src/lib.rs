@@ -14,7 +14,6 @@ use {
     base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD},
     chrono::Utc,
     derive_more::{From, Into},
-    endpoints::AddVersion,
     serde::{Deserialize, Serialize},
     std::fmt,
 };
@@ -196,6 +195,7 @@ impl RecordTrigger {
         }
     }
 
+    /// Convert from database representation.
     #[inline]
     pub fn from_db(value: i32) -> anyhow::Result<Self> {
         match value {
@@ -270,6 +270,7 @@ impl Serialize for EntryState {
 }
 
 impl EntryState {
+    /// Convert from database representation.
     #[inline]
     pub fn from_db(value: i32) -> Result<Self> {
         match value {
@@ -290,6 +291,7 @@ impl EntryState {
         }
     }
 
+    /// Returns whether file or directory corresponding to this entry exists.
     #[must_use]
     #[inline]
     pub fn exists(&self) -> bool {
@@ -310,44 +312,8 @@ pub struct EntryVersionData {
     pub record_trigger: RecordTrigger,
     /// State of the file node.
     pub state: EntryState,
-    /// File or symlink content (only allowed if `kind == Some(File)`).
+    /// File or symlink content (only allowed if `state == EntryState::Exists(EntryKind::File)`).
     pub content: Option<FileContent>,
-}
-
-fn is_same_or_unknown<T: PartialEq>(old: Option<T>, new: Option<T>) -> bool {
-    #[expect(clippy::match_same_arms, reason = "separated for clarity")]
-    match (old, new) {
-        // Unknown in old and new, no need to record it.
-        (None, None) => true,
-        // New known value, we need to record it.
-        (None, Some(_)) => false,
-        // No new known value, no need to record it.
-        (Some(_), None) => true,
-        // Old and new are known values, we need to record it if it's different.
-        (Some(mode1), Some(mode2)) => mode1 == mode2,
-    }
-}
-
-impl EntryVersionData {
-    /// Checks if `AddVersion` is an update compared to `self`.
-    ///
-    /// This is just an equality check for the most part, but it includes
-    /// special handling of `unix_mode` and `is_symlink`.
-    #[must_use]
-    #[inline]
-    pub fn is_same(&self, update: &AddVersion) -> bool {
-        self.path == update.path && self.state == update.state && {
-            match (&self.content, &update.content) {
-                (Some(content), Some(update)) => {
-                    content.hash == update.hash
-                        && is_same_or_unknown(content.unix_mode, update.unix_mode)
-                        && is_same_or_unknown(content.is_symlink, update.is_symlink)
-                }
-                (None, None) => true,
-                _ => false,
-            }
-        }
-    }
 }
 
 /// State of the archive at a particular encrypted archive path.

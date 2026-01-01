@@ -47,6 +47,7 @@ pub async fn set_access_token(db: &PgPool, name: &str, access_token: &AccessToke
 
 const SERVER_ID_LENGTH: usize = 16;
 
+/// Create a new random server ID.
 #[must_use]
 #[inline]
 pub fn generate_server_id() -> String {

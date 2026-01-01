@@ -6,18 +6,13 @@ use {
         server::conn::http1,
         service::service_fn,
     },
-    hyper_util::{
-        rt::TokioIo,
-        server::graceful::{GracefulConnection, GracefulShutdown, Watcher},
-    },
-    std::{convert::Infallible, error::Error, future::Future, io, time::Duration},
-    tokio::{
-        io::{AsyncRead, AsyncWrite},
-        time::timeout,
-    },
-    tracing::{debug, info, warn},
+    hyper_util::{rt::TokioIo, server::graceful::Watcher},
+    std::{convert::Infallible, error::Error, future::Future, io},
+    tokio::io::{AsyncRead, AsyncWrite},
+    tracing::{debug, warn},
 };
 
+/// Hyper request handler adapter.
 #[inline(never)]
 pub fn serve_connection<C, H, Fut, B>(
     io: C,
@@ -52,33 +47,5 @@ where
                 warn!(error = ?err, "failed to serve HTTP");
             }
         }
-    }
-}
-
-#[derive(Default)]
-pub struct ShutdownWatcher {
-    inner: GracefulShutdown,
-}
-
-impl ShutdownWatcher {
-    #[inline]
-    pub fn watch<C: GracefulConnection>(&self, io: C) -> impl Future<Output = C::Output> {
-        self.inner.watch(io)
-    }
-
-    #[must_use]
-    #[inline]
-    pub fn watcher(&self) -> Watcher {
-        self.inner.watcher()
-    }
-
-    #[inline]
-    pub async fn shutdown(self) {
-        const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
-        let Ok(()) = timeout(SHUTDOWN_TIMEOUT, self.inner.shutdown()).await else {
-            warn!("Timed out wait for all connections to close");
-            return;
-        };
-        info!("All connections gracefully closed");
     }
 }

@@ -14,13 +14,23 @@ use {
     tracing::{info, warn},
 };
 
+// Keys for scalar fields stored in main database tree.
 const KEY_LAST_ENTRY_UPDATE_NUMBER: [u8; 4] = [0, 0, 0, 1];
 const KEY_NOTIFICATION_STATS: [u8; 4] = [0, 0, 0, 2];
 const KEY_SERVER_ID: [u8; 4] = [0, 0, 0, 3];
 
+/// Local storage for local file metadata and server data cache.
 pub struct Db {
+    /// Main database tree. Must be stored here to prevent database from closing.
     db: sled::Db,
+    /// Tree containing archive entries received from the server.
+    /// For each path, only the last version is stored.
+    /// Key is `ArchivePath` without `ar:` prefix.
+    /// Value is `LocalArchiveEntry`.
     archive_entries: sled::Tree,
+    /// Tree containing last observed metadata of local files.
+    /// Key is `SanitizedLocalPath`.
+    /// Value is `LocalEntry`.
     local_entries: sled::Tree,
 }
 
@@ -124,6 +134,7 @@ fn encode_archive_entry(entry: &LocalArchiveEntry) -> anyhow::Result<Vec<u8>> {
 }
 
 impl Db {
+    /// Open or create local storage.
     pub fn open(path: &Path) -> Result<Db> {
         let mut logged_error = false;
         let db = loop {
@@ -149,6 +160,9 @@ impl Db {
         })
     }
 
+    /// Returns an iterator over all archive entries.
+    ///
+    /// For each path, only the last version is stored in the database.
     pub fn get_all_archive_entries(
         &self,
     ) -> impl DoubleEndedIterator<Item = Result<LocalArchiveEntry>> {
@@ -157,6 +171,7 @@ impl Db {
             .map(|pair| decode_archive_entry(&pair?.1))
     }
 
+    /// Returns a `LocalArchiveEntry` corresponding to `path`, of `None` if no such entry has been received.
     pub fn get_archive_entry(&self, path: &ArchivePath) -> Result<Option<LocalArchiveEntry>> {
         if let Some(value) = self
             .archive_entries
@@ -168,6 +183,9 @@ impl Db {
         }
     }
 
+    /// Returns all `LocalArchiveEntry` values corresponding to `path` or any direct or indirect children of `path`.
+    ///
+    /// For each path, only the last version is stored in the database.
     pub fn get_archive_entries(
         &self,
         path: &ArchivePath,
@@ -196,6 +214,7 @@ impl Db {
         iter::once(root_entry).chain(children.into_iter().flatten())
     }
 
+    /// Returns the last `EntryUpdateNumber` received from the server.
     pub fn last_entry_update_number(&self) -> Result<EntryUpdateNumber> {
         Ok(self
             .db
@@ -205,6 +224,7 @@ impl Db {
             .into())
     }
 
+    /// Store `updates` in the database and record the last received `update_number`.
     pub fn update_archive_entries(
         &self,
         updates: &[LocalArchiveEntry],
@@ -229,6 +249,7 @@ impl Db {
         Ok(())
     }
 
+    /// Returns notification stats of previous sync operations since the last desktop notification.
     pub fn notification_stats(&self) -> Result<NotificationStats> {
         if let Some(value) = self.db.get(KEY_NOTIFICATION_STATS)? {
             Ok(serde_json::from_slice(&value)?)
@@ -237,12 +258,14 @@ impl Db {
         }
     }
 
+    /// Record new notification stats.
     pub fn set_notification_stats(&self, value: &NotificationStats) -> Result<()> {
         self.db
             .insert(KEY_NOTIFICATION_STATS, serde_json::to_vec(value)?)?;
         Ok(())
     }
 
+    /// Returns server ID, or `None` if it wasn't yet recorded.
     pub fn server_id(&self) -> Result<Option<String>> {
         if let Some(value) = self.db.get(KEY_SERVER_ID)? {
             Ok(Some(String::from_utf8(value.to_vec())?))
@@ -251,11 +274,13 @@ impl Db {
         }
     }
 
+    /// Record the server ID.
     pub fn set_server_id(&self, value: &str) -> Result<()> {
         self.db.insert(KEY_SERVER_ID, value.as_bytes())?;
         Ok(())
     }
 
+    /// Returns all `LocalEntry` values stored in the database.
     pub fn get_all_local_entries(&self) -> anyhow::Result<Vec<(SanitizedLocalPath, LocalEntry)>> {
         let load = |key: &IVec, value: &IVec| {
             let path = str::from_utf8(key)?;
@@ -283,6 +308,8 @@ impl Db {
         Ok(output)
     }
 
+    /// Returns the last observed state of a local `path`, or `None` if this path was never
+    /// recorded or if the path didn't exist.
     pub fn get_local_entry(&self, path: &SanitizedLocalPath) -> Result<Option<LocalEntry>> {
         if let Some(value) = self.local_entries.get(path)? {
             Ok(Some(decode_local_entry(&value)?))
@@ -291,16 +318,21 @@ impl Db {
         }
     }
 
+    /// Records current observed state of a local `path`.
     pub fn set_local_entry(&self, path: &SanitizedLocalPath, data: &LocalEntry) -> Result<()> {
         self.local_entries.insert(path, encode_local_entry(data)?)?;
         Ok(())
     }
 
+    /// Records that local `path` currently doesn't exist.
+    ///
+    /// Does nothing if the entry didn't exist.
     pub fn remove_local_entry(&self, path: &SanitizedLocalPath) -> Result<()> {
         self.local_entries.remove(path)?;
         Ok(())
     }
 
+    /// Removes all data from the database.
     pub fn clear(&self) -> Result<()> {
         self.archive_entries.clear()?;
         self.local_entries.clear()?;
@@ -313,9 +345,14 @@ fn into_abort_err(e: impl Debug) -> ConflictableTransactionError<io::Error> {
     ConflictableTransactionError::Abort(io::Error::other(format!("{e:?}")))
 }
 
+/// Notification statistics of previous sync operations since the last desktop notification.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NotificationStats {
+    /// Timestamp of the last desktop notification shown after a successful sync.
     pub last_notified_at: Option<DateTimeUtc>,
+    /// Timestamp of the last successful sync.
     pub last_successful_sync_at: Option<DateTimeUtc>,
+    /// Accumulated counters of sync operations that were performed
+    /// since the last desktop notification.
     pub pending_counters: NotificationCounters,
 }

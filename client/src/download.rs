@@ -28,6 +28,7 @@ use {
     tracing::{info, warn},
 };
 
+/// Converts `path` to a local path based on the given root paths.
 fn archive_to_local_path(
     path: &ArchivePath,
     root_archive_path: &ArchivePath,
@@ -56,6 +57,10 @@ fn remove_dir_or_file(path: impl AsRef<Path>) -> Result<bool> {
     Ok(true)
 }
 
+/// Download the content of `root_archive_path` at specific point in time (`version`) and
+/// store it to `root_local_path`.
+///
+/// Returns whether any entry corresponding to `root_archive_path` was found.
 pub async fn download_version(
     ctx: &Arc<Ctx>,
     root_archive_path: &ArchivePath,
@@ -90,11 +95,17 @@ pub async fn download_version(
     .await
 }
 
+/// Download the current content of `root_archive_path` and store it to `root_local_path`.
+///
+/// If `is_mount` is `true`, this function will update an existing `root_local_path` to match `root_archive_path`.
+/// If `is_mount` is `false`, `root_local_path` is required to not exist.
+///
+/// Returns whether any entry corresponding to `root_archive_path` was found.
 pub async fn download_latest(
     ctx: &Arc<Ctx>,
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
-    rules: &mut Rules,
+    exclude_rules: &mut Rules,
     is_mount: bool,
     dry_run: bool,
 ) -> Result<bool> {
@@ -103,7 +114,7 @@ pub async fn download_latest(
         ctx,
         root_archive_path,
         root_local_path,
-        rules,
+        exclude_rules,
         is_mount,
         data,
         dry_run,
@@ -115,18 +126,24 @@ struct DownloadContext<'a> {
     ctx: &'a Arc<Ctx>,
     root_archive_path: &'a ArchivePath,
     root_local_path: &'a SanitizedLocalPath,
-    rules: &'a mut Rules,
+    exclude_rules: &'a mut Rules,
     is_mount: bool,
     dry_run: bool,
     file_download_sender: mpsc::Sender<DownloadFileTask>,
     finalize_sender: mpsc::Sender<FinalizeDownloadTaskItem>,
 }
 
+/// Download content of `root_archive_path` based on supplied `versions` stream and store it to `root_local_path`.
+///
+/// If `is_mount` is `true`, this function will update an existing `root_local_path` to match `root_archive_path`.
+/// If `is_mount` is `false`, `root_local_path` is required to not exist.
+///
+/// Returns whether any entry corresponding to `root_archive_path` was found.
 pub async fn download(
     ctx: &Arc<Ctx>,
     root_archive_path: &ArchivePath,
     root_local_path: &SanitizedLocalPath,
-    rules: &mut Rules,
+    exclude_rules: &mut Rules,
     is_mount: bool,
     versions: impl Stream<Item = Result<LocalArchiveEntry>>,
     dry_run: bool,
@@ -152,7 +169,7 @@ pub async fn download(
             ctx,
             root_archive_path,
             root_local_path,
-            rules,
+            exclude_rules,
             is_mount,
             dry_run,
             file_download_sender,
@@ -178,6 +195,38 @@ pub async fn download(
     .await
 }
 
+/// Compares a platform-dependent property (`is_symlink` or `unix_mode`) of a local file (`local`)
+/// against a new property value (`other`) and returns whether this local file should be updated.
+#[expect(clippy::match_same_arms, reason = "separated for clarity")]
+fn should_update_property<T: PartialEq>(local: Option<T>, other: Option<T>) -> bool {
+    match (local, other) {
+        // Property is not locally supported, so no need to update the local file regardless of other value.
+        (None, _) => false,
+        // Other version doesn't have a value, so it cannot be used to update the local file.
+        (Some(_), None) => false,
+        // We need to update local file if the property value changed.
+        (Some(local), Some(other)) => local != other,
+    }
+}
+
+/// Compares `self` against a new update (`other`) and returns whether this local file should be updated.
+fn should_update_file(local: &LocalEntry, other: &LocalArchiveEntry) -> bool {
+    if EntryState::Exists(local.kind) != other.state {
+        return true;
+    }
+    match local.kind {
+        EntryKind::File => match (&local.file_data, &other.file_data) {
+            (Some(content), Some(other)) => {
+                content.hash != other.hash
+                    || should_update_property(content.unix_mode, other.unix_mode)
+                    || should_update_property(content.is_symlink, other.is_symlink)
+            }
+            _ => true,
+        },
+        EntryKind::Directory => false,
+    }
+}
+
 async fn download_inner(
     ctx: &mut DownloadContext<'_>,
     versions: impl Stream<Item = Result<LocalArchiveEntry>>,
@@ -192,7 +241,7 @@ async fn download_inner(
             }
             let entry_local_path =
                 archive_to_local_path(&entry.path, ctx.root_archive_path, ctx.root_local_path)?;
-            if ctx.rules.matches(&entry_local_path)? {
+            if ctx.exclude_rules.matches(&entry_local_path)? {
                 continue;
             }
             let Some(db_data) = ctx.ctx.db.get_local_entry(&entry_local_path)? else {
@@ -232,7 +281,7 @@ async fn download_inner(
         };
         let entry_local_path =
             archive_to_local_path(&entry.path, ctx.root_archive_path, ctx.root_local_path)?;
-        if ctx.rules.matches(&entry_local_path)? {
+        if ctx.exclude_rules.matches(&entry_local_path)? {
             continue;
         }
         let _status = set_status(format!("Scanning remote files: {}", ctx.root_local_path));
@@ -244,7 +293,7 @@ async fn download_inner(
             None
         };
         if let Some(db_data) = &db_data {
-            if db_data.is_same_as_entry(&entry) {
+            if !should_update_file(db_data, &entry) {
                 continue;
             }
             if !ctx.dry_run && !db_data.matches_real(&entry_local_path)? {
@@ -309,12 +358,14 @@ async fn download_inner(
     Ok(found_any)
 }
 
+/// Wrapper over `SanitizedLocalPath` that removes the file when dropped.
 struct TmpGuard(SanitizedLocalPath);
 
 impl TmpGuard {
     fn path(&self) -> &SanitizedLocalPath {
         &self.0
     }
+    /// Remove the file if it exists.
     fn clean(&self) -> Result<()> {
         if self.0.try_exists_nofollow()? {
             remove_file(&self.0)?;
@@ -331,13 +382,21 @@ impl Drop for TmpGuard {
     }
 }
 
+/// Represents a unit of work that downloads a single file
+/// to a temporary location and sends it to `sender`.
 struct DownloadFileTask {
+    /// Final local path of the file.
     local_path: SanitizedLocalPath,
+    /// Root local path of the whole download operation.
     root_local_path: SanitizedLocalPath,
+    /// Expected file content metadata.
     local_entry: LocalFileEntry,
+    /// Used to send the downloaded file.
     sender: oneshot::Sender<TmpGuard>,
 }
 
+/// Receive tasks from `receiver` and runs them concurrently,
+/// while not allowing more than 8 tasks to run at any time.
 async fn download_files_task(
     ctx: Arc<Ctx>,
     mut receiver: mpsc::Receiver<DownloadFileTask>,
@@ -359,6 +418,7 @@ async fn download_files_task(
     }
 }
 
+/// Download a single file to a temporary location and send it to `item.sender`.
 async fn download_file_task(ctx: &Ctx, item: DownloadFileTask) -> Result<()> {
     let tmp_parent_dir = if metadata(&item.root_local_path).is_ok_and(|m| m.is_dir()) {
         item.root_local_path.clone()
@@ -395,6 +455,7 @@ fn path_hash(path: &SanitizedLocalPath) -> String {
     hex::encode(hash)
 }
 
+/// Receives tasks from `receiver` and runs them consequently.
 async fn finalize_download_task(
     ctx: Arc<Ctx>,
     mut receiver: mpsc::Receiver<FinalizeDownloadTaskItem>,
@@ -406,14 +467,25 @@ async fn finalize_download_task(
     }
 }
 
+/// Represents a unit of work that applies metadata changes to a local path.
+/// In case it's a file, it also fetches the downloaded file from `file_receiver`
+/// and places it to the final location.
 struct FinalizeDownloadTaskItem {
+    /// Entry metadata fetched from server.
     entry: LocalArchiveEntry,
+    /// Last previously observed state of this local path.
     db_data: Option<LocalEntry>,
+    /// Destination.
     local_path: SanitizedLocalPath,
+    /// If `true`, the task will remove the old file or directory at `local_path`, and will fail if unable to do so.
+    /// If `false`, the task will expect the destination path to not exist, and will fail if it exists.
     must_delete: bool,
+    /// Downloaded file receiver (not present for directories).
     file_receiver: Option<oneshot::Receiver<TmpGuard>>,
 }
 
+/// Apply metadata changes to a local path. In case it's a file, also fetch
+/// the downloaded file from `file_receiver` and place it to the final location.
 async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Result<()> {
     if !item.must_delete && item.local_path.try_exists_nofollow()? {
         bail!(

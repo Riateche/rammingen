@@ -10,54 +10,30 @@ use {
     tempfile::SpooledTempFile,
 };
 
+/// Metadata of a local file content or decoded metadata of a file content fetched from server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalFileEntry {
     pub modified_at: DateTimeUtc,
     pub original_size: u64,
     pub encrypted_size: u64,
     pub hash: ContentHash,
+    /// Only present if supported on current OS.
     pub unix_mode: Option<u32>,
+    /// Only present if supported on current OS.
     pub is_symlink: Option<bool>,
 }
 
+/// Metadata of a local file or directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalEntry {
     pub kind: EntryKind,
+    /// Only allowed if `kind == EntryKind::File`.
     pub file_data: Option<LocalFileEntry>,
 }
 
-#[expect(clippy::match_same_arms, reason = "separated for clarity")]
-fn is_same_optional<T: PartialEq>(local: Option<T>, other: Option<T>) -> bool {
-    match (local, other) {
-        // Property is not locally supported, so no need to update the local file regardless of other value.
-        (None, _) => true,
-        // Other version doesn't have a value, so it cannot be used to update the local file.
-        (Some(_), None) => true,
-        // We need to update local file if the property value changed.
-        (Some(local), Some(other)) => local == other,
-    }
-}
-
 impl LocalEntry {
-    #[must_use]
-    #[inline]
-    pub fn is_same_as_entry(&self, other: &LocalArchiveEntry) -> bool {
-        if EntryState::Exists(self.kind) != other.state {
-            return false;
-        }
-        match self.kind {
-            EntryKind::File => match (&self.file_data, &other.file_data) {
-                (Some(content), Some(other)) => {
-                    content.hash == other.hash
-                        && is_same_optional(content.unix_mode, other.unix_mode)
-                        && is_same_optional(content.is_symlink, other.is_symlink)
-                }
-                _ => false,
-            },
-            EntryKind::Directory => true,
-        }
-    }
-
+    /// Returns whether local `path` has the same entry kind and modified time (for files only)
+    /// as `self`. Doesn't compare the other file content data (content hash, size, unix mode, etc.).
     #[inline]
     pub fn matches_real(&self, path: impl AsRef<Path>) -> Result<bool> {
         let metadata = fs_err::symlink_metadata(path)?;
@@ -77,18 +53,26 @@ impl LocalEntry {
     }
 }
 
+/// Decrypted data of an entry version received from the server.
+///
+/// It represents the state of an archive path at some point in time.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LocalArchiveEntry {
     pub path: ArchivePath,
+    /// Server-side update timestamp.
     pub recorded_at: DateTimeUtc,
+    /// ID of the client that created this entry version.
     pub source_id: SourceId,
+    /// Type of operation that created this entry version.
     pub record_trigger: RecordTrigger,
     /// State of the file node.
     pub state: EntryState,
+    /// File content properties (only if `state == EntryState::Exists(EntryKind::File)`).
     pub file_data: Option<LocalFileEntry>,
 }
 
 impl LocalArchiveEntry {
+    /// Convert `EntryVersionData` to `LocalArchiveEntry`.
     #[inline]
     pub fn decrypt(data: EntryVersionData, cipher: &Cipher) -> Result<Self> {
         Ok(Self {
@@ -113,9 +97,14 @@ impl LocalArchiveEntry {
     }
 }
 
-pub struct EncryptedFileHead {
+/// Encrypted file content and metadata.
+pub struct TemporaryEncryptedFile {
+    /// Temporary file that contains the encrypted content.
     pub file: SpooledTempFile,
+    /// Unencrypted content hash.
     pub hash: ContentHash,
+    /// Size of the unencrypted content in bytes.
     pub original_size: u64,
+    /// Size of the encrypted content in bytes.
     pub encrypted_size: u64,
 }

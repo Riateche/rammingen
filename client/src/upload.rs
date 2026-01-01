@@ -20,7 +20,7 @@ use {
             ErrorSender, interrupt_on_error, maybe_block_in_place, native_to_archive_relative_path,
         },
     },
-    rammingen_sdk::content::{EncryptedFileHead, LocalEntry, LocalFileEntry},
+    rammingen_sdk::content::{LocalEntry, LocalFileEntry, TemporaryEncryptedFile},
     std::{
         collections::HashSet,
         fs::FileType,
@@ -436,7 +436,7 @@ fn upload_inner<'a>(
 struct ContentUploadTaskItem {
     hash: ContentHash,
     local_path: SanitizedLocalPath,
-    file_data: EncryptedFileHead,
+    file_data: TemporaryEncryptedFile,
     sender: oneshot::Sender<()>,
 }
 

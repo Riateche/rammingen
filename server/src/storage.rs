@@ -44,6 +44,7 @@ fn storage_paths(root: &Path, hash: &EncryptedContentHash) -> anyhow::Result<Sto
 }
 
 impl Storage {
+    /// Open file storage at `root`.
     pub fn new(root: PathBuf) -> Result<Self> {
         if !root.fs_err_try_exists()? {
             bail!("storage root doesn't exist");
@@ -55,10 +56,12 @@ impl Storage {
         Ok(Self { root, tmp })
     }
 
+    /// Create a temporary file in storage.
     pub fn create_file(&self) -> Result<NamedTempFile> {
         Ok(NamedTempFile::new_in(&self.tmp)?)
     }
 
+    /// Move `file` from temporary location to a permanent location corresponding to `hash`.
     pub fn commit_file(&self, file: NamedTempFile, hash: &EncryptedContentHash) -> Result<()> {
         file.as_file().flush()?;
         file.as_file().sync_all()?;
@@ -72,30 +75,36 @@ impl Storage {
         Ok(())
     }
 
+    /// Open the file corresponding to `hash` for reading.
     pub fn open_file(&self, hash: &EncryptedContentHash) -> Result<File> {
         let path = storage_paths(&self.root, hash)?.file_path;
         Ok(File::open(path)?)
     }
 
+    /// Remove the file corresponding to `hash`.
     pub fn remove_file(&self, hash: &EncryptedContentHash) -> Result<()> {
         let path = storage_paths(&self.root, hash)?.file_path;
         Ok(remove_file(path)?)
     }
 
+    /// Returns whether file content for `hash` exists in storage.
     pub fn exists(&self, hash: &EncryptedContentHash) -> Result<bool> {
         let path = storage_paths(&self.root, hash)?.file_path;
         Ok(path.fs_err_try_exists()?)
     }
 
+    /// Returns the size of the file corresponding to `hash` in bytes.
     pub fn file_size(&self, hash: &EncryptedContentHash) -> Result<u64> {
         let path = storage_paths(&self.root, hash)?.file_path;
         Ok(symlink_metadata(path)?.len())
     }
 
+    /// Returns the available space in the storage directory in bytes.
     pub fn available_space(&self) -> Result<u64> {
         Ok(available_space(&self.root)?)
     }
 
+    /// Returns the hash to size map for all files in storage.
     pub fn all_hashes_and_sizes(&self) -> Result<HashMap<EncryptedContentHash, u64>> {
         let mut map = HashMap::new();
         self.add_hashes_and_sizes(&self.root, &mut map)?;

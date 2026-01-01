@@ -1,5 +1,9 @@
+//! Encryption related operations.
+//!
+//! See also [parent module docs](super).
+
 use {
-    crate::{content::EncryptedFileHead, crypto::io::encrypt_file_content},
+    crate::{content::TemporaryEncryptedFile, crypto::io::encrypt_file_content},
     aes_siv::{Aes256SivAead, KeyInit, Nonce, aead::Aead},
     anyhow::{Context, Result},
     base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD},
@@ -11,6 +15,7 @@ use {
     std::{io::Read, mem::size_of},
 };
 
+/// Encryption related operations.
 pub struct Cipher {
     inner: Aes256SivAead,
 }
@@ -24,6 +29,7 @@ impl Cipher {
         }
     }
 
+    /// Encrypt a file content block.
     #[inline]
     pub fn encrypt_bytes(&self, nonce: &Nonce, plaintext: &[u8]) -> Result<Vec<u8>> {
         self.inner
@@ -31,6 +37,7 @@ impl Cipher {
             .context("encryption failed for bytes")
     }
 
+    /// Decrypt a file content block.
     #[inline]
     pub fn decrypt_bytes(&self, nonce: &Nonce, ciphertext: &[u8]) -> Result<Vec<u8>> {
         self.inner
@@ -38,6 +45,7 @@ impl Cipher {
             .context("decryption failed for bytes")
     }
 
+    /// Encrypt a string with zero nonce.
     #[inline]
     pub fn encrypt_str(&self, value: &str) -> Result<String> {
         let ciphertext = self
@@ -47,6 +55,7 @@ impl Cipher {
         Ok(BASE64_URL_SAFE_NO_PAD.encode(ciphertext))
     }
 
+    /// Decrypt a string with zero nonce.
     #[inline]
     pub fn decrypt_str(&self, value: &str) -> Result<String> {
         let ciphertext = BASE64_URL_SAFE_NO_PAD.decode(value)?;
@@ -57,6 +66,8 @@ impl Cipher {
         Ok(String::from_utf8(plaintext)?)
     }
 
+    /// Encrypt a path with zero nonce. Each path segment is encrypted separately
+    /// to preserve parent-child relationships.
     #[inline]
     pub fn encrypt_path(&self, value: &ArchivePath) -> Result<EncryptedArchivePath> {
         let parts = value
@@ -73,6 +84,7 @@ impl Cipher {
         EncryptedArchivePath::from_encrypted_without_prefix(&parts.join("/"))
     }
 
+    /// Decrypt a path with zero nonce.
     #[inline]
     pub fn decrypt_path(&self, value: &EncryptedArchivePath) -> Result<ArchivePath> {
         let parts = value
@@ -89,6 +101,7 @@ impl Cipher {
         ArchivePath::from_str_without_prefix(&parts.join("/"))
     }
 
+    /// Encrypt a content hash with zero nonce.
     #[inline]
     pub fn encrypt_content_hash(&self, value: &ContentHash) -> Result<EncryptedContentHash> {
         let ciphertext = self
@@ -98,6 +111,7 @@ impl Cipher {
         Ok(EncryptedContentHash::from_encrypted(ciphertext))
     }
 
+    /// Decrypt a content hash with zero nonce.
     #[inline]
     pub fn decrypt_content_hash(&self, value: &EncryptedContentHash) -> Result<ContentHash> {
         self.inner
@@ -106,6 +120,7 @@ impl Cipher {
             .try_into()
     }
 
+    /// Encrypt file size with zero nonce.
     #[inline]
     pub fn encrypt_size(&self, value: u64) -> Result<EncryptedSize> {
         let ciphertext = self
@@ -115,6 +130,7 @@ impl Cipher {
         Ok(EncryptedSize::from_encrypted(ciphertext))
     }
 
+    /// Decrypt file size with zero nonce.
     #[inline]
     pub fn decrypt_size(&self, value: &EncryptedSize) -> Result<u64> {
         const SIZE_LENGTH: usize = size_of::<u64>();
@@ -130,8 +146,9 @@ impl Cipher {
         ))
     }
 
+    /// Read unencrypted `file_content` and create a temporary file containing encrypted file content.
     #[inline]
-    pub fn encrypt_file_content(&self, file_content: impl Read) -> Result<EncryptedFileHead> {
+    pub fn encrypt_file_content(&self, file_content: impl Read) -> Result<TemporaryEncryptedFile> {
         encrypt_file_content(self, file_content)
     }
 }

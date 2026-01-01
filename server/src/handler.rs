@@ -191,6 +191,40 @@ fn get_parent_dir<'a>(
     })
 }
 
+/// Returns whether a platform-dependent entry field (such as `unix_mode` or `is_symlink`) should be updated.
+fn should_update_field<T: PartialEq>(old: Option<T>, new: Option<T>) -> bool {
+    #[expect(clippy::match_same_arms, reason = "separated for clarity")]
+    match (old, new) {
+        // Unknown in old and new, no need to record it.
+        (None, None) => false,
+        // New known value, we need to record it.
+        (None, Some(_)) => true,
+        // No new known value, no need to record it.
+        (Some(_), None) => false,
+        // Old and new are known values, we need to record it if it's different.
+        (Some(mode1), Some(mode2)) => mode1 != mode2,
+    }
+}
+
+/// Returns whether a database entry should be updated.
+///
+/// This is just an equality check for the most part, but it includes
+/// special handling of `unix_mode` and `is_symlink`.
+fn should_update(old: &EntryVersionData, new: &AddVersion) -> bool {
+    if old.path != new.path || old.state != new.state {
+        return true;
+    }
+    match (&old.content, &new.content) {
+        (Some(content), Some(update)) => {
+            content.hash != update.hash
+                || should_update_field(content.unix_mode, update.unix_mode)
+                || should_update_field(content.is_symlink, update.is_symlink)
+        }
+        (None, None) => false,
+        _ => true,
+    }
+}
+
 /// Create or update an entry in the database with data from `request`.
 async fn add_version_inner<'a>(
     ctx: &'a Context,
@@ -231,7 +265,7 @@ async fn add_version_inner<'a>(
     if let Some(entry) = entry {
         // Updating an existing entry.
         let entry = convert_entry!(entry);
-        if entry.data.is_same(&request) {
+        if !should_update(&entry.data, &request) {
             return Ok(AddVersionResponse { added: false });
         }
         if !request.state.exists() {

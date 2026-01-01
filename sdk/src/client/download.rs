@@ -14,6 +14,10 @@ use {
     tracing::instrument,
 };
 
+/// Downloads and decrypts a file and writes it to `path`.
+///
+/// This function retries on network errors. It also checks encrypted size,
+/// unencrypted size, and content hash against metadata in `local_entry`.
 #[instrument(skip_all, fields(?path, ?local_entry))]
 pub async fn download_and_decrypt(
     client: &Client,
@@ -66,6 +70,9 @@ pub async fn download_and_decrypt(
     Ok(())
 }
 
+/// Make a request for fetching a file content.
+///
+/// Verifies `Content-Length` response header against encrypted size from `local_entry`.
 async fn content(
     client: &Client,
     local_entry: &LocalFileEntry,

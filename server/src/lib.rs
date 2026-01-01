@@ -17,6 +17,7 @@ use {
         body::{self, Bytes, Frame},
         header::AUTHORIZATION,
     },
+    hyper_util::server::graceful::GracefulShutdown,
     rammingen_protocol::{
         EncryptedContentHash, SourceId, encoding,
         endpoints::{
@@ -26,10 +27,7 @@ use {
             ResetVersion, StreamingResponseItem, v1_legacy,
         },
     },
-    rammingen_sdk::{
-        server::{ShutdownWatcher, serve_connection},
-        signal::shutdown_signal,
-    },
+    rammingen_sdk::{server::serve_connection, signal::shutdown_signal},
     serde::{Deserialize, Serialize, de::DeserializeOwned},
     sqlx::{PgPool, query, query_scalar},
     std::{
@@ -52,13 +50,16 @@ use {
             mpsc::{self, Sender},
         },
         task,
-        time::interval,
+        time::{interval, timeout},
     },
     tracing::{error, info, warn},
 };
 
 /// Time between reloading the list of sources from the database.
 const SOURCES_CACHE_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Wait duration for terminating connection handlers.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -71,7 +72,8 @@ pub struct Config {
     pub bind_addr: SocketAddr,
     /// Path to the log file. If not specified, log will be written to stdout.
     pub log_file: Option<PathBuf>,
-    /// Log filter in [tracing format](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html).
+    /// Log filter in
+    /// [tracing format](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html).
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
     /// Time between snapshots. A snapshot is a copy of the state of all archive entries at a certain time.
@@ -176,13 +178,13 @@ pub async fn run(
     });
 
     let mut shutdown = pin!(shutdown_signal());
-    let shutdown_watcher = ShutdownWatcher::default();
+    let hyper_shutdown = GracefulShutdown::default();
     loop {
         select! {
             r = listener.accept() => match r {
                 Ok((io, _client_addr)) => {
                     let ctx = ctx.clone();
-                    tokio::spawn(serve_connection(io, shutdown_watcher.watcher(), move |request| {
+                    tokio::spawn(serve_connection(io, hyper_shutdown.watcher(), move |request| {
                         handle_request(ctx.clone(), request)
                     }));
                 }
@@ -194,7 +196,11 @@ pub async fn run(
             },
         }
     }
-    shutdown_watcher.shutdown().await;
+
+    match timeout(SHUTDOWN_TIMEOUT, hyper_shutdown.shutdown()).await {
+        Ok(()) => info!("All connections gracefully closed"),
+        Err(_) => warn!("Timed out wait for all connections to close"),
+    }
     Ok(())
 }
 

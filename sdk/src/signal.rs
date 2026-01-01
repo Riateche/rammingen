@@ -12,6 +12,7 @@ pub enum ShutdownSignal {
     Sigterm,
 }
 
+/// Resolves when the process receives interrupt or terminate signal.
 #[inline(never)]
 pub async fn shutdown_signal() -> Result<ShutdownSignal> {
     let sigint = ctrl_c().map(|signal| {
@@ -28,6 +29,7 @@ pub async fn shutdown_signal() -> Result<ShutdownSignal> {
     signal
 }
 
+/// Resolves when the process receives terminate signal (if supported).
 #[allow(
     clippy::allow_attributes,
     clippy::unnecessary_wraps,
