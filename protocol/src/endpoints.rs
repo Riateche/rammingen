@@ -54,7 +54,6 @@ pub type StreamingResponseItem<Request> = <Request as RequestToStreamingResponse
 /// Results are ordered by update number.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetNewEntries {
-    // for incremental updates
     pub last_update_number: EntryUpdateNumber,
 }
 

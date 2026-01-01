@@ -26,6 +26,7 @@ pub type DateTimeUtc = chrono::DateTime<Utc>;
 pub struct SourceId(i32);
 
 impl SourceId {
+    /// Returns database representation.
     #[must_use]
     #[inline]
     pub fn to_db(self) -> i32 {
@@ -35,7 +36,7 @@ impl SourceId {
 
 /// Number of an entry update.
 ///
-/// `EntryUpdateNumber` is based on a global counter that increments every time an entry is updated.
+/// `EntryUpdateNumber` is based on a global counter that increments every time any entry is updated.
 /// It's used to request new updates from the server based on the last `EntryUpdateNumber` seen by the client.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, From, Into,
@@ -43,6 +44,7 @@ impl SourceId {
 pub struct EntryUpdateNumber(i64);
 
 impl EntryUpdateNumber {
+    /// Returns database representation.
     #[must_use]
     #[inline]
     pub fn to_db(self) -> i64 {
@@ -50,10 +52,15 @@ impl EntryUpdateNumber {
     }
 }
 
+/// ID of a snapshot.
+///
+/// The server creates snapshots on a configured time interval.
+/// This ID is used to identify entries that belong to the snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct SnapshotId(i32);
 
 impl SnapshotId {
+    /// Returns database representation.
     #[must_use]
     #[inline]
     pub fn to_db(self) -> i32 {
@@ -61,10 +68,16 @@ impl SnapshotId {
     }
 }
 
+/// ID of an entry.
+///
+/// An entry is created for each distinct encrypted archive path.
+/// Although `EncryptedArchivePath` would be a unique identifier of an entry,
+/// `EntryId` is used instead for better performance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, From, Into)]
 pub struct EntryId(i64);
 
 impl EntryId {
+    /// Returns database representation.
     #[must_use]
     #[inline]
     pub fn to_db(self) -> i64 {
@@ -170,6 +183,7 @@ pub enum RecordTrigger {
 }
 
 impl RecordTrigger {
+    /// Returns database representation.
     #[must_use]
     #[inline]
     pub fn to_db(self) -> i32 {
@@ -195,6 +209,7 @@ impl RecordTrigger {
     }
 }
 
+/// Type of the existing file node (file or directory).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EntryKind {
     /// A regular file or a symlink.
@@ -204,9 +219,10 @@ pub enum EntryKind {
 }
 
 impl EntryKind {
-    /// Database value for a non-existing entry.
+    /// Database value for a non-existing file.
     pub const NOT_EXISTS: i32 = 0;
 
+    /// Returns database representation.
     #[must_use]
     #[inline]
     pub fn to_db(self) -> i32 {
@@ -217,6 +233,8 @@ impl EntryKind {
     }
 }
 
+/// Converts database representation to `Option<EntryKind>`, where `None`
+/// represents a non-existing file.
 #[inline]
 pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
     match value {
@@ -227,6 +245,7 @@ pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
     }
 }
 
+/// Returns database representation.
 #[must_use]
 #[inline]
 pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
