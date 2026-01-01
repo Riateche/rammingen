@@ -2,7 +2,8 @@ use {
     crate::crypto::Cipher,
     anyhow::{Context as _, Result},
     rammingen_protocol::{
-        ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryVersionData, RecordTrigger, SourceId,
+        ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryState, EntryVersionData,
+        RecordTrigger, SourceId,
     },
     serde::{Deserialize, Serialize},
     std::path::Path,
@@ -41,7 +42,7 @@ impl LocalEntry {
     #[must_use]
     #[inline]
     pub fn is_same_as_entry(&self, other: &LocalArchiveEntry) -> bool {
-        if Some(self.kind) != other.kind {
+        if EntryState::Exists(self.kind) != other.state {
             return false;
         }
         match self.kind {
@@ -82,7 +83,8 @@ pub struct LocalArchiveEntry {
     pub recorded_at: DateTimeUtc,
     pub source_id: SourceId,
     pub record_trigger: RecordTrigger,
-    pub kind: Option<EntryKind>,
+    /// State of the file node.
+    pub state: EntryState,
     pub file_data: Option<LocalFileEntry>,
 }
 
@@ -94,7 +96,7 @@ impl LocalArchiveEntry {
             recorded_at: data.recorded_at,
             source_id: data.source_id,
             record_trigger: data.record_trigger,
-            kind: data.kind,
+            state: data.state,
             file_data: if let Some(content) = data.content {
                 Some(LocalFileEntry {
                     modified_at: content.modified_at,

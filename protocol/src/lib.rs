@@ -219,9 +219,6 @@ pub enum EntryKind {
 }
 
 impl EntryKind {
-    /// Database value for a non-existing file.
-    pub const NOT_EXISTS: i32 = 0;
-
     /// Returns database representation.
     #[must_use]
     #[inline]
@@ -233,25 +230,70 @@ impl EntryKind {
     }
 }
 
-/// Converts database representation to `Option<EntryKind>`, where `None`
-/// represents a non-existing file.
-#[inline]
-pub fn entry_kind_from_db(value: i32) -> Result<Option<EntryKind>> {
-    match value {
-        0 => Ok(None),
-        1 => Ok(Some(EntryKind::File)),
-        2 => Ok(Some(EntryKind::Directory)),
-        _ => bail!("invalid value for EntryKind: {}", value),
+/// State of the file node corresponding to an entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EntryState {
+    /// File or directory no longer exists.
+    NotExists,
+    /// File or directory exists.
+    Exists(EntryKind),
+}
+
+// for compatibility with old encoding
+impl<'de> Deserialize<'de> for EntryState {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let option = Option::<EntryKind>::deserialize(deserializer)?;
+        match option {
+            Some(kind) => Ok(Self::Exists(kind)),
+            None => Ok(Self::NotExists),
+        }
     }
 }
 
-/// Returns database representation.
-#[must_use]
-#[inline]
-pub fn entry_kind_to_db(value: Option<EntryKind>) -> i32 {
-    match value {
-        None => 0,
-        Some(value) => value.to_db(),
+// for compatibility with old encoding
+impl Serialize for EntryState {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let option = match self {
+            EntryState::NotExists => None,
+            EntryState::Exists(kind) => Some(kind),
+        };
+        option.serialize(serializer)
+    }
+}
+
+impl EntryState {
+    #[inline]
+    pub fn from_db(value: i32) -> Result<Self> {
+        match value {
+            0 => Ok(EntryState::NotExists),
+            1 => Ok(EntryState::Exists(EntryKind::File)),
+            2 => Ok(EntryState::Exists(EntryKind::Directory)),
+            _ => bail!("invalid value for EntryKind: {}", value),
+        }
+    }
+
+    /// Returns database representation.
+    #[must_use]
+    #[inline]
+    pub fn to_db(&self) -> i32 {
+        match self {
+            EntryState::NotExists => 0,
+            EntryState::Exists(value) => value.to_db(),
+        }
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn exists(&self) -> bool {
+        matches!(self, Self::Exists(_))
     }
 }
 
@@ -266,9 +308,8 @@ pub struct EntryVersionData {
     pub source_id: SourceId,
     /// Action that caused an entity update (as reported by the client).
     pub record_trigger: RecordTrigger,
-    /// Kind of the entry (file or directory), or `None` if this version
-    /// records a deletion of this entry.
-    pub kind: Option<EntryKind>,
+    /// State of the file node.
+    pub state: EntryState,
     /// File or symlink content (only allowed if `kind == Some(File)`).
     pub content: Option<FileContent>,
 }
@@ -295,7 +336,7 @@ impl EntryVersionData {
     #[must_use]
     #[inline]
     pub fn is_same(&self, update: &AddVersion) -> bool {
-        self.path == update.path && self.kind == update.kind && {
+        self.path == update.path && self.state == update.state && {
             match (&self.content, &update.content) {
                 (Some(content), Some(update)) => {
                     content.hash == update.hash

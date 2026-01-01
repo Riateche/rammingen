@@ -10,7 +10,7 @@ use {
     fs_err::{create_dir, metadata, remove_dir, remove_file, rename},
     futures::{Stream, TryStreamExt, stream},
     rammingen_protocol::{
-        ArchivePath, DateTimeUtc, EntryKind,
+        ArchivePath, DateTimeUtc, EntryKind, EntryState,
         endpoints::GetEntryVersionsAtTime,
         util::{ErrorSender, archive_to_native_relative_path, interrupt_on_error},
     },
@@ -187,7 +187,7 @@ async fn download_inner(
         let _status = set_status("Checking for files deleted remotely");
         for entry in ctx.ctx.db.get_archive_entries(ctx.root_archive_path).rev() {
             let entry = entry?;
-            if entry.kind.is_some() {
+            if entry.state.exists() {
                 continue;
             }
             let entry_local_path =
@@ -227,7 +227,7 @@ async fn download_inner(
     }
     let mut found_any = false;
     while let Some(entry) = versions.try_next().await? {
-        let Some(kind) = entry.kind else {
+        let EntryState::Exists(kind) = entry.state else {
             continue;
         };
         let entry_local_path =
@@ -423,10 +423,9 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
         );
     }
 
-    let kind = item
-        .entry
-        .kind
-        .context("missing kind in finalize_item_download")?;
+    let EntryState::Exists(kind) = item.entry.state else {
+        bail!("missing kind in finalize_item_download");
+    };
     match kind {
         EntryKind::Directory => {
             if let Some(db_data) = &item.db_data {

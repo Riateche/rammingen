@@ -12,7 +12,7 @@ use {
     itertools::Itertools,
     prettytable::{Table, cell, format::FormatBuilder, row},
     rammingen_protocol::{
-        ArchivePath, DateTimeUtc, EncryptedArchivePath, EntryKind, SourceId,
+        ArchivePath, DateTimeUtc, EncryptedArchivePath, EntryKind, EntryState, SourceId,
         endpoints::{GetAllEntryVersions, GetDirectChildEntries, GetSources, SourceInfo},
     },
     rammingen_sdk::content::LocalArchiveEntry,
@@ -110,7 +110,7 @@ pub async fn ls(ctx: &Ctx, path: &str, show_deleted: bool) -> Result<()> {
     info!("Recorded at: {}", pretty_time(main_entry.recorded_at)?);
     info!("Source id: {}", sources.format(main_entry.source_id));
     info!("Record trigger: {:?}", main_entry.record_trigger);
-    if let Some(kind) = main_entry.kind {
+    if let EntryState::Exists(kind) = main_entry.state {
         match kind {
             EntryKind::File => {
                 info!("Current status: existing file");
@@ -157,10 +157,10 @@ pub async fn ls(ctx: &Ctx, path: &str, show_deleted: bool) -> Result<()> {
         entries.push(LocalArchiveEntry::decrypt(entry.data, &ctx.cipher)?);
     }
     // already sorted by path, so we use stable sort
-    entries.sort_by_key(|entry| match &entry.kind {
-        Some(EntryKind::Directory) => 0u32,
-        Some(EntryKind::File) => 1,
-        None => 2,
+    entries.sort_by_key(|entry| match &entry.state {
+        EntryState::Exists(EntryKind::Directory) => 0u32,
+        EntryState::Exists(EntryKind::File) => 1,
+        EntryState::NotExists => 2,
     });
 
     if !entries.is_empty() {
@@ -174,7 +174,7 @@ pub async fn ls(ctx: &Ctx, path: &str, show_deleted: bool) -> Result<()> {
             format!("any child entry must have last name (path: {})", entry.path)
         })?;
         let recorded_at = pretty_time(entry.recorded_at)?;
-        if entry.kind.is_none() && !show_deleted {
+        if !entry.state.exists() && !show_deleted {
             num_hidden_deleted.cadd_assign(1)?;
             continue;
         }
@@ -208,8 +208,8 @@ fn pretty_time(value: DateTimeUtc) -> anyhow::Result<impl Display> {
 }
 
 fn pretty_status(entry: &LocalArchiveEntry) -> Result<String> {
-    let text = if let Some(kind) = entry.kind {
-        match kind {
+    let text = match entry.state {
+        EntryState::Exists(kind) => match kind {
             EntryKind::File => {
                 let content = entry
                     .file_data
@@ -223,9 +223,8 @@ fn pretty_status(entry: &LocalArchiveEntry) -> Result<String> {
                 format!("{} {}", mode, pretty_size(content.original_size))
             }
             EntryKind::Directory => "DIR".to_owned(),
-        }
-    } else {
-        "DEL".to_owned()
+        },
+        EntryState::NotExists => "DEL".to_owned(),
     };
     Ok(text)
 }

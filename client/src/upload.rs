@@ -14,7 +14,7 @@ use {
     fs_err::File,
     futures::future::BoxFuture,
     rammingen_protocol::{
-        ArchivePath, ContentHash, DateTimeUtc, EntryKind, FileContent, RecordTrigger,
+        ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryState, FileContent, RecordTrigger,
         endpoints::{AddVersion, AddVersions, ContentHashExists},
         util::{
             ErrorSender, interrupt_on_error, maybe_block_in_place, native_to_archive_relative_path,
@@ -87,7 +87,7 @@ pub async fn find_local_deletions<'a>(
             new_versions.push(AddVersion {
                 path: ctx.cipher.encrypt_path(&archive_path)?,
                 record_trigger: RecordTrigger::Sync,
-                kind: None,
+                state: EntryState::NotExists,
                 content: None,
             });
             local_paths.push(local_path);
@@ -366,7 +366,7 @@ fn upload_inner<'a>(
                     version: AddVersion {
                         path: ctx.ctx.cipher.encrypt_path(archive_path)?,
                         record_trigger: RecordTrigger::Upload,
-                        kind: Some(kind),
+                        state: EntryState::Exists(kind),
                         content: if let Some(content) = &content {
                             Some(FileContent {
                                 modified_at: content.modified_at,

@@ -4,8 +4,8 @@ use {
     byteorder::{ByteOrder, LE},
     cadd::prelude::Cinto,
     rammingen_protocol::{
-        ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryUpdateNumber, RecordTrigger,
-        SourceId, encoding,
+        ArchivePath, ContentHash, DateTimeUtc, EntryKind, EntryState, EntryUpdateNumber,
+        RecordTrigger, SourceId, encoding,
     },
     rammingen_sdk::content::{LocalArchiveEntry, LocalEntry, LocalFileEntry},
     serde::{Deserialize, Serialize},
@@ -53,7 +53,8 @@ struct LocalArchiveEntryLegacyV1 {
     recorded_at: DateTimeUtc,
     source_id: SourceId,
     record_trigger: RecordTrigger,
-    kind: Option<EntryKind>,
+    /// State of the file node.
+    state: EntryState,
     file_data: Option<LocalFileEntryLegacyV1>,
 }
 
@@ -98,7 +99,7 @@ fn decode_archive_entry(bytes: &[u8]) -> anyhow::Result<LocalArchiveEntry> {
             recorded_at: value.recorded_at,
             source_id: value.source_id,
             record_trigger: value.record_trigger,
-            kind: value.kind,
+            state: value.state,
             file_data: value.file_data.map(|value| LocalFileEntry {
                 modified_at: value.modified_at,
                 original_size: value.original_size,
@@ -180,7 +181,7 @@ impl Db {
         })();
         let children = if root_entry
             .as_ref()
-            .is_ok_and(|entry| entry.kind == Some(EntryKind::Directory))
+            .is_ok_and(|entry| entry.state == EntryState::Exists(EntryKind::Directory))
         {
             let mut prefix = path.to_str_without_prefix().to_owned();
             prefix.push('/');

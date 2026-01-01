@@ -10,14 +10,13 @@ use {
     futures::{Stream, TryStreamExt, future::BoxFuture},
     rammingen_protocol::{
         DateTimeUtc, EncryptedArchivePath, EncryptedContentHash, EncryptedSize, Entry, EntryKind,
-        EntryVersion, EntryVersionData, FileContent, RecordTrigger, SourceId,
+        EntryState, EntryVersion, EntryVersionData, FileContent, RecordTrigger, SourceId,
         endpoints::{
             AddVersion, AddVersionResponse, AddVersions, BulkActionStats, CheckIntegrity,
             ContentHashExists, GetAllEntryVersions, GetDirectChildEntries, GetEntryVersionsAtTime,
             GetNewEntries, GetServerStatus, GetSources, MovePath, RemovePath, ResetVersion,
             Response, ServerStatus, SourceInfo, StreamingResponseItem, v1_legacy,
         },
-        entry_kind_from_db, entry_kind_to_db,
     },
     sqlx::{PgPool, Postgres, Transaction, query, query_scalar, types::time::OffsetDateTime},
     std::{
@@ -69,14 +68,14 @@ macro_rules! convert_entry_version {
 macro_rules! convert_version_data {
     ($row:expr) => {{
         let row = $row;
-        let kind = entry_kind_from_db(row.kind)?;
+        let state = EntryState::from_db(row.kind)?;
         EntryVersionData {
             path: EncryptedArchivePath::from_encrypted_without_prefix(&row.path)?,
             recorded_at: DateTimeUtc::from_db(row.recorded_at)?,
             source_id: row.source_id.into(),
             record_trigger: RecordTrigger::from_db(row.record_trigger)?,
-            kind,
-            content: if kind == Some(EntryKind::File) {
+            state,
+            content: if state == EntryState::Exists(EntryKind::File) {
                 Some(FileContent {
                     modified_at: DateTimeUtc::from_db(
                         row.modified_at.context("missing modified_at for file")?,
@@ -125,10 +124,11 @@ fn get_parent_dir<'a>(
         .fetch_optional(&mut **tx)
         .await?;
         let entry_id = if let Some(entry) = entry {
-            if entry.kind == EntryKind::File.to_db() {
+            let entry_state = EntryState::from_db(entry.kind)?;
+            if entry_state == EntryState::Exists(EntryKind::File) {
                 bail!("cannot save entry {} because {} is a file", path, parent);
             }
-            if request.kind.is_some() && entry.kind == EntryKind::NOT_EXISTS {
+            if request.state.exists() && entry_state == EntryState::NotExists {
                 // Make sure parent's parent is also marked as existing.
                 let _ = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
 
@@ -153,11 +153,7 @@ fn get_parent_dir<'a>(
             }
         } else {
             let parent_of_parent = get_parent_dir(ctx, &parent, &mut *tx, request).await?;
-            let kind = if request.kind.is_some() {
-                EntryKind::Directory.to_db()
-            } else {
-                EntryKind::NOT_EXISTS
-            };
+            let kind = request.state.to_db();
             query_scalar!(
                 "INSERT INTO entries (
                     update_number,
@@ -238,7 +234,7 @@ async fn add_version_inner<'a>(
         if entry.data.is_same(&request) {
             return Ok(AddVersionResponse { added: false });
         }
-        if request.kind.is_none() {
+        if !request.state.exists() {
             let child_count = query_scalar!(
                 "SELECT count(*) FROM entries
                 WHERE kind != 0 AND parent_dir = $1",
@@ -255,7 +251,7 @@ async fn add_version_inner<'a>(
                 );
             }
         }
-        if request.kind.is_some() && entry.data.kind.is_none() {
+        if request.state.exists() && !entry.data.state.exists() {
             // Make sure parent is marked as existing.
             let _ = get_parent_dir(ctx, &request.path, &mut *tx, &request).await?;
         }
@@ -286,7 +282,7 @@ async fn add_version_inner<'a>(
             WHERE id = $10",
             ctx.source_id.to_db(),
             request.record_trigger.to_db(),
-            entry_kind_to_db(request.kind),
+            request.state.to_db(),
             original_size_db,
             encrypted_size_db,
             modified_at_db,
@@ -329,7 +325,7 @@ async fn add_version_inner<'a>(
             request.path.to_str_without_prefix(),
             ctx.source_id.to_db(),
             request.record_trigger.to_db(),
-            entry_kind_to_db(request.kind),
+            request.state.to_db(),
             original_size_db,
             encrypted_size_db,
             modified_at_db,
@@ -431,7 +427,7 @@ pub async fn get_entry_versions_at_time(
     tokio::pin!(entries);
 
     while let Some(entry) = entries.try_next().await? {
-        if entry.data.kind.is_some() {
+        if entry.data.state.exists() {
             sender.send(Ok(entry)).await?;
         }
     }
@@ -508,7 +504,7 @@ async fn remove_entries_in_dir<'a>(
         WHERE (path = $4 OR path LIKE $5) AND kind > 0",
         ctx.source_id.to_db(),
         trigger.to_db(),
-        EntryKind::NOT_EXISTS,
+        EntryState::NotExists.to_db(),
         path.to_str_without_prefix(),
         starts_with(path),
     )
@@ -561,7 +557,7 @@ pub async fn move_path(ctx: Context, request: MovePath) -> Result<Response<MoveP
         let add_version = AddVersion {
             path: new_path,
             record_trigger: RecordTrigger::Move,
-            kind: entry.data.kind,
+            state: entry.data.state,
             content: entry.data.content,
         };
         let result = add_version_inner(&ctx, add_version, &mut tx).await?;
@@ -602,7 +598,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
         .await?;
     let new_existing_ids: HashSet<i64> = entries
         .iter()
-        .filter(|entry| entry.data.kind.is_some())
+        .filter(|entry| entry.data.state.exists())
         .map(|entry| entry.entry_id.into())
         .collect();
     let mut affected_paths = 0;
@@ -626,7 +622,7 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
                 WHERE id = $4",
                 ctx.source_id.to_db(),
                 RecordTrigger::Reset.to_db(),
-                EntryKind::NOT_EXISTS,
+                EntryState::NotExists.to_db(),
                 id,
             )
             .execute(&mut *tx)
@@ -636,13 +632,13 @@ pub async fn reset_version(ctx: Context, request: ResetVersion) -> Result<Respon
     }
 
     for entry in entries {
-        if entry.data.kind.is_some() {
+        if entry.data.state.exists() {
             let r = add_version_inner(
                 &ctx,
                 AddVersion {
                     path: entry.data.path,
                     record_trigger: RecordTrigger::Reset,
-                    kind: entry.data.kind,
+                    state: entry.data.state,
                     content: entry.data.content,
                 },
                 &mut tx,

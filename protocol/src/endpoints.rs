@@ -1,6 +1,6 @@
 use {
     crate::{
-        DateTimeUtc, EncryptedContentHash, Entry, EntryKind, EntryUpdateNumber, EntryVersion,
+        DateTimeUtc, EncryptedContentHash, Entry, EntryState, EntryUpdateNumber, EntryVersion,
         FileContent, RecordTrigger, SourceId, path::EncryptedArchivePath,
     },
     serde::{Deserialize, Serialize},
@@ -93,7 +93,8 @@ streaming_response_type!(GetAllEntryVersions, EntryVersion, "v1");
 pub struct AddVersion {
     pub path: EncryptedArchivePath,
     pub record_trigger: RecordTrigger,
-    pub kind: Option<EntryKind>,
+    /// State of the file node.
+    pub state: EntryState,
     pub content: Option<FileContent>,
 }
 
