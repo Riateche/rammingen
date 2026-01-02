@@ -6,7 +6,7 @@ use {
         pull_updates::pull_updates,
         rules::Rules,
         show_desktop_notification, truncate_duration_to_minute,
-        upload::{find_local_deletions, upload},
+        upload::{record_local_deletions, upload},
     },
     anyhow::{Context, Result},
     cadd::ops::Cadd,
@@ -17,6 +17,9 @@ use {
     tracing::warn,
 };
 
+/// Perform two-way sync of all configured mounts.
+///
+/// If `dry_run` is `true`, show the operations, but don't make any actual file changes.
 pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     sync_inner(ctx, dry_run).await.inspect_err(|err| {
         if ctx.config.enable_desktop_notifications {
@@ -82,7 +85,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
             .await?;
         }
     }
-    find_local_deletions(ctx, &mut mount_points, &existing_paths, dry_run).await?;
+    record_local_deletions(ctx, &mut mount_points, &existing_paths, dry_run).await?;
     pull_updates(ctx).await?;
     for mount_point in &ctx.config.mount_points {
         download_latest(

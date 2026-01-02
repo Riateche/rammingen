@@ -401,7 +401,7 @@ struct DownloadFileTask {
     sender: oneshot::Sender<TmpGuard>,
 }
 
-/// Receive tasks from `receiver` and runs them concurrently,
+/// Receives tasks from `receiver` and runs them concurrently,
 /// while not allowing more than 8 tasks to run at any time.
 async fn download_files_task(
     ctx: Arc<Ctx>,

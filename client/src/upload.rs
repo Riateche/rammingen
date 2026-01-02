@@ -39,6 +39,10 @@ use {
 const TOO_RECENT_INTERVAL: Duration = Duration::from_millis(100);
 const BATCH_SIZE: usize = 128;
 
+/// Find an archive path corresponding to `local_path` if it resides in any of the mount points.
+///
+/// If `local_path` is inside a mount point, it returns the corresponding archive path and the exclude rules
+/// for the corresponding mount point. Otherwise, it returns `None`.
 pub fn to_archive_path<'a>(
     local_path: &SanitizedLocalPath,
     mount_points: &'a mut [(&MountPoint, Rules)],
@@ -57,7 +61,17 @@ pub fn to_archive_path<'a>(
     Ok(None)
 }
 
-pub async fn find_local_deletions<'a>(
+/// Find files and directories that have existed in mount directories but no longer exist, and
+/// send the corresponding updates to the server.
+///
+/// `existing_paths` contains the list of all paths that currently exist inside all mount directories.
+/// (It is previously populated in the `upload_inner` function.)
+///
+/// This function compares current filesystem state against the data in the local database.
+///
+/// Note: when files are deleted by rammingen during a sync, the local database is also updated.
+/// Thus, this function will not try to upload deletions that were made by rammingen itself.
+pub async fn record_local_deletions<'a>(
     ctx: &'a Ctx,
     mount_points: &'a mut [(&MountPoint, Rules)],
     existing_paths: &'a HashSet<SanitizedLocalPath>,
@@ -100,6 +114,9 @@ pub async fn find_local_deletions<'a>(
     Ok(())
 }
 
+/// Send new versions to the server, then update local database and counters.
+///
+/// This function will clear `new_versions` and `local_paths`.
 async fn record_deletion_batch(
     ctx: &Ctx,
     new_versions: &mut Vec<AddVersion>,
@@ -128,6 +145,8 @@ async fn record_deletion_batch(
     Ok(())
 }
 
+/// Find files and directories that were added or modified since last observation,
+/// and upload the changes to the server. Add any encountered paths to `existing_paths`.
 pub async fn upload(
     ctx: &Arc<Ctx>,
     local_path: &SanitizedLocalPath,
@@ -187,7 +206,9 @@ struct UploadContext<'a> {
     ctx: &'a Ctx,
     rules: &'a mut Rules,
     is_mount: bool,
+    /// All paths encountered during this upload operation.
     existing_paths: &'a mut HashSet<SanitizedLocalPath>,
+    /// If `true`, changes are shown but not actually uploaded.
     dry_run: bool,
     content_upload_sender: mpsc::Sender<ContentUploadTaskItem>,
     add_versions_sender: mpsc::Sender<(AddVersionsTaskItem, Option<oneshot::Receiver<()>>)>,
@@ -402,7 +423,7 @@ fn upload_inner<'a>(
                 if let Some(old_content) = db_data.as_ref().and_then(|data| data.file_data.as_ref())
                 {
                     if new_content.modified_at != old_content.modified_at {
-                        info!("updating modified_at in db for {}", local_path);
+                        info!("Updating modified_at in db for {}", local_path);
                         ctx.ctx.db.set_local_entry(local_path, &new_local_entry)?;
                     }
                 }
@@ -433,13 +454,17 @@ fn upload_inner<'a>(
     })
 }
 
+/// Represents a unit of work that uploads an encrypted file to the server.
 struct ContentUploadTaskItem {
     hash: ContentHash,
     local_path: SanitizedLocalPath,
     file_data: TemporaryEncryptedFile,
+    /// Used to notify about task completion.
     sender: oneshot::Sender<()>,
 }
 
+/// Receives tasks from `receiver` and runs them concurrently,
+/// while not allowing more than 8 tasks to run at any time.
 async fn content_upload_task(
     ctx: Arc<Ctx>,
     mut receiver: mpsc::Receiver<ContentUploadTaskItem>,
@@ -461,6 +486,7 @@ async fn content_upload_task(
     }
 }
 
+/// Upload an encrypted file to the server.
 async fn content_upload_item_task(ctx: Arc<Ctx>, item: ContentUploadTaskItem) -> Result<()> {
     let encrypted_hash = ctx.cipher.encrypt_content_hash(&item.hash)?;
     let exists = ctx
@@ -491,13 +517,18 @@ async fn content_upload_item_task(ctx: Arc<Ctx>, item: ContentUploadTaskItem) ->
     Ok(())
 }
 
+/// Information about a new entry version that should be sent to the server.
 struct AddVersionsTaskItem {
+    /// If `true`, this is part of a sync operation, so local database will be updated
+    /// after upload. If `false`, this is a one-time upload, so local database will not
+    /// be updated.
     is_mount: bool,
     version: AddVersion,
     local_path: SanitizedLocalPath,
     local_entry_info: LocalEntry,
 }
 
+/// Receives new versions, accumulates them in batches and sends requests to the server.
 async fn add_versions_task(
     ctx: Arc<Ctx>,
     mut receiver: mpsc::Receiver<(AddVersionsTaskItem, Option<oneshot::Receiver<()>>)>,
@@ -521,6 +552,7 @@ async fn add_versions_task(
     error_sender.unwrap_or_notify(r).await;
 }
 
+/// Upload a versions batch to the server, update local database and counters.
 async fn add_versions_batch(ctx: &Ctx, items: Vec<AddVersionsTaskItem>) -> Result<()> {
     let results = ctx
         .client

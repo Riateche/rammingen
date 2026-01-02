@@ -20,6 +20,9 @@ const KEY_NOTIFICATION_STATS: [u8; 4] = [0, 0, 0, 2];
 const KEY_SERVER_ID: [u8; 4] = [0, 0, 0, 3];
 
 /// Local storage for local file metadata and server data cache.
+///
+/// The database object is also used as a system-wide lock. It ensures that
+/// rammingen commands can never run concurrently.
 pub struct Db {
     /// Main database tree. Must be stored here to prevent database from closing.
     db: sled::Db,

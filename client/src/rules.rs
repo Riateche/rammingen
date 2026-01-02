@@ -44,6 +44,7 @@ impl Rules {
         }
     }
 
+    /// Returns whether `path` matches any rules.
     fn matches_inner(&mut self, path: &SanitizedLocalPath) -> Result<bool> {
         if path == &self.root {
             return Ok(false);
@@ -61,7 +62,7 @@ impl Rules {
         }
 
         for rule in &self.rules {
-            if rule.matches(path)? {
+            if rule.matches(path) {
                 return Ok(true);
             }
         }
@@ -76,35 +77,17 @@ pub enum Rule {
     NameMatches(#[serde(with = "serde_regex")] Regex),
     PathEquals(SanitizedLocalPath),
     PathMatches(#[serde(with = "serde_regex")] Regex),
-    SubdirsOf {
-        path: SanitizedLocalPath,
-        except: Vec<String>,
-    },
 }
 
 impl Rule {
-    fn matches(&self, path: &SanitizedLocalPath) -> Result<bool> {
+    fn matches(&self, path: &SanitizedLocalPath) -> bool {
         let name = path.file_name().unwrap_or(path.as_str());
-        let r = match self {
+        match self {
             Rule::NameEquals(rule) => rule == name,
             Rule::NameMatches(rule) => rule.is_match(name),
             Rule::PathEquals(rule) => rule == path,
             Rule::PathMatches(rule) => rule.is_match(path.as_str()),
-            Rule::SubdirsOf {
-                path: rule_path,
-                except,
-            } =>
-            {
-                #[expect(clippy::print_stdout, reason = "tmp")]
-                if let Some(parent) = path.parent()? {
-                    println!("path={path:?}, parent={parent:?}, rule_path={rule_path:?}");
-                    (rule_path == &parent) && !except.iter().any(|ex| ex == name)
-                } else {
-                    false
-                }
-            }
-        };
-        Ok(r)
+        }
     }
 }
 
@@ -178,7 +161,7 @@ mod tests {
     fn with_subdirs() {
         let mut rules = rules(
             r#"[
-                { subdirs_of: { path: "/data/1/projects", except: ["p1", "p2"] } },
+                { path_equals: "/data/1/projects/p3" },
             ]"#,
         );
         i(&mut rules, "1");

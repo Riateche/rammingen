@@ -22,12 +22,21 @@ use {
 };
 
 type OptionDynTerm = Option<Box<dyn Term + Send + Sync>>;
+
 static GLOBAL_TERM: LazyLock<Arc<Mutex<OptionDynTerm>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
 
+/// A `Term` instance that prints to the global terminal.
+///
+/// On Linux, macOS, and Windows, it prints to stdout.
+/// On Android, it sends data to the app UI.
 pub struct GlobalTerm(ArcMutexGuard<RawMutex, Option<Box<dyn Term + Send + Sync>>>);
 
 impl Term for GlobalTerm {
+    /// Set description of the current operation.
+    ///
+    /// This replaces any previous status.
+    ///
     /// # Panics
     ///
     /// Panics if global term is uninitialized.
@@ -40,6 +49,8 @@ impl Term for GlobalTerm {
             .set_status(status);
     }
 
+    /// Remove current status.
+    ///
     /// # Panics
     ///
     /// Panics if global term is uninitialized.
@@ -52,6 +63,8 @@ impl Term for GlobalTerm {
             .clear_status();
     }
 
+    /// Add a log line.
+    ///
     /// # Panics
     ///
     /// Panics if global term is uninitialized.
@@ -65,21 +78,29 @@ impl Term for GlobalTerm {
     }
 }
 
+/// Access the global terminal.
 #[must_use]
 #[inline]
 pub fn term() -> GlobalTerm {
     GlobalTerm(Mutex::lock_arc(&GLOBAL_TERM))
 }
 
+/// Initialize the global terminal backend.
+///
+/// If another backend object was set earlier, it will be removed and dropped.
 #[inline]
 pub fn set_term(term: Option<Box<dyn Term + Send + Sync>>) {
     *GLOBAL_TERM.lock() = term;
 }
 
+/// Sets a status for the global terminal and clears it when it goes out of scope.
 #[must_use]
 pub struct StatusGuard;
 
 impl StatusGuard {
+    /// Set description of the current operation.
+    ///
+    /// This replaces any previous status.
     #[inline]
     pub fn set(&self, status: impl Display) {
         term().set_status(&status.to_string());
@@ -93,17 +114,22 @@ impl Drop for StatusGuard {
     }
 }
 
+/// Set a status for the global terminal.
+///
+/// The returned `StatusGuard` must be retained until the operation is complete.
 #[inline]
 pub fn set_status(status: impl Display) -> StatusGuard {
     term().set_status(&status.to_string());
     StatusGuard
 }
 
+/// Remove current status from the global terminal.
 #[inline]
 pub fn clear_status() {
     term().clear_status();
 }
 
+/// Updates status for the global terminal and clears it when it goes out of scope.
 pub struct StatusUpdaterGuard(Option<oneshot::Sender<()>>);
 
 impl Drop for StatusUpdaterGuard {
@@ -115,6 +141,11 @@ impl Drop for StatusUpdaterGuard {
     }
 }
 
+/// Set current status updater function for the global terminal.
+///
+/// The `updater` function will be called periodically until the `StatusUpdaterGuard`
+/// returned from this function is dropped. The output of `updater` will be set
+/// as the current status.
 #[inline]
 pub fn set_status_updater(
     mut updater: impl FnMut() -> String + Send + 'static,
@@ -137,6 +168,7 @@ pub fn set_status_updater(
     StatusUpdaterGuard(Some(sender))
 }
 
+/// A `tracing_subscriber` layer that forwards logs to the global terminal.
 pub struct TermLayer;
 
 #[expect(clippy::absolute_paths, reason = "for clarity")]
@@ -183,21 +215,31 @@ impl Visit for DebugVisitor<'_> {
     }
 }
 
+/// A terminal backend.
 pub trait Term {
+    /// Set description of the current operation.
+    ///
+    /// This replaces any previous status.
+    ///
     /// # Panics
     ///
     /// Panics if there was an error in the underlying terminal implementation.
     fn set_status(&mut self, status: &str);
+    /// Remove current status.
+    ///
     /// # Panics
     ///
     /// Panics if there was an error in the underlying terminal implementation.
     fn clear_status(&mut self);
+    /// Add a log line.
+    ///
     /// # Panics
     ///
     /// Panics if there was an error in the underlying terminal implementation.
     fn write(&mut self, level: Level, text: &str);
 }
 
+/// A terminal backend that prints to stdout.
 pub struct StdoutTerm {
     stdout: Stdout,
     current_status: Option<String>,
