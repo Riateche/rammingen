@@ -5,7 +5,7 @@ use {
         info::pretty_size,
         path::SanitizedLocalPath,
         rules::Rules,
-        symlinks_enabled,
+        symlinks_supported,
         term::{set_status, set_status_updater},
         unix_mode,
     },
@@ -243,7 +243,7 @@ fn upload_inner<'a>(
                 modified.with_context(|| format!("file {:?} keeps updating", local_path))?;
             let modified_datetime = DateTimeUtc::from(modified);
             let unix_mode = unix_mode(&metadata);
-            let is_symlink = if symlinks_enabled() {
+            let is_symlink = if symlinks_supported() {
                 Some(metadata.is_symlink())
             } else {
                 None
@@ -260,7 +260,7 @@ fn upload_inner<'a>(
             });
 
             if maybe_changed {
-                let file_data = if symlinks_enabled() && metadata.is_symlink() {
+                let file_data = if symlinks_supported() && metadata.is_symlink() {
                     maybe_block_in_place(|| {
                         let link_content = fs_err::read_link(local_path)?;
                         let link_content = link_content
@@ -552,17 +552,18 @@ async fn add_versions_batch(ctx: &Ctx, items: Vec<AddVersionsTaskItem>) -> Resul
     Ok(())
 }
 
-#[cfg(unix)]
 fn is_special_file(file_type: &FileType) -> bool {
-    use std::os::unix::fs::FileTypeExt;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
 
-    file_type.is_block_device()
-        || file_type.is_char_device()
-        || file_type.is_fifo()
-        || file_type.is_socket()
-}
-
-#[cfg(not(unix))]
-fn is_special_file(_file_type: &FileType) -> bool {
-    false
+        file_type.is_block_device()
+            || file_type.is_char_device()
+            || file_type.is_fifo()
+            || file_type.is_socket()
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
 }

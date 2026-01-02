@@ -20,10 +20,13 @@ use {
     tracing::{error, info},
 };
 
+/// List of all known sources (client IDs) fetched from the server.
 struct Sources(Vec<SourceInfo>);
 
 impl Sources {
-    fn format(&self, id: SourceId) -> String {
+    /// Returns the source name corresponding to `id`, falling back to debug representation of `id`
+    /// if the name was not found.
+    fn source_name(&self, id: SourceId) -> String {
         if let Some(source) = self.0.iter().find(|s| s.id == id) {
             source.name.clone()
         } else {
@@ -108,7 +111,7 @@ pub async fn ls(ctx: &Ctx, path: &str, show_deleted: bool) -> Result<()> {
     let encrypted = ctx.cipher.encrypt_path(&path)?;
     info!("Encrypted archive path: {}", encrypted);
     info!("Recorded at: {}", pretty_time(main_entry.recorded_at)?);
-    info!("Source id: {}", sources.format(main_entry.source_id));
+    info!("Source id: {}", sources.source_name(main_entry.source_id));
     info!("Record trigger: {:?}", main_entry.record_trigger);
     if let EntryState::Exists(kind) = main_entry.state {
         match kind {
@@ -197,6 +200,7 @@ pub const DATE_TIME_FORMAT: &str = "%Y-%m-%d_%H:%M:%S";
 
 fn pretty_time(value: DateTimeUtc) -> anyhow::Result<impl Display> {
     let mut local = DateTime::<Local>::from(value);
+    // Round up to second.
     if local.nanosecond() != 0 {
         local = local
             .trunc_subsecs(0)
@@ -230,9 +234,7 @@ fn pretty_status(entry: &LocalArchiveEntry) -> Result<String> {
 }
 
 pub fn pretty_size(size: u64) -> impl Display {
-    Byte::from_u64(size)
-        .get_appropriate_unit(UnitType::Binary)
-        .to_string()
+    Byte::from_u64(size).get_appropriate_unit(UnitType::Binary)
 }
 
 pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Result<()> {
@@ -258,7 +260,7 @@ pub async fn list_versions(ctx: &Ctx, path: &ArchivePath, recursive: bool) -> Re
             recorded_at,
             status,
             trigger,
-            sources.format(entry.source_id)
+            sources.source_name(entry.source_id)
         ];
         if recursive {
             let relative_path = if let Some(parent) = &parent {

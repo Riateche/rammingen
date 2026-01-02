@@ -104,6 +104,7 @@ fn fetch_keyring_secret(kind: SecretKind) -> anyhow::Result<String> {
     }
 }
 
+#[derive(Debug)]
 pub struct Secrets {
     pub access_token: AccessToken,
     pub encryption_key: EncryptionKey,
@@ -136,7 +137,7 @@ pub async fn run(command: Command, config: Config, secrets: Option<Secrets>) -> 
         config
             .access_token
             .clone()
-            .context("missing `access_token` or `use_keyring` in config")?
+            .context("expected either `access_token` or `use_keyring` in config")?
     };
 
     let encryption_key = if let Some(secrets) = &secrets {
@@ -147,7 +148,7 @@ pub async fn run(command: Command, config: Config, secrets: Option<Secrets>) -> 
         config
             .encryption_key
             .clone()
-            .context("missing `encryption_key` or `use_keyring` in config")?
+            .context("expected either `encryption_key` or `use_keyring` in config")?
     };
 
     let ctx = Arc::new(Ctx {
@@ -272,28 +273,32 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_family = "unix")]
+/// Returns file mode if it's supported on the current OS, or `None` otherwise.
 #[must_use]
 #[inline]
 pub fn unix_mode(metadata: &Metadata) -> Option<u32> {
-    use std::os::unix::prelude::PermissionsExt;
+    #[cfg(target_family = "unix")]
+    {
+        use std::os::unix::prelude::PermissionsExt;
 
-    Some(metadata.permissions().mode())
+        Some(metadata.permissions().mode())
+    }
+    #[cfg(not(target_family = "unix"))]
+    {
+        None
+    }
 }
 
-#[cfg(not(target_family = "unix"))]
 #[must_use]
 #[inline]
-pub fn unix_mode(_metadata: &Metadata) -> Option<u32> {
-    None
-}
-
-#[must_use]
-#[inline]
-pub fn symlinks_enabled() -> bool {
+pub fn symlinks_supported() -> bool {
+    // Technically Windows supports symlinks, but creating them requires extra privileges.
+    // For now we don't attempt to support them.
     cfg!(target_family = "unix")
 }
 
+/// Set up a tracing subscriber that that logs to the specified `log_file`,
+/// or to stdout if `log_file` is `None`.
 #[inline]
 #[expect(clippy::print_stderr, reason = "intended")]
 #[expect(clippy::absolute_paths, reason = "for clarity")]
@@ -314,9 +319,9 @@ pub fn setup_logger(log_file: Option<PathBuf>, log_filter: String) -> Result<()>
     Ok(())
 }
 
-fn show_notification(title: &str, text: &str) {
+fn show_desktop_notification(title: &str, text: &str) {
     #[cfg(target_os = "macos")]
-    init_notifications();
+    init_desktop_notifications();
 
     if !cfg!(target_os = "android") {
         let r = Notification::new().summary(title).body(text).show();
@@ -327,7 +332,7 @@ fn show_notification(title: &str, text: &str) {
 }
 
 #[cfg(target_os = "macos")]
-fn init_notifications() {
+fn init_desktop_notifications() {
     use std::sync::Once;
 
     static INIT: Once = Once::new();
@@ -338,6 +343,7 @@ fn init_notifications() {
     });
 }
 
+/// Round duration down to minute.
 #[expect(clippy::arithmetic_side_effects, reason = "never fails")]
 fn truncate_duration_to_minute(duration: Duration) -> Duration {
     let secs = duration.as_secs() / 60 * 60;

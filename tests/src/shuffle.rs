@@ -2,7 +2,7 @@ use {
     crate::{diff::is_leftover_dir_with_ignored_files, is_ignored},
     anyhow::Result,
     fs_err::{create_dir, read_dir, remove_dir_all, remove_file, rename, symlink_metadata, write},
-    rammingen::{path::PathExt, symlinks_enabled},
+    rammingen::{path::PathExt, symlinks_supported},
     rand::{
         Rng,
         distr::{Alphanumeric, SampleString, weighted::WeightedIndex},
@@ -116,7 +116,7 @@ fn create(dir: &Path, rng: &mut impl Rng) -> Result<()> {
         // dir
         create_dir(&path)?;
         debug!("Created dir {}", path.display());
-    } else if rng.random_bool(0.1) && symlinks_enabled() {
+    } else if rng.random_bool(0.1) && symlinks_supported() {
         // symlink
         #[cfg(target_family = "unix")]
         {

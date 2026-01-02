@@ -3,7 +3,7 @@ use {
         Ctx,
         path::SanitizedLocalPath,
         rules::Rules,
-        symlinks_enabled,
+        symlinks_supported,
         term::{set_status, set_status_updater},
     },
     anyhow::{Context, Result, anyhow, bail},
@@ -326,6 +326,7 @@ async fn download_inner(
                         .context("missing content info for existing file")?;
                     let (sender, receiver) = oneshot::channel();
                     file_receiver = Some(receiver);
+                    // Delegate file download to a task so that we can download multiple files at once.
                     let _ = ctx
                         .file_download_sender
                         .send(DownloadFileTask {
@@ -337,6 +338,11 @@ async fn download_inner(
                         .await;
                 }
             }
+            // Actual local file changes can only be done after the files have been downloaded.
+            // We delegate all local file changes to a task that will process them in the same order
+            // as they were added here. However, it will wait for download tasks to complete.
+            // Using a separate task here allows us to keep processing the next entries without waiting
+            // for previous downloads to complete.
             let _ = ctx
                 .finalize_sender
                 .send(FinalizeDownloadTaskItem {
@@ -548,7 +554,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                     return Ok(());
                 }
             }
-            if symlinks_enabled() && content.is_symlink == Some(true) {
+            if symlinks_supported() && content.is_symlink == Some(true) {
                 #[cfg(target_family = "unix")]
                 #[expect(clippy::absolute_paths, reason = "single use")]
                 {

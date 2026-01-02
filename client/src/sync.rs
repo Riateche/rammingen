@@ -5,7 +5,7 @@ use {
         download::download_latest,
         pull_updates::pull_updates,
         rules::Rules,
-        show_notification, truncate_duration_to_minute,
+        show_desktop_notification, truncate_duration_to_minute,
         upload::{find_local_deletions, upload},
     },
     anyhow::{Context, Result},
@@ -21,7 +21,7 @@ pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     sync_inner(ctx, dry_run).await.inspect_err(|err| {
         if ctx.config.enable_desktop_notifications {
             if dry_run {
-                show_notification("rammingen dry run failed", &err.to_string());
+                show_desktop_notification("rammingen dry run failed", &err.to_string());
             } else {
                 let duration_since_last_sync = duration_since_last_sync(ctx)
                     .inspect_err(|error| warn!(?error, "duration_since_last_sync failed"))
@@ -38,7 +38,7 @@ pub async fn sync(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                     .expect("write failed");
                 }
 
-                show_notification("rammingen sync failed", &text);
+                show_desktop_notification("rammingen sync failed", &text);
             }
         }
     })
@@ -101,7 +101,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
     if ctx.config.enable_desktop_notifications {
         if dry_run {
             let report = NotificationCounters::from(&ctx.final_counters).report(dry_run, ctx);
-            show_notification("rammingen dry run complete", &report);
+            show_desktop_notification("rammingen dry run complete", &report);
         } else {
             let mut stats = ctx
                 .db
@@ -135,7 +135,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
                 } else {
                     String::new()
                 };
-                show_notification(
+                show_desktop_notification(
                     "rammingen sync complete",
                     &format!(
                         "{}{}",

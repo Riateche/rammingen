@@ -468,20 +468,23 @@ async fn auth(ctx: &Context, request: &Request<body::Incoming>) -> Result<Source
         .context("invalid bearer token")
 }
 
-#[cfg(target_os = "linux")]
-#[expect(
+/// Linux: /etc
+/// Windows: %APPDATA% (%USERPROFILE%\AppData\Roaming);
+/// macOS: $HOME/Library/Application Support
+#[allow(
     clippy::unnecessary_wraps,
-    reason = "must have same signature on all platforms"
+    clippy::allow_attributes,
+    reason = "must have the same signature on all platforms"
 )]
 fn default_config_dir() -> Result<PathBuf> {
-    Ok("/etc".into())
-}
-
-// Windows: %APPDATA% (%USERPROFILE%\AppData\Roaming);
-// macOS: $HOME/Library/Application Support
-#[cfg(not(target_os = "linux"))]
-fn default_config_dir() -> Result<PathBuf> {
-    dirs::config_dir().context("failed to get config dir")
+    #[cfg(target_os = "linux")]
+    {
+        Ok("/etc".into())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        dirs::config_dir().context("failed to get config dir")
+    }
 }
 
 #[inline]
