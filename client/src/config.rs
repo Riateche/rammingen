@@ -16,6 +16,7 @@ use {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountPoint {
     /// Local path that should be synchrionized.
+    /// The path must be absolute.
     pub local_path: CanonicalizedLocalPath,
     /// Archive path for synchronization.
     ///
@@ -52,7 +53,7 @@ pub struct Config {
     /// Never share the encryption key with others. Never store it on the same server as
     /// your rammingen server.
     pub encryption_key: Option<EncryptionKey>,
-    /// URL to your rammingen server.
+    /// URL of your rammingen server.
     ///
     /// HTTPS must be used to ensure secure connection.
     pub server_url: Url,
@@ -69,6 +70,7 @@ pub struct Config {
     #[serde(with = "humantime_serde", default = "default_sync_interval")]
     pub sync_interval: Duration,
     /// Override path to the local metadata storage.
+    /// The path must be absolute.
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
     /// Override log path.
@@ -76,6 +78,7 @@ pub struct Config {
     pub log_file: Option<PathBuf>,
     /// Override log filter in
     /// [tracing format](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html).
+    /// The path must be absolute.
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
     /// Warn when uploading files that are larger than the specified size.

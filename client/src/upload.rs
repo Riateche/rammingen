@@ -596,6 +596,7 @@ fn is_special_file(file_type: &FileType) -> bool {
     }
     #[cfg(not(unix))]
     {
+        let _ = file_type;
         false
     }
 }

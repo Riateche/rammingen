@@ -40,6 +40,22 @@ use {
 
 thread_local!(static JNI_ENV: Cell<*mut sys::JNIEnv> = const { Cell::new(ptr::null_mut()) });
 
+/// Execute a rammingen client command.
+///
+/// This is the entrypoint of the native rammingen library on Android.
+///
+/// - `app_dir` is the absolute path to the directory on the primary
+///   shared/external storage device where the application can place persistent files it owns.
+/// - `storage_root` is the directory that contains all mount points. It should be inside `app_dir`.
+/// - `config_file_content` is the JSON5 content of the Android client config.
+/// - `access_token` is the token used to access the rammingen server API.
+/// - `encryption_key` is the key used to encrypt file contents and metadata.
+/// - `args` is the command line arguments for the client. The arguments will be parsed from this string
+///   according to the shell syntax.
+/// - `log_receiver` is the Java object that will receive status updates and logs
+///   while the client is running.
+///
+/// Returns `true` if the operation succeeded.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
     mut env: JNIEnv,
@@ -80,6 +96,11 @@ pub extern "system" fn Java_me_darkecho_rammingen_NativeBridge_run(
     }
 }
 
+/// Set up a tracing subscriber that writes to `log_file` if it's specified.
+/// Adds a panic hook that sends the panic message to tracing.
+///
+/// The initialization is only done once. This function does nothing
+/// on subsequent calls.
 fn setup_logger_and_panic_hook(
     log_file: Option<&Path>,
     log_filter: Option<&str>,
@@ -101,6 +122,8 @@ fn setup_logger_and_panic_hook(
     setup_logger_result
 }
 
+/// Send an Android log message using
+/// [`Log.d`](https://developer.android.com/reference/android/util/Log#d(java.lang.String,%20java.lang.String)).
 fn log_to_android(env: &mut JNIEnv<'_>, text: impl Display) {
     let log_class = env
         .find_class("android/util/Log")
@@ -121,6 +144,7 @@ fn log_to_android(env: &mut JNIEnv<'_>, text: impl Display) {
     .unwrap_or_else(|e| env.fatal_error(format!("Log.d failed: {e:?}")));
 }
 
+/// See [`Java_me_darkecho_rammingen_NativeBridge_run`] logs.
 fn run(
     env: &mut JNIEnv<'_>,
     app_dir: &JString,
@@ -211,10 +235,11 @@ fn level_to_i32(level: Level) -> i32 {
     }
 }
 
-struct NativeBridgeTerm {
-    log_receiver: GlobalRef,
-}
-
+/// Call `f` with current `JNIEnv`.
+///
+/// Current `JNIEnv` is only known during the [`Java_me_darkecho_rammingen_NativeBridge_run`] call
+/// and only in the thread where it's running. If called outside of such a call or from another thread,
+/// `f` won't be executed.
 fn with_jni_env(f: impl FnOnce(JNIEnv<'_>)) {
     JNI_ENV.with(|jni_env| {
         // Safety: JNI_ENV is cleared at the end of the native bridge call,
@@ -226,7 +251,15 @@ fn with_jni_env(f: impl FnOnce(JNIEnv<'_>)) {
     });
 }
 
+/// A terminal backend that sends status and logs to a Java object that implements
+/// `me.darkecho.rammingen.Receiver` interface.
+struct NativeBridgeTerm {
+    /// Object that will receive the updates.
+    log_receiver: GlobalRef,
+}
+
 impl Term for NativeBridgeTerm {
+    /// Set description of the current operation.
     fn set_status(&mut self, status: &str) {
         with_jni_env(|mut env| {
             let status = env
@@ -242,10 +275,12 @@ impl Term for NativeBridgeTerm {
         });
     }
 
+    /// Remove current status.
     fn clear_status(&mut self) {
         self.set_status("");
     }
 
+    /// Add a log line.
     fn write(&mut self, level: Level, text: &str) {
         with_jni_env(|mut env| {
             let text = env
@@ -262,6 +297,12 @@ impl Term for NativeBridgeTerm {
     }
 }
 
+/// Convert Android JSON5 config content to rammingen client config.
+///
+/// - `app_dir` is the absolute path to the directory on the primary
+///   shared/external storage device where the application can place persistent files it owns.
+/// - `storage_root` is the directory that contains all mount points. It should be inside `app_dir`.
+/// - `config_file_content` is the JSON5 content of the Android client config.
 fn prepare_config(
     app_dir: &Path,
     storage_root: &Path,
@@ -337,35 +378,69 @@ fn prepare_config(
     })
 }
 
+/// Android client configuration. It's similar to [`rammingen::config::Config`],
+/// but some fields are not allowed, and some paths are relative
+/// instead of absolute.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AndroidConfig {
+    /// Not allowed.
     #[serde(default)]
     pub use_keyring: Option<bool>,
+    /// Exclude rules that apply to all mount points.
     pub always_exclude: Vec<Rule>,
+    /// List of mount points for `sync` command.
     pub mount_points: Vec<AndroidMountPoint>,
+    /// Not allowed.
     pub encryption_key: Option<EncryptionKey>,
+    /// URL of your rammingen server.
+    ///
+    /// HTTPS must be used to ensure secure connection.
     pub server_url: Url,
+    /// Not allowed.
     pub access_token: Option<AccessToken>,
+    /// Not allowed.
     #[serde(default, with = "humantime_serde")]
     pub sync_interval: Option<Duration>,
+    /// Override path to the local metadata storage.
+    /// The path must be relative to the app's external files dir.
     #[serde(default)]
     pub local_db_path: Option<PathBuf>,
+    /// Override log path.
     #[serde(default)]
     pub log_file: Option<PathBuf>,
+    /// Override log filter in
+    /// [tracing format](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html).
+    /// The path must be relative to the app's external files dir.
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
+    /// Warn when uploading files that are larger than the specified size.
+    ///
+    /// Examples: `"10 MB"`, `"10 MiB", "10 GB"`. Default value is `50 MB`.
     #[serde(default = "default_warn_about_files_larger_than")]
     pub warn_about_files_larger_than: Byte,
+    /// Not allowed.
     pub enable_desktop_notifications: Option<bool>,
+    /// Not allowed.
     #[serde(default, with = "humantime_serde")]
     pub desktop_notification_interval: Option<Duration>,
 }
 
+/// Configuration of a mount point.
+///
+/// Mount point is a pair of local path and archive path.
+/// `rammingen sync` and `rammingen auto-sync` will perform
+/// two-way synchronization of these paths.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AndroidMountPoint {
+    /// Local path that should be synchrionized.
+    /// The path must be relative to the file storage dir (inside the app's external files dir).
     pub local_path: PathBuf,
+    /// Archive path for synchronization.
+    ///
+    /// Archive paths are universal for all clients connected to the same server.
     #[serde(with = "serde_path_with_prefix")]
     pub archive_path: ArchivePath,
+    /// Exclude rules for this mount point.
     #[serde(default)]
     pub exclude: Vec<Rule>,
 }

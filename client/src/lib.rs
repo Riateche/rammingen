@@ -295,6 +295,7 @@ pub fn unix_mode(metadata: &Metadata) -> Option<u32> {
     }
     #[cfg(not(target_family = "unix"))]
     {
+        let _ = metadata;
         None
     }
 }
