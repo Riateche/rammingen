@@ -15,7 +15,7 @@ use {
             Config, MountPoint, default_desktop_notification_interval, default_log_filter,
             default_sync_interval, default_warn_about_files_larger_than,
         },
-        path::SanitizedLocalPath,
+        path::CanonicalizedLocalPath,
         rules::Rule,
         setup_logger,
         term::{Term, set_term, term},
@@ -309,10 +309,9 @@ fn prepare_config(
             .into_iter()
             .map(|mount_point| {
                 Ok(MountPoint {
-                    local_path: SanitizedLocalPath::new(
+                    local_path: CanonicalizedLocalPath::new(
                         storage_root.join(&mount_point.local_path),
-                    )?
-                    .canonicalize()?,
+                    )?,
                     archive_path: mount_point.archive_path,
                     exclude: mount_point.exclude,
                 })

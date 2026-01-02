@@ -1,5 +1,5 @@
 use {
-    crate::{info::DATE_TIME_FORMAT, path::SanitizedLocalPath},
+    crate::info::DATE_TIME_FORMAT,
     anyhow::{Context, Result},
     chrono::{DateTime, FixedOffset, Local, NaiveDateTime, TimeZone},
     clap::{Parser, Subcommand},
@@ -56,20 +56,20 @@ pub enum Command {
     AutoSync,
     /// Upload a file or directory to the server.
     Upload {
-        local_path: SanitizedLocalPath,
+        local_path: PathBuf,
         archive_path: ArchivePath,
     },
     /// Download a file or directory from the server.
     Download {
         archive_path: ArchivePath,
-        local_path: SanitizedLocalPath,
+        local_path: PathBuf,
         /// Timestamp of the version to be downloaded (in local time zone).
         /// If omitted, the latest version is downloaded.
         /// Accepted timestamp format: %Y-%m-%d_%H:%M:%S
         version: Option<DateTimeArg>,
     },
     /// Show last sync time or show information about a local path.
-    LocalStatus { path: Option<SanitizedLocalPath> },
+    LocalStatus { path: Option<PathBuf> },
     /// Show information about an archive path.
     Ls {
         path: String,

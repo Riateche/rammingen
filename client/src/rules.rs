@@ -1,5 +1,5 @@
 use {
-    crate::path::SanitizedLocalPath,
+    crate::path::{CanonicalizedLocalPath, SanitizedLocalPath},
     anyhow::Result,
     regex::Regex,
     serde::{Deserialize, Serialize},
@@ -75,7 +75,7 @@ impl Rules {
 pub enum Rule {
     NameEquals(String),
     NameMatches(#[serde(with = "serde_regex")] Regex),
-    PathEquals(SanitizedLocalPath),
+    PathEquals(CanonicalizedLocalPath),
     PathMatches(#[serde(with = "serde_regex")] Regex),
 }
 
@@ -85,7 +85,7 @@ impl Rule {
         match self {
             Rule::NameEquals(rule) => rule == name,
             Rule::NameMatches(rule) => rule.is_match(name),
-            Rule::PathEquals(rule) => rule == path,
+            Rule::PathEquals(rule) => &**rule == path,
             Rule::PathMatches(rule) => rule.is_match(path.as_str()),
         }
     }

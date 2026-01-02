@@ -48,7 +48,7 @@ pub fn to_archive_path<'a>(
     mount_points: &'a mut [(&MountPoint, Rules)],
 ) -> Result<Option<(ArchivePath, &'a mut Rules)>> {
     for (mount_point, rules) in mount_points {
-        if local_path == &mount_point.local_path {
+        if local_path == mount_point.local_path.inner() {
             return Ok(Some((mount_point.archive_path.clone(), rules)));
         }
         if let Ok(relative) = local_path.as_path().strip_prefix(&mount_point.local_path) {

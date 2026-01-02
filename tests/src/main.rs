@@ -13,7 +13,7 @@ use {
     portpicker::pick_unused_port,
     rammingen::{
         config::{MountPoint, default_desktop_notification_interval, default_sync_interval},
-        path::{PathExt, SanitizedLocalPath},
+        path::PathExt,
         rules::Rule,
         setup_logger,
         term::{StdoutTerm, clear_status, set_term},
@@ -318,9 +318,7 @@ async fn test_shuffle(ctx: Context, rng: &mut impl Rng) -> Result<()> {
                     let archive_path =
                         archive_subpath(&ctx.archive_mount_path, &expected, &path_in_expected)?;
                     debug!("Checking upload ({archive_path})");
-                    client1
-                        .upload(SanitizedLocalPath::new(&path_for_upload)?, archive_path)
-                        .await?;
+                    client1.upload(path_for_upload, archive_path).await?;
                 }
                 2 => {
                     // move path
@@ -625,7 +623,7 @@ impl ClientData {
     async fn download(
         &self,
         archive_path: ArchivePath,
-        local_path: SanitizedLocalPath,
+        local_path: PathBuf,
         version: Option<DateTimeUtc>,
     ) -> Result<()> {
         rammingen::run(
@@ -640,11 +638,7 @@ impl ClientData {
         .await
     }
 
-    async fn upload(
-        &self,
-        local_path: SanitizedLocalPath,
-        archive_path: ArchivePath,
-    ) -> Result<()> {
+    async fn upload(&self, local_path: PathBuf, archive_path: ArchivePath) -> Result<()> {
         rammingen::run(
             rammingen::cli::Command::Upload {
                 local_path,

@@ -49,7 +49,7 @@ pub async fn local_status(ctx: &Ctx, path: Option<SanitizedLocalPath>) -> Result
             .map(|mount_point| {
                 let rules = Rules::new(
                     &[&ctx.config.always_exclude, &mount_point.exclude],
-                    mount_point.local_path.clone(),
+                    mount_point.local_path.inner().clone(),
                 );
                 (mount_point, rules)
             })

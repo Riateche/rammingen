@@ -65,7 +65,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
         .map(|mount_point| {
             let rules = Rules::new(
                 &[&ctx.config.always_exclude, &mount_point.exclude],
-                mount_point.local_path.clone(),
+                mount_point.local_path.inner().clone(),
             );
             (mount_point, rules)
         })
@@ -94,7 +94,7 @@ async fn sync_inner(ctx: &Arc<Ctx>, dry_run: bool) -> Result<()> {
             &mount_point.local_path,
             &mut Rules::new(
                 &[&ctx.config.always_exclude, &mount_point.exclude],
-                mount_point.local_path.clone(),
+                mount_point.local_path.inner().clone(),
             ),
             true,
             dry_run,

@@ -1,5 +1,5 @@
 use {
-    crate::{path::SanitizedLocalPath, rules::Rule},
+    crate::{path::CanonicalizedLocalPath, rules::Rule},
     byte_unit::Byte,
     humantime::parse_duration,
     rammingen_protocol::{AccessToken, ArchivePath, EncryptionKey, serde_path_with_prefix},
@@ -16,7 +16,7 @@ use {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountPoint {
     /// Local path that should be synchrionized.
-    pub local_path: SanitizedLocalPath,
+    pub local_path: CanonicalizedLocalPath,
     /// Archive path for synchronization.
     ///
     /// Archive paths are universal for all clients connected to the same server.

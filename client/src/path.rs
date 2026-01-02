@@ -5,6 +5,7 @@ use {
     std::{
         fmt::{self, Display, Formatter},
         io,
+        ops::Deref,
         path::{Component, Path, PathBuf},
         str::FromStr,
     },
@@ -65,7 +66,9 @@ impl Display for SanitizedLocalPath {
 }
 
 /// Canonicalize a path that may not exist yet.
-fn canonicalize(path: &Path) -> Result<PathBuf> {
+#[inline]
+pub fn canonicalize(path: impl AsRef<Path>) -> Result<PathBuf> {
+    let path = path.as_ref();
     // We intentionally ignore I/O errors here because
     // it can fail with a "not a directory" error if a parent path is a file.
     if path.try_exists_nofollow().unwrap_or(false) {
@@ -216,9 +219,7 @@ impl<'de> Deserialize<'de> for SanitizedLocalPath {
         D: serde::Deserializer<'de>,
     {
         let path = PathBuf::deserialize(deserializer)?;
-        Self::new(path)
-            .and_then(|path| path.canonicalize())
-            .map_err(D::Error::custom)
+        Self::new(path).map_err(D::Error::custom)
     }
 }
 
@@ -228,6 +229,75 @@ impl FromStr for SanitizedLocalPath {
     #[inline]
     fn from_str(s: &str) -> Result<Self> {
         Self::new(s)?.canonicalize()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct CanonicalizedLocalPath(SanitizedLocalPath);
+
+impl CanonicalizedLocalPath {
+    /// Creates a new path from `path` and canonicalizes it.
+    ///
+    /// `path` must satisfy the `SanitizedLocalPath` constraints.
+    #[inline]
+    pub fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        SanitizedLocalPath::new(path)?.canonicalize().map(Self)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn inner(&self) -> &SanitizedLocalPath {
+        &self.0
+    }
+}
+
+impl Deref for CanonicalizedLocalPath {
+    type Target = SanitizedLocalPath;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for CanonicalizedLocalPath {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let path = PathBuf::deserialize(deserializer)?;
+        CanonicalizedLocalPath::new(path).map_err(D::Error::custom)
+    }
+}
+
+impl FromStr for CanonicalizedLocalPath {
+    type Err = anyhow::Error;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self> {
+        CanonicalizedLocalPath::new(s)
+    }
+}
+
+impl AsRef<Path> for CanonicalizedLocalPath {
+    #[inline]
+    fn as_ref(&self) -> &Path {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<str> for CanonicalizedLocalPath {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl AsRef<[u8]> for CanonicalizedLocalPath {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_str().as_bytes()
     }
 }
 

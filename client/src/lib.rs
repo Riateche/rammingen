@@ -16,6 +16,7 @@ use {
         cli::Command,
         db::Db,
         info::{clear_local_cache, local_status, ls},
+        path::{SanitizedLocalPath, canonicalize},
         pull_updates::pull_updates,
         upload::upload,
     },
@@ -181,6 +182,7 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
             local_path,
             archive_path,
         } => {
+            let local_path = SanitizedLocalPath::new(canonicalize(local_path)?)?;
             upload(
                 ctx,
                 &local_path,
@@ -197,6 +199,7 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
             local_path,
             version,
         } => {
+            let local_path = SanitizedLocalPath::new(canonicalize(local_path)?)?;
             let found_any = if let Some(version) = version {
                 download_version(ctx, &archive_path, &local_path, version.0).await?
             } else {
@@ -215,7 +218,14 @@ async fn handle_command(command: Command, ctx: &Arc<Ctx>) -> Result<()> {
                 bail!("no matching entries found");
             }
         }
-        cli::Command::LocalStatus { path } => local_status(ctx, path).await?,
+        cli::Command::LocalStatus { path } => {
+            let path = if let Some(path) = path {
+                Some(SanitizedLocalPath::new(canonicalize(path)?)?)
+            } else {
+                None
+            };
+            local_status(ctx, path).await?;
+        }
         cli::Command::Ls { path, deleted } => ls(ctx, &path, deleted).await?,
         cli::Command::Reset {
             archive_path,
