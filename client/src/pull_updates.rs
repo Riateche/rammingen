@@ -10,6 +10,7 @@ use {
 
 const BATCH_SIZE: usize = 1024;
 
+/// Fetch new entry versions from the server.
 pub async fn pull_updates(ctx: &Ctx) -> Result<()> {
     let _status = set_status("Pulling updates from server");
     let server_id = ctx.client.request(&GetServerStatus).await?.server_id;

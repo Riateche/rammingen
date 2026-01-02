@@ -6,6 +6,7 @@ use {
     std::collections::HashMap,
 };
 
+/// A set of rules for excluding paths from sync.
 #[derive(Debug, Clone)]
 pub struct Rules {
     rules: Vec<Rule>,
@@ -14,6 +15,7 @@ pub struct Rules {
 }
 
 impl Rules {
+    /// Create `Rules` from the list of rules and the local mount path (`root`).
     #[must_use]
     #[inline]
     pub fn new(rules: &[&[Rule]], root: SanitizedLocalPath) -> Self {
@@ -28,6 +30,7 @@ impl Rules {
         }
     }
 
+    /// Returns whether `path` matches any rules.
     #[inline]
     pub fn matches(&mut self, path: &SanitizedLocalPath) -> Result<bool> {
         if let Some(value) = self.cache.get(path) {

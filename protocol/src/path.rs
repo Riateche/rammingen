@@ -311,10 +311,7 @@ impl FromStr for EncryptedArchivePath {
 
 #[cfg(test)]
 mod tests {
-    use {
-        crate::ArchivePath,
-        std::{path::Path, str::FromStr},
-    };
+    use {crate::ArchivePath, std::str::FromStr};
 
     #[test]
     fn parent_path() {
