@@ -10,6 +10,15 @@ use {
     },
 };
 
+/// A constrained version of `PathBuf`.
+///
+/// `SanitizedLocalPath` maintains the following restrictions:
+/// - Path is always valid UTF-8.
+/// - Path is always absolute.
+/// - Path doesn't contain `.` and `..`.
+/// - Path uses the native OS path delimiter. '/' is not allowed on Windows, and
+///   '\' is not allowed on Linux (even though it is technically a valid `Path`).
+/// - Path doesn't contain repeated delimiters (`//`, `\\`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct SanitizedLocalPath(PathBuf);
 
@@ -31,6 +40,13 @@ impl AsRef<Path> for SanitizedLocalPath {
     #[inline]
     fn as_ref(&self) -> &Path {
         self.0.as_ref()
+    }
+}
+
+impl AsRef<str> for SanitizedLocalPath {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
@@ -72,17 +88,49 @@ fn canonicalize(path: &Path) -> Result<PathBuf> {
 }
 
 impl SanitizedLocalPath {
+    /// Returns the canonical representation of a path if it exists, or
+    /// infers the canonical path based on canonical path to the closest existing parent path.
     #[inline]
     pub fn canonicalize(&self) -> Result<Self> {
         let path = canonicalize(&self.0)?;
         Self::new(path)
     }
 
+    /// Converts `Path` to `SanitizedLocalPath` if it satisfies the requirements.
     #[inline]
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let _ = path.cinto_type::<&str>()?;
-
+        if !path.is_absolute() {
+            bail!(
+                "relative path is not allowed in SanitizedLocalPath: {:?}",
+                path
+            );
+        }
+        let path_str = path.cinto_type::<&str>()?;
+        if cfg!(target_os = "windows") {
+            if path_str.contains('/') {
+                bail!(
+                    "'/' is not allowed in SanitizedLocalPath on Windows: {:?}",
+                    path
+                );
+            }
+            if path_str.contains(r"\\") {
+                bail!(
+                    r"'\\' is not allowed in SanitizedLocalPath on Windows: {:?}",
+                    path
+                );
+            }
+        } else {
+            if path_str.contains("//") {
+                bail!("'//' is not allowed in SanitizedLocalPath: {:?}", path);
+            }
+            if path_str.contains('\\') {
+                bail!(
+                    r"'\' is only allowed in SanitizedLocalPath on Windows: {:?}",
+                    path
+                );
+            }
+        }
         if path.components().any(|c| matches!(c, Component::CurDir)) {
             bail!("'/./' is not allowed in SanitizedLocalPath: {:?}", path);
         }
@@ -92,6 +140,9 @@ impl SanitizedLocalPath {
         Ok(Self(path.into()))
     }
 
+    /// Join `self` with `relative_path`.
+    ///
+    /// `relative_path` must be relative and must conform to other constraints of `SanitizedLocalPath`.
     #[inline]
     pub fn join(&self, relative_path: impl AsRef<Path>) -> Result<Self> {
         let relative_path = relative_path.as_ref();
@@ -110,6 +161,7 @@ impl SanitizedLocalPath {
         Self::new(self.0.join(relative_path))
     }
 
+    /// Returns the final component of the path, if there is one.
     #[must_use]
     #[inline]
     #[expect(
@@ -122,6 +174,7 @@ impl SanitizedLocalPath {
             .map(|s| s.cinto().expect("non-unicode path in SanitizedLocalPath"))
     }
 
+    /// Returns the parent path if possible.
     #[inline]
     pub fn parent(&self) -> Result<Option<Self>> {
         if let Some(parent) = self.0.parent() {

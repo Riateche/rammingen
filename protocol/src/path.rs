@@ -9,11 +9,11 @@ use {
 /// Archive path maintains the following constraints:
 ///
 /// - Path is always valid UTF-8.
-/// - Segment separator is always `/`.
 /// - Path is always absolute and starts with `/`.
+/// - Segment separator is always `/`.
 /// - Trailing `/` is not allowed.
 /// - `.` and `..` components are not allowed.
-/// - Empty segments (`//`) are not allowed.
+/// - Repeated delimiters (`//`) are not allowed.
 ///
 /// Internal value is stored as a string without `ar:` prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
@@ -311,7 +311,10 @@ impl FromStr for EncryptedArchivePath {
 
 #[cfg(test)]
 mod tests {
-    use {crate::ArchivePath, std::str::FromStr};
+    use {
+        crate::ArchivePath,
+        std::{path::Path, str::FromStr},
+    };
 
     #[test]
     fn parent_path() {
