@@ -117,7 +117,13 @@ impl SanitizedLocalPath {
                     path
                 );
             }
-            if path_str.contains(r"\\") {
+            // Windows path can start with `\\`,
+            // but the remaining part should not contain `\\`.
+            if path_str
+                .strip_prefix(r"\\")
+                .unwrap_or(path_str)
+                .contains(r"\\")
+            {
                 bail!(
                     r"'\\' is not allowed in SanitizedLocalPath on Windows: {:?}",
                     path
