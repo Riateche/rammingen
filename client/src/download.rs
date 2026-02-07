@@ -5,6 +5,7 @@ use {
         rules::Rules,
         symlinks_enabled,
         term::{set_status, set_status_updater},
+        unix_mode,
     },
     anyhow::{Context, Result, anyhow, bail},
     fs_err::{create_dir, metadata, remove_dir, remove_file, rename},
@@ -506,9 +507,15 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
                 }
             }
 
-            content.modified_at = fs_err::symlink_metadata(&item.local_path)?
-                .modified()?
-                .into();
+            let metadata = fs_err::symlink_metadata(&item.local_path)?;
+            content.modified_at = metadata.modified()?.into();
+            content.is_symlink = if symlinks_enabled() {
+                Some(metadata.is_symlink())
+            } else {
+                None
+            };
+            content.unix_mode = unix_mode(&metadata);
+
             ctx.final_counters
                 .downloaded_bytes
                 .fetch_add(content.encrypted_size, Ordering::SeqCst);
