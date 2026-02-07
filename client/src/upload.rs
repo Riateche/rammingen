@@ -33,7 +33,7 @@ use {
         task::{self},
         time::sleep,
     },
-    tracing::{debug, info, warn},
+    tracing::{debug, info, trace, warn},
 };
 
 const TOO_RECENT_INTERVAL: Duration = Duration::from_millis(100);
@@ -281,6 +281,10 @@ fn upload_inner<'a>(
             });
 
             if maybe_changed {
+                trace!(
+                    "maybe_changed! db_data={:?} kind={:?} modified_datetime={:?} unix_mode={:?} is_symlink={:?}",
+                    db_data, kind, modified_datetime, unix_mode, is_symlink
+                );
                 let file_data = if symlinks_supported() && metadata.is_symlink() {
                     maybe_block_in_place(|| {
                         let link_content = fs_err::read_link(local_path)?;
@@ -330,6 +334,7 @@ fn upload_inner<'a>(
                 });
 
                 if changed {
+                    trace!("changed! local_entry={:?}", local_entry);
                     if ctx.dry_run {
                         if file_data.encrypted_size.into_type::<u128>()
                             > ctx.ctx.config.warn_about_files_larger_than.as_u128()
