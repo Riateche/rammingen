@@ -586,7 +586,7 @@ async fn finalize_item_download(ctx: &Ctx, item: FinalizeDownloadTaskItem) -> Re
 
             let metadata = fs_err::symlink_metadata(&item.local_path)?;
             content.modified_at = metadata.modified()?.into();
-            content.is_symlink = if symlinks_enabled() {
+            content.is_symlink = if symlinks_supported() {
                 Some(metadata.is_symlink())
             } else {
                 None
